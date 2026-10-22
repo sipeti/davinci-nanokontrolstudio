@@ -306,9 +306,9 @@ end
 local ledProbeSignal, ledProbeTimer = nil, nil
 local function ledProbeMute1()
   local binding = cfg and cfg.buttons and cfg.buttons.cam1
-  local channel, controller = type(binding) == "string" and binding:match("^cc:(%d+):(%d+)$") or nil, nil
-  if channel then
-    controller = binding:match("^cc:%d+:(%d+)$")
+  local channel, controller
+  if type(binding) == "string" then
+    channel, controller = binding:match("^cc:(%d+):(%d+)$")
   end
   if not midi or not channel or not controller then
     toast("NK: LED probahoz Korg MIDI es betanitott MUTE 1 CC kell", 4)
