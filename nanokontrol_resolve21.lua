@@ -196,12 +196,14 @@ local function stopPlayback()
   speed = 0
   activeShuttleSource = nil
   faderArmed, faderActive = false, false
+  setLedState("transport", "stop")
   updateTitle()
 end
 
 local function switchMode()
   stopPlayback()  -- no queued J/L events can resume after STOP
   mode = (mode == "JOG") and "SHUTTLE" or "JOG"
+  refreshLEDs()
   updateTitle()
   toast("KORG wheel: " .. mode)
 end
@@ -215,6 +217,7 @@ local function setShuttle(target, source)
   key("k")
   speed = target
   activeShuttleSource = target == 0 and nil or source
+  setLedState("transport", target == 0 and "stop" or (target > 0 and "ff" or "rew"))
   updateTitle()
   if target == 0 then return end
   local direction = target > 0 and "l" or "j"
@@ -307,15 +310,16 @@ local function action(name)
   elseif name == "begin" then key("left", {"cmd"})
   elseif name == "rew" then
     cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
-    updateTitle(); key("j")
+    updateTitle(); key("j"); setLedState("transport", "rew")
   elseif name == "ff" then
     cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
-    updateTitle(); key("l")
+    updateTitle(); key("l"); setLedState("transport", "ff")
   elseif name == "stop" then stopPlayback()
   elseif name == "play" then
     cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
     updateTitle(); key("space")
-  elseif name == "undo" then key("z", {"cmd"})
+    setLedState("transport", ledState.transport == "play" and "stop" or "play")
+  elseif name == "undo" then key("z", {"cmd"}); flashLED("undo")
   elseif name == "trackPrev" then key("up")
   elseif name == "trackNext" then key("down")
   elseif name == "editSelect" then key("v") -- handled with press/release in midiCallback
@@ -331,7 +335,10 @@ local function action(name)
     key("a", {"cmd", "shift"})
     hs.timer.doAfter(0.060, function()
       splitBusy = false
-      if enabled and isResolveFrontmost() then key("b", {"cmd"}) end
+      if enabled and isResolveFrontmost() then
+        key("b", {"cmd"})
+        flashLED("splitAll")
+      end
     end)
   elseif name == "trimLeft" then key(",")
   elseif name == "trimRight" then key(".")
@@ -341,15 +348,15 @@ local function action(name)
   elseif name == "escape" then key("escape")
   elseif name == "cutPage" then
     if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
-    switchPage("Cut")
+    if switchPage("Cut") then setLedState("page", "cutPage") end
   elseif name == "editPage" then
     if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
-    switchPage("Edit")
-  elseif name == "trimMode" then key("t")
-  elseif name == "normalMode" then key("a")
+    if switchPage("Edit") then setLedState("page", "editPage") end
+  elseif name == "trimMode" then key("t"); setLedState("editmode", "trimMode")
+  elseif name == "normalMode" then key("a"); setLedState("editmode", "normalMode")
   else
     local camera = name:match("^cam([1-4])$")
-    if camera then key(camera) end
+    if camera then key(camera); setLedState("camera", name) end
   end
 end
 
@@ -526,6 +533,7 @@ end
 local function midiCallback(_, _, command, _, meta)
   local signal, value = midiSignal(command, meta)
   if not signal then return end
+  if isLEDReflection(signal, value) then return end
   if ledProbeSignal and signal == ledProbeSignal then return end
   if learning then learn(command, meta); return end
   if faderLearning then learnFader(signal, value, command); return end
@@ -553,13 +561,18 @@ local function midiCallback(_, _, command, _, meta)
   -- Process release regardless of app focus so TRIM cannot remain latched.
   if cfg.buttons and cfg.buttons.editSelect == signal then
     if not pressed then
-      if trimHeld then trimHeld = false; updateTitle() end
+      if trimHeld then
+        trimHeld = false
+        if ledFeedbackEnabled then sendLED("editSelect", false) end
+        updateTitle()
+      end
       return
     end
     if not enabled or not isResolveFrontmost() then return end
     if mode == "SHUTTLE" then stopPlayback() end
     key("v")
     trimHeld = true
+    if ledFeedbackEnabled then sendLED("editSelect", true) end
     updateTitle()
     return
   end
@@ -629,6 +642,11 @@ menu:setMenu(function()
     {title = "Eszkoz: " .. (deviceName or "nincs csatlakoztatva"), disabled = true},
     {title = "Uzemmod: " .. (trimHeld and "TRIM (MARKER SET nyomva)" or mode) .. (speed ~= 0 and " (" .. speed .. ")" or ""), disabled = true},
     {title = "Jog MIDI: " .. (cfg and cfg.wheel or "nincs beallitva"), disabled = true},
+    {title = "LED feedback: " .. (ledFeedbackEnabled and "BE (External)" or "KI"), disabled = true},
+    {title = "LED feedback BE/KI (Korg Global: External)", fn = toggleLEDFeedback,
+      disabled = not midi or not cfg},
+    {title = "LED allapot frissitese (Scene 1)", fn = refreshLEDs,
+      disabled = not ledFeedbackEnabled},
     {title = "FADER 1: " .. (cfg and (cfg.faderShuttle or "nincs betanitva") or "nincs konfiguracio")
        .. " | " .. (faderArmed and "READY" or "huzd kozepre")
        .. " | MIDI " .. tostring(faderValue or "?"), disabled = true},
