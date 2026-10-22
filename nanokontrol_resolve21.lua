@@ -437,10 +437,18 @@ local function action(name)
   elseif name == "escape" then key("escape")
   elseif name == "cutPage" then
     if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
-    if switchPage("Cut") then setLedState("page", "cutPage") end
+    if switchPage("Cut") then
+      confirmedResolvePage = nil -- old page is no longer verified
+      setLedState("page", "cutPage")
+      if resolveSyncEnabled then pollResolveState(true) end
+    end
   elseif name == "editPage" then
     if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
-    if switchPage("Edit") then setLedState("page", "editPage") end
+    if switchPage("Edit") then
+      confirmedResolvePage = nil -- old page is no longer verified
+      setLedState("page", "editPage")
+      if resolveSyncEnabled then pollResolveState(true) end
+    end
   elseif name == "trimMode" then key("t"); setLedState("editmode", "trimMode")
   elseif name == "normalMode" then key("a"); setLedState("editmode", "normalMode")
   else
@@ -587,6 +595,7 @@ local function beginFaderLearning()
     return
   end
   extraLearning = false
+  if speed ~= 0 or faderTimer or shuttleBatchTimer then stopPlayback() end
   faderLearning, faderCandidate, faderLearnCount = true, nil, 0
   faderArmed, faderActive = false, false
   updateTitle()
