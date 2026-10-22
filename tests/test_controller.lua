@@ -12,7 +12,7 @@ local saved = {
     editSelect = "cc:1:80", splitAll = "cc:1:25",
   }
 }
-local menus = {}
+local menus = {title = nil}
 local app = {
   title = function() return "DaVinci Resolve" end,
   bundleID = function() return "com.blackmagic-design.DaVinciResolve" end,
@@ -26,6 +26,11 @@ hs = {
   application = {frontmostApplication = function() return app end},
   timer = {
     secondsSinceEpoch = function() return now end,
+    doEvery = function(_, _)
+      local timer = {stopped = false}
+      function timer:stop() self.stopped = true end
+      return timer
+    end,
     doAfter = function(delay, fn)
       local timer = {delay = delay, fn = fn, stopped = false}
       function timer:stop() self.stopped = true end
@@ -36,7 +41,7 @@ hs = {
   menubar = {
     new = function()
       local m = {}
-      function m:setTitle(text) self.title = text end
+      function m:setTitle(text) self.title = text; menus.title = text end
       function m:setMenu(fn) menuCallback = fn end
       return m
     end,
@@ -56,6 +61,19 @@ hs = {
     end,
   },
   accessibilityState = function() return true end,
+  configdir = "/mock/.hammerspoon",
+  fs = {attributes = function() return {mode = "file"} end},
+  json = {decode = function()
+    return {ok = true, page = "edit", project = "test",
+      timeline = "test timeline", timecode = "01:00:00:00"}
+  end},
+  task = {new = function(_, callback, argv)
+    assert(argv[1] == "/mock/.hammerspoon/resolve_status.py")
+    return {start = function()
+      hs.timer.doAfter(0.01, function() callback(0, "fixture JSON", "") end)
+      return true
+    end}
+  end},
 }
 local loaded = assert(loadfile("nanokontrol_resolve21.lua"))()
 assert(type(loaded) == "table" and midiCallback and menuCallback, "module failed to initialize")
@@ -87,6 +105,15 @@ local function menuAction(fragment)
   end
   error("Missing menu item: " .. fragment)
 end
+-- FADER learn must visibly accept two distinct samples from one unmapped CC.
+menuAction("FADER 1 SHUTTLE betanitasa")
+assert(menus.title == "NK LEARN F1", "FADER learn must show active title")
+cc(13, 10)
+cc(13, 11)
+assert(saved.faderShuttle == "cc:1:13", "FADER 1 MIDI learning failed")
+assert(menus.title ~= "NK LEARN F1", "FADER learn must exit on success")
+saved.faderShuttle = "cc:1:2"
+
 -- Boot should NOT run transport commands even if the fader starts far from center.
 cc(2, 127)
 flushTimers()
@@ -125,6 +152,14 @@ for _, output in ipairs(sent) do
     and output.meta.controllerValue == 127 then camOn = true end
 end
 assert(camOn, "MUTE 1 LED did not light")
+cc(29, 0)
+local lastCamValue = nil
+for _, output in ipairs(sent) do
+  if output.typ == "controlChange" and output.meta.controllerNumber == 29 then
+    lastCamValue = output.meta.controllerValue
+  end
+end
+assert(lastCamValue == 0, "CAM LED must switch OFF on physical release")
 cc(21, 127)
 local cutOn = false
 for _, output in ipairs(sent) do
@@ -132,6 +167,22 @@ for _, output in ipairs(sent) do
     and output.meta.controllerValue == 127 then cutOn = true end
 end
 assert(cutOn, "SELECT 1 LED did not light")
+cc(21, 0)
+menuAction("Resolve allapot lekerese MOST")
+flushTimers()
+local confirmedEdit = false
+for _, output in ipairs(sent) do
+  if output.typ == "controlChange" and output.meta.controllerNumber == 22
+    and output.meta.controllerValue == 127 then confirmedEdit = true end
+end
+assert(confirmedEdit, "Resolve API real page should light SELECT 2")
+local lastCut = nil
+for _, output in ipairs(sent) do
+  if output.typ == "controlChange" and output.meta.controllerNumber == 21 then
+    lastCut = output.meta.controllerValue
+  end
+end
+assert(lastCut == 0, "Unverified SELECT 1 must not remain lit")
 menuAction("LED feedback BE/KI")
 assert(#sent > emitted, "LED disable should send OFF")
 print("MIDI_SIMULATION=PASS")
