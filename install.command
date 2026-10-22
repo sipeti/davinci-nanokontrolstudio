@@ -8,6 +8,15 @@ if [ -f "$TARGET" ] && ! cmp -s "$SRC_DIR/nanokontrol_resolve21.lua" "$TARGET"; 
   cp "$TARGET" "$TARGET.backup.$(date +%Y%m%d-%H%M%S)"
 fi
 cp "$SRC_DIR/nanokontrol_resolve21.lua" "$TARGET"
+# Only a read-only status getter; no external subprocess unless explicitly enabled in NK menu.
+PROBE_SRC="$SRC_DIR/scripts/resolve_status.py"
+PROBE_DST="$DST_DIR/resolve_status.py"
+if [ -f "$PROBE_SRC" ]; then
+  if [ -f "$PROBE_DST" ] && ! cmp -s "$PROBE_SRC" "$PROBE_DST"; then
+    cp "$PROBE_DST" "$PROBE_DST.backup.$(date +%Y%m%d-%H%M%S)"
+  fi
+  cp "$PROBE_SRC" "$PROBE_DST"
+fi
 INIT="$DST_DIR/init.lua"
 LINE='require("nanokontrol_resolve21")'
 if [ -f "$INIT" ]; then
