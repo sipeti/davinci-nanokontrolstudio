@@ -14,3 +14,5 @@ jobs:
         run: luac5.4 -p nanokontrol_resolve21.lua tests/test_controller.lua
       - name: MIDI behavior simulation
         run: lua5.4 tests/test_controller.lua
+      - name: Resolve scripting read-only tests
+        run: python3 -m unittest discover -s tests -p 'test_resolve_status.py' -v
