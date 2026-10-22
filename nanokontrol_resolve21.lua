@@ -26,6 +26,7 @@ local activeShuttleSource = nil
 local ledFeedbackEnabled = false -- opt-in, Korg Global LED Mode must be External
 local ledState = {transport = nil, page = nil, camera = nil, editmode = nil}
 local ledEchoUntil = {}
+local ledPressed, confirmedResolvePage = {}, nil
 
 -- The large wheel must be set in KORG KONTROL Editor:
 -- Jog Wheel Type = Sign Magnitude, Acceleration = Const.
@@ -105,11 +106,11 @@ local ledButtonNames = {"cycle", "play", "stop", "rew", "ff", "cam1", "cam2",
   "cam3", "cam4", "cutPage", "editPage", "trimMode", "normalMode", "editSelect",
   "splitAll", "undo"}
 local function ledWanted(name)
-  if name == "cycle" then return mode == "SHUTTLE" end
-  for _, group in ipairs({"transport", "page", "camera", "editmode"}) do
-    if ledState[group] == name then return true end
-  end
-  return false
+  -- Never latch an unverified camera or transport action on the hardware.
+  if ledPressed[name] then return true end
+  -- Only the actual Resolve page reported by its scripting API may stay on.
+  return (confirmedResolvePage == "cut" and name == "cutPage")
+      or (confirmedResolvePage == "edit" and name == "editPage")
 end
 local function sendLED(name, on)
   if not midi or not cfg or not cfg.buttons then return false end
@@ -139,6 +140,11 @@ end
 local function clearLEDs()
   for _, name in ipairs(ledButtonNames) do sendLED(name, false) end
 end
+local function resetLEDs()
+  ledPressed, confirmedResolvePage = {}, nil
+  clearLEDs()
+  toast("NK: MINDEN LED KI (reset)", 2.2)
+end
 local function setLedState(group, name)
   ledState[group] = name
   refreshLEDs()
@@ -147,19 +153,21 @@ local function flashLED(name, seconds)
   if not ledFeedbackEnabled then return end
   sendLED(name, true)
   hs.timer.doAfter(seconds or 0.18, function()
-    if ledFeedbackEnabled then sendLED(name, false) end
+    if ledFeedbackEnabled then sendLED(name, ledWanted(name)) end
   end)
 end
 local function toggleLEDFeedback()
   if not midi or not cfg then toast("NK: elobb csatlakoztasd a Korgot", 3); return end
   if ledFeedbackEnabled then
+    ledPressed = {}
     clearLEDs()
     ledFeedbackEnabled = false
     toast("NK: LED feedback KI", 2)
   else
     ledFeedbackEnabled = true
+    ledPressed = {}
     refreshLEDs()
-    toast("NK: LED feedback BE - Korg Global LED Mode: External", 4)
+    toast("NK: LED feedback BE: momentary + API-val igazolt oldal (External)", 4)
   end
 end
 local function isLEDReflection(signal, value)
@@ -569,13 +577,22 @@ local function midiCallback(_, _, command, _, meta)
     return
   end
   if not cfg then return end
+  -- Physical press/release is reflected even without Resolve focus. Existing
+  -- latching 'last requested' feedback misrepresented actual Resolve state.
+  for name, binding in pairs(cfg.buttons or {}) do
+    if binding == signal and ledFeedbackEnabled then
+      ledPressed[name] = pressed or nil
+      sendLED(name, ledWanted(name))
+      break
+    end
+  end
   -- Unlike old press-only handling, MARKER SET must also handle RELEASE.
   -- Process release regardless of app focus so TRIM cannot remain latched.
   if cfg.buttons and cfg.buttons.editSelect == signal then
     if not pressed then
       if trimHeld then
         trimHeld = false
-        if ledFeedbackEnabled then sendLED("editSelect", false) end
+        if ledFeedbackEnabled then sendLED("editSelect", ledWanted("editSelect")) end
         updateTitle()
       end
       return
@@ -584,7 +601,7 @@ local function midiCallback(_, _, command, _, meta)
     if mode == "SHUTTLE" then stopPlayback() end
     key("v")
     trimHeld = true
-    if ledFeedbackEnabled then sendLED("editSelect", true) end
+    if ledFeedbackEnabled then sendLED("editSelect", ledWanted("editSelect")) end
     updateTitle()
     return
   end
@@ -643,6 +660,8 @@ local function attach()
   if midi then
     deviceName = found
     midi:callback(midiCallback)
+    -- Prevent stale externally-latched LEDs after a Hammerspoon reload.
+    if cfg then clearLEDs() end
     if not cfg and not learning then
       hs.timer.doAfter(1.0, function() if not cfg and not learning then startLearning() end end)
     end
@@ -658,7 +677,9 @@ menu:setMenu(function()
     {title = "Utolso MIDI: " .. lastMidiEvent, disabled = true},
     {title = faderLearning and "FADER LEARN: AKTIV (" .. tostring(faderLearnCount) .. " CC)"
        or "FADER LEARN: inaktiv", disabled = true},
-    {title = "LED feedback: " .. (ledFeedbackEnabled and "BE (External)" or "KI"), disabled = true},
+    {title = "LED feedback: " .. (ledFeedbackEnabled and "MOMENTARY + VALIDALT OLDAL" or "KI"), disabled = true},
+    {title = "MINDEN LED KIKAPCSOLASA (reset)", fn = resetLEDs,
+       disabled = not midi or not cfg},
     {title = "LED feedback BE/KI (Korg Global: External)", fn = toggleLEDFeedback,
       disabled = not midi or not cfg},
     {title = "LED allapot frissitese (Scene 1)", fn = refreshLEDs,
