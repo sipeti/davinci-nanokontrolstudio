@@ -19,6 +19,7 @@ local extraLearning = false
 local splitBusy = false
 -- Experimental FADER 1 shuttle: armed only after physically entering center.
 local faderLearning, faderCandidate = false, nil
+local midiEventCount, lastMidiEvent, faderLearnCount = 0, "nincs", 0
 local faderArmed, faderActive, faderValue = false, false, nil
 local faderTimer, faderQueued = nil, nil
 local activeShuttleSource = nil
@@ -178,6 +179,7 @@ local function updateTitle()
   end
   if not enabled then title = "NK OFF" end
   if learning then title = "NK SETUP" end
+  if faderLearning then title = "NK LEARN F1" end
   menu:setTitle(title)
 end
 
@@ -498,9 +500,10 @@ local function beginFaderLearning()
     return
   end
   extraLearning = false
-  faderLearning, faderCandidate = true, nil
+  faderLearning, faderCandidate, faderLearnCount = true, nil, 0
   faderArmed, faderActive = false, false
-  toast("NK: mozgasd a FADER 1-et legalabb 5 MIDI-egyseggel!", 5)
+  updateTitle()
+  toast("NK LEARN F1: mozgasd az elso fadert teljes hosszban. Az NK menu mutatja a bejovo CC-t.", 6)
 end
 
 local function learnFader(signal, value, command)
@@ -509,15 +512,20 @@ local function learnFader(signal, value, command)
   for _, binding in pairs(cfg.buttons or {}) do
     if signal == binding then return end
   end
+  faderLearnCount = faderLearnCount + 1
   if not faderCandidate or faderCandidate.signal ~= signal then
     faderCandidate = {signal = signal, value = value}
+    toast("NK F1 jel: " .. signal .. "=" .. tostring(value) .. " - mozgasd tovabb!", 2.2)
     return
   end
-  if math.abs(value - faderCandidate.value) < 5 then return end
+  -- Abs. controls need two distinct samples. A 1-step difference is
+  -- enough when the fader is moved slowly; equal samples are ignored.
+  if value == faderCandidate.value then return end
   cfg.faderShuttle = signal
   hs.settings.set(KEY, cfg)
   faderLearning, faderCandidate = false, nil
-  toast("NK: FADER 1 betanitva: " .. signal .. " - huzd kozepre!", 4)
+  updateTitle()
+  toast("NK FADER 1 OK: " .. signal .. " (MIDI " .. value .. ") - huzd kozepre!", 5)
 end
 
 local function beginExtraLearning()
@@ -533,7 +541,11 @@ end
 local function midiCallback(_, _, command, _, meta)
   local signal, value = midiSignal(command, meta)
   if not signal then return end
-  if isLEDReflection(signal, value) then return end
+  midiEventCount = midiEventCount + 1
+  lastMidiEvent = signal .. "=" .. tostring(value) .. " [" .. command .. "]"
+  -- A physical button press may match an outgoing LED command within 80ms.
+  -- Suppress only verified virtual-source reflections, never physical MIDI.
+  if meta and meta.isVirtual and isLEDReflection(signal, value) then return end
   if ledProbeSignal and signal == ledProbeSignal then return end
   if learning then learn(command, meta); return end
   if faderLearning then learnFader(signal, value, command); return end
@@ -642,6 +654,10 @@ menu:setMenu(function()
     {title = "Eszkoz: " .. (deviceName or "nincs csatlakoztatva"), disabled = true},
     {title = "Uzemmod: " .. (trimHeld and "TRIM (MARKER SET nyomva)" or mode) .. (speed ~= 0 and " (" .. speed .. ")" or ""), disabled = true},
     {title = "Jog MIDI: " .. (cfg and cfg.wheel or "nincs beallitva"), disabled = true},
+    {title = "MIDI bejovo (ossz.): " .. tostring(midiEventCount), disabled = true},
+    {title = "Utolso MIDI: " .. lastMidiEvent, disabled = true},
+    {title = faderLearning and "FADER LEARN: AKTIV (" .. tostring(faderLearnCount) .. " CC)"
+       or "FADER LEARN: inaktiv", disabled = true},
     {title = "LED feedback: " .. (ledFeedbackEnabled and "BE (External)" or "KI"), disabled = true},
     {title = "LED feedback BE/KI (Korg Global: External)", fn = toggleLEDFeedback,
       disabled = not midi or not cfg},
@@ -653,7 +669,7 @@ menu:setMenu(function()
     {title = "FADER 1 SHUTTLE betanitasa (2 MIDI ertek)", fn = beginFaderLearning,
       disabled = not cfg or not midi or learning},
     {title = "FADER 1 betanitas megszakitasa", disabled = not faderLearning,
-      fn = function() faderLearning, faderCandidate = false, nil end},
+      fn = function() faderLearning, faderCandidate = false, nil; updateTitle() end},
     {title = "LED kimenet teszt (MUTE 1, 700ms)", fn = ledProbeMute1,
       disabled = not midi or not cfg or not cfg.buttons or not cfg.buttons.cam1},
     {title = "Hammerspoon Accessibility: " .. ((hs.accessibilityState and hs.accessibilityState(false)) and "OK" or "HIANYZIK"), disabled = true},
