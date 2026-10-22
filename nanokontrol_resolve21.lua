@@ -17,6 +17,11 @@ local trimHeld = false
 -- One-shot MIDI learn for SELECT 5; keep the original 24-button calibration.
 local extraLearning = false
 local splitBusy = false
+-- Experimental FADER 1 shuttle: armed only after physically entering center.
+local faderLearning, faderCandidate = false, nil
+local faderArmed, faderActive, faderValue = false, false, nil
+local faderTimer, faderQueued = nil, nil
+local activeShuttleSource = nil
 
 -- The large wheel must be set in KORG KONTROL Editor:
 -- Jog Wheel Type = Sign Magnitude, Acceleration = Const.
@@ -91,7 +96,9 @@ end
 local menu = hs.menubar.new()
 local function updateTitle()
   local title = "NK " .. (trimHeld and "TRIM" or mode)
-  if mode == "SHUTTLE" and speed ~= 0 then
+  if activeShuttleSource == "fader" and speed ~= 0 then
+    title = "NK FADER " .. (speed > 0 and "+" or "") .. tostring(speed)
+  elseif mode == "SHUTTLE" and speed ~= 0 then
     title = title .. " " .. (speed > 0 and "+" or "") .. tostring(speed)
   end
   if not enabled then title = "NK OFF" end
@@ -108,8 +115,12 @@ end
 
 local function stopPlayback()
   cancelShuttle()
+  if faderTimer then faderTimer:stop(); faderTimer = nil end
+  faderQueued = nil
   key("k")
   speed = 0
+  activeShuttleSource = nil
+  faderArmed, faderActive = false, false
   updateTitle()
 end
 
@@ -120,20 +131,22 @@ local function switchMode()
   toast("KORG wheel: " .. mode)
 end
 
-local function setShuttle(target)
+local function setShuttle(target, source)
   target = math.max(-4, math.min(4, target))
-  if target == speed then return end
-  -- Cancel earlier J/L sequences. Rebuild at a controlled rate from STOP.
+  source = source or "wheel"
+  if target == speed and (target == 0 or activeShuttleSource == source) then return end
   for _, t in ipairs(shuttleKeyTimers) do t:stop() end
   shuttleKeyTimers = {}
   key("k")
   speed = target
+  activeShuttleSource = target == 0 and nil or source
   updateTitle()
   if target == 0 then return end
   local direction = target > 0 and "l" or "j"
   for n = 1, math.abs(target) do
     local t = hs.timer.doAfter(0.025 + (n - 1) * 0.070, function()
-      if enabled and mode == "SHUTTLE" and isResolveFrontmost() then
+      if enabled and activeShuttleSource == source and
+         (source == "fader" or mode == "SHUTTLE") and isResolveFrontmost() then
         key(direction)
       end
     end)
@@ -150,14 +163,56 @@ local function flushShuttle()
   end
   local amount = 1 + math.floor((math.abs(pulses) - 1) / SHUTTLE_PULSES_PER_GEAR)
   local delta = pulses > 0 and amount or -amount
-  setShuttle(speed + delta)
+  if not faderActive then setShuttle(speed + delta, "wheel") end
+end
+
+-- Center = MIDI values 60..68. Outside: reverse/forward up to four JKL gears.
+local function faderLevel(value)
+  if value >= 60 and value <= 68 then return 0 end
+  if value < 60 then return -math.min(4, math.ceil((60 - value) / 15)) end
+  return math.min(4, math.ceil((value - 68) / 15))
+end
+local function faderShuttle(value)
+  if type(value) ~= "number" or value < 0 or value > 127 then return end
+  faderValue = value
+  local target = faderLevel(value)
+  if not faderArmed then
+    if target == 0 then
+      faderArmed = true
+      toast("NK: FADER 1 aktiv (kozepalas utan)", 1.6)
+    end
+    return
+  end
+  if target == 0 then
+    if faderTimer then faderTimer:stop(); faderTimer = nil end
+    faderQueued = nil
+    if faderActive or activeShuttleSource == "fader" then
+      faderActive = false
+      setShuttle(0, "fader")
+    end
+    return
+  end
+  faderActive = true
+  faderQueued = target
+  if not faderTimer then
+    -- Aggregate rapid fader events; center/STOP remain immediate.
+    faderTimer = hs.timer.doAfter(0.065, function()
+      faderTimer = nil
+      local requested = faderQueued
+      faderQueued = nil
+      if requested and faderArmed and enabled and isResolveFrontmost() then
+        setShuttle(requested, "fader")
+      end
+    end)
+  end
 end
 
 local function wheel(value)
   if not value or value == 0 or value > 127 then return end
   local direction = value <= 64 and 1 or -1
+  -- Do not nudge trims/frames while the fader is driving active playback.
+  if faderActive then return end
   -- A press-and-hold modifier takes precedence over both JOG and SHUTTLE.
-  -- Only ONE nudge per incoming MIDI pulse: no hidden multi-frame jumps.
   if trimHeld then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
@@ -175,10 +230,16 @@ end
 local function action(name)
   if name == "cycle" then switchMode()
   elseif name == "begin" then key("left", {"cmd"})
-  elseif name == "rew" then cancelShuttle(); speed = 0; updateTitle(); key("j")
-  elseif name == "ff" then cancelShuttle(); speed = 0; updateTitle(); key("l")
+  elseif name == "rew" then
+    cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
+    updateTitle(); key("j")
+  elseif name == "ff" then
+    cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
+    updateTitle(); key("l")
   elseif name == "stop" then stopPlayback()
-  elseif name == "play" then cancelShuttle(); speed = 0; updateTitle(); key("space")
+  elseif name == "play" then
+    cancelShuttle(); speed = 0; activeShuttleSource = nil; faderArmed, faderActive = false, false
+    updateTitle(); key("space")
   elseif name == "undo" then key("z", {"cmd"})
   elseif name == "trackPrev" then key("up")
   elseif name == "trackNext" then key("down")
@@ -204,10 +265,10 @@ local function action(name)
   elseif name == "clearIO" then key("x", {"alt"})
   elseif name == "escape" then key("escape")
   elseif name == "cutPage" then
-    if mode == "SHUTTLE" and (speed ~= 0 or shuttleBatchTimer) then stopPlayback() end
+    if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
     switchPage("Cut")
   elseif name == "editPage" then
-    if mode == "SHUTTLE" and (speed ~= 0 or shuttleBatchTimer) then stopPlayback() end
+    if speed ~= 0 or shuttleBatchTimer then stopPlayback() end
     switchPage("Edit")
   elseif name == "trimMode" then key("t")
   elseif name == "normalMode" then key("a")
@@ -349,11 +410,40 @@ local function ledProbeMute1()
   toast("NK: MUTE 1 LED proba (700 ms). Korg Global LED Mode: External", 4)
 end
 
+local function beginFaderLearning()
+  if not cfg or not midi or learning then
+    toast("NK: elobb kell a teljes MIDI kiosztas", 3)
+    return
+  end
+  extraLearning = false
+  faderLearning, faderCandidate = true, nil
+  faderArmed, faderActive = false, false
+  toast("NK: mozgasd a FADER 1-et legalabb 5 MIDI-egyseggel!", 5)
+end
+
+local function learnFader(signal, value, command)
+  if command ~= "controlChange" or type(value) ~= "number" then return end
+  if signal == cfg.wheel then return end
+  for _, binding in pairs(cfg.buttons or {}) do
+    if signal == binding then return end
+  end
+  if not faderCandidate or faderCandidate.signal ~= signal then
+    faderCandidate = {signal = signal, value = value}
+    return
+  end
+  if math.abs(value - faderCandidate.value) < 5 then return end
+  cfg.faderShuttle = signal
+  hs.settings.set(KEY, cfg)
+  faderLearning, faderCandidate = false, nil
+  toast("NK: FADER 1 betanitva: " .. signal .. " - huzd kozepre!", 4)
+end
+
 local function beginExtraLearning()
   if not cfg or not midi or learning then
     toast("NK: elobb legyen teljes, mukodo MIDI kiosztas", 3)
     return
   end
+  faderLearning, faderCandidate = false, nil
   extraLearning = true
   toast("NK: most nyomd meg egyszer a szabad SELECT 5 gombot!", 5)
 end
@@ -363,6 +453,7 @@ local function midiCallback(_, _, command, _, meta)
   if not signal then return end
   if ledProbeSignal and signal == ledProbeSignal then return end
   if learning then learn(command, meta); return end
+  if faderLearning then learnFader(signal, value, command); return end
   local pressed = isPress(command, value)
   if extraLearning then
     if not pressed then return end
@@ -399,6 +490,10 @@ local function midiCallback(_, _, command, _, meta)
   end
   if not enabled or not isResolveFrontmost() then return end
   if command == "controlChange" then
+    if cfg.faderShuttle == signal then
+      faderShuttle(value)
+      return
+    end
     -- Korg screenshot: Continuous uses CC86, Sign Magnitude uses CC82.
     -- Migrate ONLY when the actual CC82 signal arrives, preserving 24 button binds.
     local channel = cfg.wheel and cfg.wheel:match("^cc:(%d+):86$")
@@ -459,6 +554,13 @@ menu:setMenu(function()
     {title = "Eszkoz: " .. (deviceName or "nincs csatlakoztatva"), disabled = true},
     {title = "Uzemmod: " .. (trimHeld and "TRIM (MARKER SET nyomva)" or mode) .. (speed ~= 0 and " (" .. speed .. ")" or ""), disabled = true},
     {title = "Jog MIDI: " .. (cfg and cfg.wheel or "nincs beallitva"), disabled = true},
+    {title = "FADER 1: " .. (cfg and (cfg.faderShuttle or "nincs betanitva") or "nincs konfiguracio")
+       .. " | " .. (faderArmed and "READY" or "huzd kozepre")
+       .. " | MIDI " .. tostring(faderValue or "?"), disabled = true},
+    {title = "FADER 1 SHUTTLE betanitasa (2 MIDI ertek)", fn = beginFaderLearning,
+      disabled = not cfg or not midi or learning},
+    {title = "FADER 1 betanitas megszakitasa", disabled = not faderLearning,
+      fn = function() faderLearning, faderCandidate = false, nil end},
     {title = "LED kimenet teszt (MUTE 1, 700ms)", fn = ledProbeMute1,
       disabled = not midi or not cfg or not cfg.buttons or not cfg.buttons.cam1},
     {title = "Hammerspoon Accessibility: " .. ((hs.accessibilityState and hs.accessibilityState(false)) and "OK" or "HIANYZIK"), disabled = true},
@@ -486,6 +588,8 @@ menu:setMenu(function()
       enabled = not enabled
       trimHeld = false
       extraLearning = false
+      faderLearning, faderCandidate = false, nil
+      faderArmed, faderActive = false, false
       updateTitle()
     end},
   }
@@ -498,4 +602,4 @@ updateTitle()
 -- Keep menu + callback alive as long as Hammerspoon loads this module.
 return {setup = startLearning, isResolveFrontmost = isResolveFrontmost}
 
--- END v1.2 (experimental LED probe on draft branch; main unchanged)
+-- END v1.2: experimental FADER 1 shuttle and LED probe on draft branch; main unchanged
