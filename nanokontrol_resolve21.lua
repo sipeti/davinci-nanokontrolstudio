@@ -178,6 +178,85 @@ local function isLEDReflection(signal, value)
   return hs.timer.secondsSinceEpoch() < deadline
 end
 
+-- Optional read-only actual Resolve status. Uses bundled ResolvePython (21.1+).
+-- No polling/subprocesses by default. Only the verified page drives persistent LEDs.
+local resolveSyncEnabled, resolveSyncTimer, resolveSyncTask = false, nil, nil
+local resolveSyncStatus = "nincs kerdezve"
+local resolvePythonCandidates = {
+  "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Applications/ResolvePython",
+  "/Applications/DaVinci Resolve Studio.app/Contents/Applications/ResolvePython",
+  "/Applications/DaVinci Resolve/DaVinci Resolve Studio.app/Contents/Applications/ResolvePython",
+}
+local function fileExists(path)
+  return hs.fs and hs.fs.attributes and hs.fs.attributes(path) ~= nil
+end
+local function findResolvePython()
+  for _, path in ipairs(resolvePythonCandidates) do
+    if fileExists(path) then return path end
+  end
+  return nil
+end
+local function pollResolveState(force)
+  if resolveSyncTask or (not force and not isResolveFrontmost()) then return end
+  if not (hs.task and hs.task.new and hs.json and hs.json.decode) then
+    resolveSyncStatus = "hs.task / hs.json hianyzik"
+    toast("NK: Hammerspoon task/json nem elerheto", 4)
+    return
+  end
+  local exe = findResolvePython()
+  local scriptPath = hs.configdir .. "/resolve_status.py"
+  if not exe or not fileExists(scriptPath) then
+    resolveSyncStatus = "ResolvePython vagy resolve_status.py nem talalhato"
+    toast("NK: Resolve 21.1+ ResolvePython nem talalhato", 4)
+    return
+  end
+  local task = hs.task.new(exe, function(code, stdout, stderr)
+    resolveSyncTask = nil
+    local ok, result = pcall(function() return hs.json.decode(stdout or "") end)
+    if code ~= 0 or not ok or type(result) ~= "table" or not result.ok then
+      confirmedResolvePage = nil
+      resolveSyncStatus = "nincs kapcsolat (Resolve Studio / External scripting: Local?)"
+      if ok and type(result) == "table" and type(result.error) == "string" then
+        resolveSyncStatus = result.error
+      end
+      if ledFeedbackEnabled then refreshLEDs() end
+      return
+    end
+    local page = tostring(result.page or ""):lower()
+    confirmedResolvePage = page
+    resolveSyncStatus = "page=" .. page .. ", TC=" .. tostring(result.timecode or "?")
+    if ledFeedbackEnabled then refreshLEDs() end
+  end, {scriptPath})
+  if not task or task:start() == false then
+    resolveSyncStatus = "ResolvePython task inditas sikertelen"
+    return
+  end
+  resolveSyncTask = task
+end
+local function toggleResolveSync()
+  if resolveSyncEnabled then
+    if resolveSyncTimer then resolveSyncTimer:stop(); resolveSyncTimer = nil end
+    resolveSyncEnabled = false
+    confirmedResolvePage = nil
+    resolveSyncStatus = "kikapcsolva"
+    refreshLEDs()
+    toast("NK: Resolve API szinkron KI", 3)
+    return
+  end
+  if not findResolvePython() or not fileExists(hs.configdir .. "/resolve_status.py") then
+    resolveSyncStatus = "ResolvePython vagy status script hianyzik"
+    toast("NK: ResolvePython / status script hianyzik", 4)
+    return
+  end
+  resolveSyncEnabled = true
+  resolveSyncStatus = "csatlakozas..."
+  pollResolveState(true)
+  resolveSyncTimer = hs.timer.doEvery(3, function()
+    if resolveSyncEnabled then pollResolveState(false) end
+  end)
+  toast("NK: Resolve API szinkron BE (3mp, csak aktiv Resolve-nal)", 4)
+end
+
 local function updateTitle()
   local title = "NK " .. (trimHeld and "TRIM" or mode)
   if activeShuttleSource == "fader" and speed ~= 0 then
@@ -678,6 +757,12 @@ menu:setMenu(function()
     {title = faderLearning and "FADER LEARN: AKTIV (" .. tostring(faderLearnCount) .. " CC)"
        or "FADER LEARN: inaktiv", disabled = true},
     {title = "LED feedback: " .. (ledFeedbackEnabled and "MOMENTARY + VALIDALT OLDAL" or "KI"), disabled = true},
+    {title = "Resolve API sync: " .. (resolveSyncEnabled and "BE" or "KI")
+       .. " | " .. resolveSyncStatus, disabled = true},
+    {title = "Resolve allapot lekerese MOST (csak olvasas)", fn = function()
+       pollResolveState(true)
+     end},
+    {title = "Resolve API status sync 3mp BE/KI", fn = toggleResolveSync},
     {title = "MINDEN LED KIKAPCSOLASA (reset)", fn = resetLEDs,
        disabled = not midi or not cfg},
     {title = "LED feedback BE/KI (Korg Global: External)", fn = toggleLEDFeedback,
