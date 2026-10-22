@@ -22,6 +22,9 @@ local faderLearning, faderCandidate = false, nil
 local faderArmed, faderActive, faderValue = false, false, nil
 local faderTimer, faderQueued = nil, nil
 local activeShuttleSource = nil
+local ledFeedbackEnabled = false -- opt-in, Korg Global LED Mode must be External
+local ledState = {transport = nil, page = nil, camera = nil, editmode = nil}
+local ledEchoUntil = {}
 
 -- The large wheel must be set in KORG KONTROL Editor:
 -- Jog Wheel Type = Sign Magnitude, Acceleration = Const.
@@ -84,16 +87,88 @@ local function switchPage(page)
   end)
   if ok and chosen then
     hs.printf("[NK] Workspace > Switch to Page > %s", page)
-    return
+    return true
   end
   -- Safe failure: do NOT send Shift+3 (can trigger different editing action).
   hs.printf("[NK] Workspace > Switch to Page > %s not accessible", page)
   toast("NK: Workspace > Switch to Page > " .. page .. " nem elerheto", 3)
+  return false
 end
 
 
 
 local menu = hs.menubar.new()
+
+-- Local feedback is the last command requested here, not verified Resolve state.
+local ledButtonNames = {"cycle", "play", "stop", "rew", "ff", "cam1", "cam2",
+  "cam3", "cam4", "cutPage", "editPage", "trimMode", "normalMode", "editSelect",
+  "splitAll", "undo"}
+local function ledWanted(name)
+  if name == "cycle" then return mode == "SHUTTLE" end
+  for _, group in ipairs({"transport", "page", "camera", "editmode"}) do
+    if ledState[group] == name then return true end
+  end
+  return false
+end
+local function sendLED(name, on)
+  if not midi or not cfg or not cfg.buttons then return false end
+  local signal = cfg.buttons[name]
+  if type(signal) ~= "string" then return false end
+  local channel, number = signal:match("^cc:(%d+):(%d+)$")
+  local cmd, meta
+  if channel then
+    cmd = "controlChange"
+    meta = {channel = tonumber(channel), controllerNumber = tonumber(number),
+      controllerValue = on and 127 or 0}
+  else
+    channel, number = signal:match("^note:(%d+):(%d+)$")
+    if not channel then return false end
+    cmd = on and "noteOn" or "noteOff"
+    meta = {channel = tonumber(channel), note = tonumber(number), velocity = on and 127 or 64}
+  end
+  local value = cmd == "controlChange" and meta.controllerValue or (on and 127 or 64)
+  ledEchoUntil[signal .. ":" .. tostring(value)] = hs.timer.secondsSinceEpoch() + 0.08
+  local ok, sent = pcall(function() return midi:sendCommand(cmd, meta) end)
+  return ok and sent ~= false
+end
+local function refreshLEDs()
+  if not ledFeedbackEnabled then return end
+  for _, name in ipairs(ledButtonNames) do sendLED(name, ledWanted(name)) end
+end
+local function clearLEDs()
+  for _, name in ipairs(ledButtonNames) do sendLED(name, false) end
+end
+local function setLedState(group, name)
+  ledState[group] = name
+  refreshLEDs()
+end
+local function flashLED(name, seconds)
+  if not ledFeedbackEnabled then return end
+  sendLED(name, true)
+  hs.timer.doAfter(seconds or 0.18, function()
+    if ledFeedbackEnabled then sendLED(name, false) end
+  end)
+end
+local function toggleLEDFeedback()
+  if not midi or not cfg then toast("NK: elobb csatlakoztasd a Korgot", 3); return end
+  if ledFeedbackEnabled then
+    clearLEDs()
+    ledFeedbackEnabled = false
+    toast("NK: LED feedback KI", 2)
+  else
+    ledFeedbackEnabled = true
+    refreshLEDs()
+    toast("NK: LED feedback BE - Korg Global LED Mode: External", 4)
+  end
+end
+local function isLEDReflection(signal, value)
+  local tag = signal .. ":" .. tostring(value)
+  local deadline = ledEchoUntil[tag]
+  if not deadline then return false end
+  ledEchoUntil[tag] = nil
+  return hs.timer.secondsSinceEpoch() < deadline
+end
+
 local function updateTitle()
   local title = "NK " .. (trimHeld and "TRIM" or mode)
   if activeShuttleSource == "fader" and speed ~= 0 then
