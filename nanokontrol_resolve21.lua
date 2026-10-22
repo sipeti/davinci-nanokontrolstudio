@@ -301,6 +301,54 @@ local function isPress(command, value)
   return false
 end
 
+-- Explicit, opt-in LED output test. Does not change Korg Global LED Mode.
+-- The Korg expects CC On/Off on the same CC number as the physical button.
+local ledProbeSignal, ledProbeTimer = nil, nil
+local function ledProbeMute1()
+  local binding = cfg and cfg.buttons and cfg.buttons.cam1
+  local channel, controller = type(binding) == "string" and binding:match("^cc:(%d+):(%d+)$") or nil, nil
+  if channel then
+    controller = binding:match("^cc:%d+:(%d+)$")
+  end
+  if not midi or not channel or not controller then
+    toast("NK: LED probahoz Korg MIDI es betanitott MUTE 1 CC kell", 4)
+    return
+  end
+  if not midi.sendCommand then
+    toast("NK: a MIDI kimenet nem tamogatott", 3)
+    return
+  end
+  if ledProbeTimer then
+    ledProbeTimer:stop()
+    ledProbeTimer = nil
+  end
+  local target = midi
+  local function send(value)
+    if midi ~= target then return false end
+    local ok, sent = pcall(function()
+      return target:sendCommand("controlChange", {
+        channel = tonumber(channel),
+        controllerNumber = tonumber(controller),
+        controllerValue = value,
+      })
+    end)
+    return ok and sent ~= false
+  end
+  -- Guard against any device/driver MIDI echo being mistaken for a CAM 1 press.
+  ledProbeSignal = binding
+  if not send(127) then
+    ledProbeSignal = nil
+    toast("NK: LED MIDI output sikertelen; nem valtozott a kiosztas", 4)
+    return
+  end
+  ledProbeTimer = hs.timer.doAfter(0.7, function()
+    send(0)
+    ledProbeSignal = nil
+    ledProbeTimer = nil
+  end)
+  toast("NK: MUTE 1 LED proba (700 ms). Korg Global LED Mode: External", 4)
+end
+
 local function beginExtraLearning()
   if not cfg or not midi or learning then
     toast("NK: elobb legyen teljes, mukodo MIDI kiosztas", 3)
@@ -313,6 +361,7 @@ end
 local function midiCallback(_, _, command, _, meta)
   local signal, value = midiSignal(command, meta)
   if not signal then return end
+  if ledProbeSignal and signal == ledProbeSignal then return end
   if learning then learn(command, meta); return end
   local pressed = isPress(command, value)
   if extraLearning then
@@ -410,6 +459,8 @@ menu:setMenu(function()
     {title = "Eszkoz: " .. (deviceName or "nincs csatlakoztatva"), disabled = true},
     {title = "Uzemmod: " .. (trimHeld and "TRIM (MARKER SET nyomva)" or mode) .. (speed ~= 0 and " (" .. speed .. ")" or ""), disabled = true},
     {title = "Jog MIDI: " .. (cfg and cfg.wheel or "nincs beallitva"), disabled = true},
+    {title = "LED kimenet teszt (MUTE 1, 700ms)", fn = ledProbeMute1,
+      disabled = not midi or not cfg or not cfg.buttons or not cfg.buttons.cam1},
     {title = "Hammerspoon Accessibility: " .. ((hs.accessibilityState and hs.accessibilityState(false)) and "OK" or "HIANYZIK"), disabled = true},
     {title = "Accessibility engedely kerese", fn = function()
       if hs.accessibilityState then hs.accessibilityState(true) end
@@ -447,4 +498,4 @@ updateTitle()
 -- Keep menu + callback alive as long as Hammerspoon loads this module.
 return {setup = startLearning, isResolveFrontmost = isResolveFrontmost}
 
--- END v1.2
+-- END v1.2 (experimental LED probe on draft branch; main unchanged)
