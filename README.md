@@ -13,7 +13,7 @@ A lightweight, keyboard-driven MIDI control surface for **DaVinci Resolve 21 on 
 - **Transport:** STOP, PLAY, REW, FF, return to start and previous/next edit work across **all five scenes** when they use the configured CCs and MIDI channels.
 - **Shared speed state:** STOP = 0; normal forward = +1; FF = +2; reverse = −1. FF → PLAY or FF → one wheel tick left returns to +1. A second PLAY at normal speed pauses.
 - **Fader 1:** center-zero SHUTTLE (−4…+4). It must first pass through the center (CC values 60–68) to become active, preventing sudden playback on startup.
-- **External LEDs:** persistent PLAY / STOP / REW / FF indicators, plus the CYCLE mode LED. Momentary feedback on other known buttons; scene switching restores the shared LED state.
+- **External LEDs:** persistent PLAY / STOP / REW / FF indicators, plus the CYCLE mode LED. Momentary feedback on other known buttons; scene switching restores shared LED state. The five shared status CCs are sent on both the previously verified Scene 1 route and a separate Scene 2 output route. **Scene 2 also requires External LED Mode written to the device.**
 - **Keyboard cooperation:** when Resolve is frontmost, physical Space/J/K/L presses are observed without being blocked. Hammerspoon-generated keystrokes are not counted a second time.
 - **One guided 28-step setup** stores a complete MIDI mapping only after all steps succeed. Subsequent script updates do not require relearning.
 
@@ -99,7 +99,7 @@ A cancelled or incomplete calibration **does not overwrite** the last successful
 
 **Lighting reflects observed requests, not Resolve's actual transport state.** An on-screen mouse click, a customized shortcut, or playback already running when the script loads may not be tracked. A Hammerspoon event tap watches the unmodified physical Space/J/K/L keys only while Resolve is frontmost; it lets them pass through.
 
-LED Mode **External** must be written separately for every scene in which you want to see the feedback. The five shared status LEDs (PLAY, STOP, REW, FF, CYCLE) are re-sent every 0.5 seconds, because a physical SCENE change can clear the device's visible LED state without a MIDI event. This is not polling Resolve.
+LED Mode **External** must be written separately for every scene in which you want to see the feedback. The five shared status LEDs (PLAY, STOP, REW, FF, CYCLE) are re-sent every 0.5 seconds, because a physical SCENE change can clear the device's visible LED state without a MIDI event. Scene 1 keeps the hardware-verified output `channel=0`; Scene 2 also receives the same five status CCs on `channel=1` (pending physical verification). **This does not change transport playback and does not poll Resolve.**
 
 See the [complete Scene 1 mapping](docs/CONTROL_MAP.md) for the remaining buttons and MIDI CC values.
 
@@ -109,7 +109,9 @@ These are practical hardware findings, not a development history:
 
 - **Setup stuck at JOG step 1 or 2:** check Sign Magnitude **CC82** and physically **Write Scene Data**. Receiving **CC86** means the wheel is not in the required Scene 1 mode.
 - **Wrong first fader:** the leftmost **slider is CC2**; the leftmost **rotary knob is CC13**. Step 28 requires the slider's near-full travel.
-- **No External LEDs:** first verify the active scene's LED Mode and Write Scene Data. On the tested Korg, Hammerspoon's MIDI **output** `sendCommand(channel=0)` succeeded physically (all-channel broadcast); `channel=1` returned success but did not light the LED. Incoming physical MIDI channel 1 appears as **channel 0** in callbacks; these two APIs should not be confused.
+- **Scene 1 → Scene 2 makes transport LEDs go dark:** The Korg turns off LEDs when changing scenes; the second scene's LED mode must also be **External**. In KORG KONTROL Editor, select **Scene 2**, open its **Common → LED Mode** setting, choose **External**, then use **Communication → Write Scene Data**. Do not change the Scene 1 JOG configuration or run the 28-step relearn. Close the editor and test with Resolve frontmost: start PLAY in Scene 1, change to Scene 2 and check whether PLAY relights within 0.5 seconds.
+- **Scene 2 still dark after enabling External:** leave Scene 2 selected and run `require("nanokontrol_resolve21").ledProbe()` in Hammerspoon Console. Watch the **MUTE 1** LED: the first 1.5-second test uses output `channel=1`, the second uses `channel=0`. Report **first / second / neither** and the `[NK LED PROBE]` lines. No Resolve shortcuts or firmware changes are made by the probe.
+- **No External LEDs on Scene 1:** first verify Scene 1 LED Mode and Write Scene Data. On the tested Korg, Hammerspoon's MIDI **output** `sendCommand(channel=0)` succeeded physically; `channel=1` returned success but did not light the **Scene 1** LED. This is why the original output 0 remains untouched. Incoming physical MIDI channel 1 appears as **channel 0** in callbacks; do not confuse the two APIs.
 - **Test the output directly:** in **Hammerspoon → Console**, run `require("nanokontrol_resolve21").ledProbe()`. Watch MUTE 1: it briefly tests output channel 1, then output channel 0, and sends OFF for both. The Console logs `[NK LED PROBE]`.
 - **Physical keyboard not reflected in LEDs:** check macOS Accessibility/Input Monitoring permissions and reload Hammerspoon. The keyboard watcher does not consume these keys.
 - **First playback after launch:** transport status starts unknown; there is no direct Resolve play-state query. Pressing a transport key establishes the script's local estimate.
