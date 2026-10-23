@@ -8,8 +8,8 @@ local alerts, midiLogs = {}, {}
 -- Simulated device with a scene-local LED memory and one working output
 -- route per scene. Unlike the Korg, the mock can inspect both states.
 local activeHardwareScene = 1
-local sceneExternal = {[1]=true,[2]=true}
-local sceneLEDs = {[1]={},[2]={}}
+local sceneExternal = {[1]=true,[2]=true,[3]=false,[4]=false,[5]=false}
+local sceneLEDs = {[1]={},[2]={},[3]={},[4]={},[5]={}}
 local function selectHardwareScene(scene)
   activeHardwareScene = scene
   sceneLEDs[scene] = {} -- Korg manual: changing a scene clears all LEDs
@@ -81,10 +81,10 @@ hs = {
       function dev:sendCommand(cmd,meta)
         outputs[#outputs+1]={cmd=cmd,cc=meta.controllerNumber,
           value=meta.controllerValue,channel=meta.channel}
-        -- Model the observed Scene 1 route as 0, and test the Scene 2
-        -- route candidate 1. Real Scene 2 behavior needs hardware proof.
-        local modeledScene = meta.channel == 0 and 1
-          or meta.channel == 1 and 2 or nil
+        -- Scene 1 out=0 and Scene 2 out=1 were tested on hardware.
+        -- Other scenes' output routes are candidate channels 2..4.
+        local modeledScene = meta.channel >= 0 and meta.channel <= 4
+          and meta.channel + 1 or nil
         if modeledScene == activeHardwareScene
           and sceneExternal[modeledScene] then
           sceneLEDs[modeledScene][meta.controllerNumber]=meta.controllerValue
@@ -210,16 +210,20 @@ assert(saved.buttons.splitAll=="cc:0:50")
 -- At successful 28/28 the External-mode controller receives a fresh OFF
 -- on each known LED. Hardware test verified output channel 0 (ALL),
 -- whereas output channel 1 returned true without lighting the Korg.
-assert(#outputs==51,
-  "44 Scene1 resets, 5 Scene2 resets, then two STOP LED status messages")
+assert(#outputs==69,
+  "44 Scene1 resets, 20 other-scene resets, then five STOP status LEDs")
 assert(allLEDBlanked(1,44),"Scene1 initial LED OFF on output channel=0")
-for i=45,49 do
-  assert(outputs[i].channel==1 and outputs[i].value==0,
-    "Scene2 shared LEDs must start OFF on output channel=1")
+for outputChannel=1,4 do
+  for i=45+(outputChannel-1)*5,49+(outputChannel-1)*5 do
+    assert(outputs[i].channel==outputChannel and outputs[i].value==0,
+      "shared LEDs must reset on Scenes 2-5 independently")
+  end
 end
-assert(outputs[50].cc==63 and outputs[50].channel==0
-  and outputs[51].cc==63 and outputs[51].channel==1,
-  "STOP indicator must be latched on both routes after learning")
+for outputChannel=0,4 do
+  local e=outputs[65+outputChannel]
+  assert(e.cc==63 and e.channel==outputChannel and e.value==127,
+    "STOP must latch in each Scene after learning")
+end
 checkTransportLEDs(false,true,false,false,"after 28/28 setup")
 assert(outputs[1].channel==0,
   "normal LED feedback MUST use hardware-verified output=0, not the failed channel=1")
@@ -538,18 +542,20 @@ assert(latestLED(21)==0,"MUTE 1 released LED")
 -- The one LED menu toggle must turn *all* 44 LEDs off, and suspend feedback.
 local after=#outputs
 menuAction("LED visszajelzes BE/KI")
-assert(#outputs==after+49 and allLEDBlanked(after+1,after+44),
-  "LED OFF must clear Scene1's 44 buttons and Scene2's 5 status LEDs")
-for i=after+45,after+49 do
-  assert(outputs[i].value==0 and outputs[i].channel==1,
-    "LED OFF must also clear Scene 2 persistent transport LEDs")
+assert(#outputs==after+64 and allLEDBlanked(after+1,after+44),
+  "LED OFF clears Scene1's 44 buttons plus 4x5 shared LEDs")
+for outputChannel=1,4 do
+  for i=after+45+(outputChannel-1)*5,after+49+(outputChannel-1)*5 do
+    assert(outputs[i].value==0 and outputs[i].channel==outputChannel,
+      "LED OFF must clear shared transport LEDs for each of Scenes2-5")
+  end
 end
 after=#outputs
 cc(21,127);cc(21,0)
 assert(#outputs==after,"LED disabled must send no ACK")
 menuAction("LED visszajelzes BE/KI")
-assert(#outputs>=after+49 and latestLED(80)==0,
-  "LED enable should refresh both scene routes after a clean reset")
+assert(#outputs>=after+64 and latestLED(80)==0,
+  "LED enable should refresh all five scene routes after a clean reset")
 
 -- Hardware-only SCENE switching clears LEDs and emits NO MIDI input.
 -- Scene 2 must still recover without pressing transport, using the second
@@ -563,16 +569,15 @@ assert(sceneLEDs[2][80]==nil,
   "Simulated scene switch must erase Scene2's local transport LEDs")
 local outBeforeHeartbeat=#outputs
 tickLED()
-assert(#outputs==outBeforeHeartbeat+10,
-  "LED heartbeat must re-send five shared CCs on BOTH output routes")
+assert(#outputs==outBeforeHeartbeat+25,
+  "LED heartbeat must re-send five shared CCs on all five routes")
 local order={80,63,58,59,54}
 for i,ccid in ipairs(order) do
-  local first=outputs[outBeforeHeartbeat+i*2-1]
-  local second=outputs[outBeforeHeartbeat+i*2]
-  assert(first.cc==ccid and first.channel==0,
-    "Scene1 transport route must retain channel=0 / "..ccid)
-  assert(second.cc==ccid and second.channel==1,
-    "Scene2 transport route must use channel=1 / "..ccid)
+  for outputChannel=0,4 do
+    local e=outputs[outBeforeHeartbeat+(i-1)*5+outputChannel+1]
+    assert(e.cc==ccid and e.channel==outputChannel,
+      "shared transport wrong Scene output "..outputChannel.."/"..ccid)
+  end
 end
 assert(sceneLEDs[2][80]==127 and sceneLEDs[2][63]==0
     and sceneLEDs[2][58]==0 and sceneLEDs[2][59]==0,
@@ -593,6 +598,23 @@ selectHardwareScene(1)
 tickLED()
 assert(sceneLEDs[1][80]==127,
   "Returning Scene1 must also restore transport feedback without MIDI")
+
+-- Extend silent scene changes to Scenes 3-5. Their factory/old saved
+-- Internal LED modes must first be switched to External on the device.
+for scene=3,5 do
+  selectHardwareScene(scene)
+  tickLED()
+  assert(sceneLEDs[scene][80]==nil,
+    "without External mode, Scene3-5 cannot show software status")
+  sceneExternal[scene]=true -- simulates Write Scene Data by the human
+  tickLED()
+  assert(sceneLEDs[scene][80]==127,
+    "Scene"..scene.." External should restore PLAY status on heartbeat")
+end
+selectHardwareScene(1)
+tickLED()
+assert(sceneLEDs[1][80]==127,
+  "Returning to Scene1 must not disturb its verified LED route")
 
 -- The same PLAY/STOP/FF/REW strip works on Scenes 2 through 5, where
 -- only the MIDI INPUT channel changes (same physical CCs).
@@ -651,20 +673,21 @@ menuAction("MEGSZAKITASA")
 
 
 -- The physical 2026-10-23 test: only LED_PROBE channel=0 illuminated.
--- Scene 1 output=0 is hardware-confirmed. The additional Scene 2 route=1
--- is intentionally limited to the known shared PLAY/STOP/REW/FF/CYCLE CCs.
+-- Output 0 (Scene 1) carries all learned momentary LEDs. Out 1..4 must
+-- never receive a Scene1-only MUTE/SELECT/REC CC, just five shared statuses.
 local sharedCCs={[80]=true,[63]=true,[58]=true,[59]=true,[54]=true}
-local sawScene2=false
+local outputRoutes={}
 for _,e in ipairs(outputs) do
-  if e.channel==1 then
-    sawScene2=true
+  assert(e.channel>=0 and e.channel<=4,
+    "unsupported MIDI output channel "..tostring(e.channel))
+  outputRoutes[e.channel]=true
+  if e.channel~=0 then
     assert(sharedCCs[e.cc],
-      "never emit a Scene1-only knob/MUTE/SELECT LED on Scene2 channel")
-  else
-    assert(e.channel==0,"unsupported MIDI output channel")
+      "never send Scene1-only editing LED to another scene's output")
   end
 end
-assert(sawScene2,"must transmit the separate Scene2 status channel")
+for channel=0,4 do assert(outputRoutes[channel],
+  "missing shared LED output for scene "..(channel+1)) end
 
 -- Direct LED probe must use the SAME hs.midi device, never fire shortcuts,
 -- and compare physical channel 1 vs channel 0 (all-channel broadcast).
