@@ -1,127 +1,134 @@
-# nanoKONTROL Studio — DaVinci Resolve 21 vezérlő / Scene 1
+# Control map — Korg nanoKONTROL Studio / DaVinci Resolve 21
 
-**Állapot:** aktuális \`fix/clean-assignable-relearn\` (draft PR #2). A 2026-10-23-i Hammerspoon MIDI-napló és a 28 lépéses Lua-betanítási sorrend alapján. A lent felsorolt gombfunkciók **a szoftveres hozzárendelések**; a tényleges elmentett \`hs.settings\` a Korgon végzett legutolsó 28/28 sikeres betanítást követi. Az ismert CC-ket nem kell minden alkalommal újratanítani.
+This document describes the **current implemented mapping**, not potential future mappings. The Lua controller works in **Korg Assignable Mode**, sends Resolve keyboard shortcuts, and saves its Scene 1 bindings through a 28-step learn wizard. The CC numbers below match the tested Korg scene configuration; if you reconfigure the hardware, the stored learned bindings are authoritative.
 
-## Alap
+[Installation, configuration, troubleshooting and tests](../README.md)
 
-| Korg kezelőszerv | MIDI / fizikai Scene 1 | DaVinci Resolve |
-| --- | --- | --- |
-| JOG CW / CCW | CC82, Sign Magnitude 1–64 / 65–127 | egy frame előre / vissza |
-| JOG, CYCLE után | ugyanaz a CC82 | SHUTTLE −4…+4, 1 MIDI impulzus = 1 fokozat |
-| MARKER SET + JOG | CC55 nyomva + CC82 | \`V\`, majd \`,\` / \`.\` (kijelölt vágáspont finomítása) |
-| FADER 1 (bal szélső **tolópotméter**) | CC2, 0–127 | középállásos SHUTTLE, ±4 fokozat; 60–68 = STOP |
-| SCENE | hardveres, körkörös 1→2→3→4→5 | A scene-váltást a hardver intézi; a PLAY/CYCLE LED-et a szoftver fél másodpercenként szinkronizálja |
+## MIDI channels and scenes
 
-A MIDI-csatorna a Korg Editorban `1`, a Hammerspoon **bemenetén** `channel=0`. A 2026-10-23-i valós LED-próba alapján a **kimeneten** is `sendCommand(..., channel=0)` működik, de ott ez a Hammerspoon dokumentációjában *minden csatornás küldés*; `channel=1` API-szinten sikerült, de a fizikai LED nem villant fel.
-
-## Az öt scene közös transzportja
-
-A Korg mentésben mind az öt scene **ugyanazokat a fizikai transport CC-ket** tartalmazza, csak a MIDI-csatorna változik:
-
-| Scene | MIDI bemeneti csatorna Hammerspoonban | Fix közös kezelőszervek |
+| Scene | Incoming MIDI channel reported by Hammerspoon | Available actions |
 | --- | ---: | --- |
-| 1 | 0 | PLAY, STOP, REW, FF, Return to Zero, CYCLE, TRACK ◀/▶ |
-| 2 | 1 | ugyanaz |
-| 3 | 2 | ugyanaz |
-| 4 | 3 | ugyanaz |
-| 5 | 4 | ugyanaz |
+| 1 | 0 | Full Scene 1 editing mapping, JOG, Slider 1 SHUTTLE, shared transport |
+| 2 | 1 | Shared transport and navigation only |
+| 3 | 2 | Shared transport and navigation only |
+| 4 | 3 | Shared transport and navigation only |
+| 5 | 4 | Shared transport and navigation only |
 
-A MODE (CYCLE) a Hammerspoon teljes kontrollerállapota, **nem jelenetenként külön mód**. A Scene 2–5 JOG-tárcsája a mentésben eltérő, Continuous/CC86 beállítású; ezeket a jelenlegi Lua **nem** kezeli JOG-ként. Az összes MUTE/SOLO/REC/SELECT/KNOB/FADER akció Scene 1-specifikus marad, kivéve a fenti fizikai transzportgombokat.
+The five Korg scene configurations share the **same transport CC numbers** but use successive MIDI channels. SCENE switching is performed on the controller itself. The Lua controller does not need a MIDI scene-change event to restore the common transport LEDs.
 
-**Scene-váltás közben PLAY tovább fut**; SCENE lenyomására nem küldünk STOP-ot és nem változtatjuk a Resolve állapotát. A Korg helyi LED-memóriája scene-váltáskor törlődhet; ezért a Hammerspoon fél másodpercenként újraküldi a PLAY (CC80) és CYCLE (CC54) pillanatnyi **lokális** LED-állapotát a hardverpróbán működő output channel=0 (all-channel broadcast) paraméterrel, a deduplikációt szándékosan megkerülve. Ez nem küld Resolve-billentyűparancsokat.
+The Scene 1 wheel is **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127. The other scenes in the tested configuration use a **Continuous / CC86** wheel; they are **not** yet mapped to Scene 1 JOG/SHUTTLE. No gain, mute, fader or knob functionality has been implemented for Scene 2–5.
 
-A PLAY/CYCLE visszajelzés csak azokban a scene-ekben lesz fizikailag látható, amelyeket a KORG KONTROL Editorban External LED módra állítottál, és **Write Scene Data** paranccsal ki is írtál a készülékre. A legutóbb elemzett mentésben Scene 1–2 External és Scene 3–5 Internal volt.
+**MIDI channel gotcha:** Scene 1 configured as MIDI channel 1 appears as incoming `channel=0` in Hammerspoon. For LED **output**, the tested device requires `sendCommand(channel=0)` (the all-channel send option). Sending output with `channel=1` was accepted by the API but did not light the hardware LED.
 
-## Transzport és navigáció
+## JOG, SHUTTLE and slider
 
-| Fizikai gomb | CC | Művelet / Resolve-parancs |
-| --- | ---: | --- |
-| CYCLE | 54 | JOG ⇄ SHUTTLE mód |
-| RETURN TO ZERO | 62 | \`⌘←\` |
-| REW | 58 | `K`, majd `J` → −1 sebesség, PLAY+REW LED |
-| FF | 59 | `K`, majd `L`, `L` → +2 sebesség, PLAY+FF LED |
-| STOP | 63 | \`K\` |
-| PLAY | 80 | STOP → `Space` (+1); +1 → `Space` (pause); **FF +2…+4 vagy REW −1…−4 → `K`, `L` (+1)** |
-| nagy REC | 81 | \`⌘Z\` (Undo) |
-| TRACK ◀ | 60 | \`↑\` (előző vágáspont) |
-| TRACK ▶ | 61 | \`↓\` (következő vágáspont) |
-| MARKER SET | 55 | \`V\`, nyomva tartva JOG TRIM |
-| MARKER ◀ | 56 | \`,\` (−1 frame trim) |
-| MARKER ▶ | 57 | \`.\` (+1 frame trim) |
-
-**Fontos:** ezek a CC-k a felvett 28 lépéses Hammerspoon MIDI-napló alapján szerepelnek, nem feltétlenül intuitívak a Korg Editor grafikus elrendezésében. A betanító továbbra is megtartja a tényleges gombhoz eltárolt CC-ket.
-
-## Nyolc csatorna — gombsorok
-
-| Csatorna | MUTE (CC21–28) | SOLO (CC) | REC (CC38–45) | SELECT (CC46–53) |
-| --- | --- | --- | --- | --- |
-| 1 | CAM 1 \`1\` | 29 — szabad | 38 — szabad | Cut Page (46) |
-| 2 | CAM 2 \`2\` | 30 — szabad | 39 — szabad | Edit Page (47) |
-| 3 | CAM 3 \`3\` | 31 — szabad | 40 — szabad | Trim \`T\` (48) |
-| 4 | CAM 4 \`4\` | 33 — szabad | 41 — szabad | Selection \`A\` (49) |
-| 5 | In \`I\` | 34 — szabad | 42 — szabad | Deselect + \`⌘B\` (50) |
-| 6 | Out \`O\` | 35 — szabad | 43 — szabad | szabad (51) |
-| 7 | Clear In/Out \`⌥X\` | 36 — szabad | 44 — szabad | szabad (52) |
-| 8 | Escape \`Esc\` | 37 — szabad | 45 — szabad | szabad (53) |
-
-**CAM1–4** a Resolve megfelelő Cut/Sync Bin nézetében értelmezett kiválasztás; nem jelent automatikus *Source Overwrite*-ot. **SELECT 5** a kijelölést megszünteti, majd \`⌘B\`-t küld; a Resolve-ban engedélyezett, nem zárolt sávokra vonatkozik.
-
-Az eddig kiosztatlan SOLO/REC/SELECT gombok nem hajtanak végre Resolve-műveletet, de **External LED** módban röviden világítanak lenyomva.
-
-## Tekerők és tolópotméterek
-
-| Csatorna | Forgó poti (CC) | Tolópotméter (CC) |
+| Physical control | Scene 1 CC | Current action |
 | --- | --- | --- |
-| 1 | 13 — **szabad** | **2 — SHUTTLE** |
-| 2 | 14 — szabad | 3 — szabad |
-| 3 | 15 — szabad | 4 — szabad |
-| 4 | 16 — szabad | 5 — szabad |
-| 5 | 17 — szabad | 6 — szabad |
-| 6 | 18 — szabad | 8 — szabad |
-| 7 | 19 — szabad | 9 — szabad |
-| 8 | 20 — szabad | 12 — szabad |
+| Main JOG wheel | 82 | In JOG mode: one frame right/left per MIDI pulse |
+| Main JOG wheel, CYCLE = SHUTTLE | 82 | One pulse = one signed speed step, limited to −4…+4 |
+| Hold MARKER SET + JOG | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
+| Slider/Fader 1 (leftmost **slider**) | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
+| CYCLE | 54 | Toggle JOG / SHUTTLE; stop transport while changing modes |
 
-A \`szabad\` kezelőszerv MIDI-t küld, de a jelenlegi Lua nem rendelt hozzá Resolve-parancsot.
+SHUTTLE wheel changes are batched over **45 ms** to combine closely spaced MIDI pulses. The shared signed gear is used by the wheel, the FF/REW transport buttons, and normalizing playback with PLAY. Slider 1 has its own physical pickup/center arming rule.
 
-## External LED mód — Scene 1
+### Signed playback speeds and LEDs
 
-A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítást a Korgra is ki kell írni (*Communication → Write Scene Data*).
-
-| LED | Visszajelzés |
-| --- | --- |
-| PLAY (CC80) | Világít minden mozgó lejátszásnál: Space, J, L, SHUTTLE/FADER ±1…±4. SHUTTLE +1 és egyetlen L esetén **csak PLAY**, FF nélkül |
-| STOP (CC63) | Megálláskor **folyamatosan világít**, felengedés után is; következő lejátszáskor kialszik |
-| REW (CC58) | Visszafelé mozgásnál **világít** a PLAY mellett, pl. J vagy SHUTTLE −1…−4 |
-| FF (CC59) | **Csak gyorsított előre** a PLAY mellett: SHUTTLE/FADER +2…+4, vagy legalább két egymást követő fizikai L |
-| CYCLE (CC54) | SHUTTLE mód aktív → világít; JOG mód → kialszik |
-| MUTE, SELECT, MARKER, SOLO, REC és egyéb gombok | **Lenyomásra fel**, felengedésre le |
-| NK menü → LED visszajelzés KI | mind a **44 ismert Scene 1 gomb LED-je kikapcsolva** |
-
-**SHUTTLE tárcsa = előjeles sebesség:** jobbra +1, balra −1 fokozat; a nulla STOP. A program változáskor `K`-val megállít, majd a célfokozat abszolút értékének megfelelő számú `L` vagy `J` billentyűt küld. A LED-tábla a fokozatokhoz:
-
-| Pozíció | Resolve JKL | Visszajelzés |
+| Requested gear | Shortcuts sent for SHUTTLE | Illuminated transport LEDs |
 | ---: | --- | --- |
-| −4…−2 | K, J×2…4 | PLAY + REW |
-| −1 | K, J | PLAY + REW (1× vissza) |
-| 0 | K | STOP |
-| +1 | K, L | PLAY (1× előre) |
-| +2…+4 | K, L×2…4 | PLAY + FF |
+| −4 … −2 | `K` followed by 2–4 × `J` | PLAY + REW |
+| −1 | `K, J` | PLAY + REW |
+| 0 | `K` | STOP |
+| +1 | `K, L` | PLAY only |
+| +2 … +4 | `K` followed by 2–4 × `L` | PLAY + FF |
 
-**Példák:** +2 → egyet balra = +1 (csak PLAY); +1 → egyet balra = 0 (STOP); 0 → egyet balra = −1 (PLAY+REW); −1 → egyet jobbra = 0 (STOP). **STOP → Korg FF** = +2 (K, L, L; PLAY+FF); innen **Korg PLAY** = +1 (K, L; csak PLAY), és újabb PLAY már STOP/PAUSE. **STOP → Korg REW** = −1 (K, J; PLAY+REW). A gomb és a tárcsa ugyanazt az előjeles fokozatot állítja, így az első tárcsakattanás mindig a megfelelő szomszédos állapotra lép. Ismételt FF megnyomás esetén a gomb fixen +2-re állít, nem növeli tovább a fokozatot.
+**Key transitions currently implemented:**
 
-**Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE/J/K/L billentyűket** a Hammerspoon figyeli, módosítók és billentyűismétlés nélkül, és továbbengedi a Resolve felé. A Korg saját szimulált J/K/L/Space eseményeit rövid védőablak kizárja a dupla számolásból. A transzport-led visszajelzés scene-váltás után fél másodpercen belül helyreállítódhat a PLAY/STOP/REW/FF/CYCLE újraküldésétől. A betöltéskor még ismeretlen állapot esetén **egyik transzport LED sem világít**, amíg nem láttunk parancsot. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
+- STOP → **FF button**: +2 (`K, L, L`); FF and PLAY LEDs remain on after release.
+- FF +2 → **PLAY button**: +1 (`K, L`); FF goes off, PLAY stays on.
+- FF +2 → **one wheel tick left** in SHUTTLE: +1, same LED result.
+- PLAY +1 → **PLAY again**: `Space` pause/stop. STOP LED comes on.
+- STOP → **REW button**: −1 (`K, J`); PLAY and REW LEDs on.
+- REW −1 → **one wheel tick right** in SHUTTLE: 0 (STOP).
+- REW −1 → **PLAY button**: forward +1 (`K, L`).
 
-**A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. A PLAY és CYCLE LED-állapot mind az öt scene között közös; a **nem transzport** gombok Resolve-funkciói Scene 1-re korlátozódnak.
+The **FF button always selects +2**; it does not increase the gear every time it is pressed. The **REW button always selects −1**. A physical Space/J/K/L key used while Resolve is frontmost is observed for local status tracking; the key event is not swallowed. Lua-generated key events are guarded against being counted a second time.
 
-## Rövid telepítés / próba
+The software tracks **requested/observed commands**, not the actual Resolve transport API state. Mouse-driven playback changes and already-running playback at Hammerspoon startup may leave the LEDs out of sync.
 
-~~~sh
-cd ~/Projects/davinci-nanokontrolstudio
-git switch fix/clean-assignable-relearn
-git pull --ff-only
-sh ./install.command
-~~~
+## Shared transport and navigation buttons (Scenes 1–5)
 
-Hammerspoon → Reload Config. A már **sikeresen eltárolt 28/28 kalibráció** megmarad, nincs szükség újbóli betanításra.
+| Korg button | CC | Resolve shortcut / action |
+| --- | ---: | --- |
+| CYCLE | 54 | Switch JOG ↔ SHUTTLE; stop |
+| RETURN TO ZERO | 62 | `Cmd+Left` — return to timeline start |
+| REW | 58 | `K, J` — reverse at −1 |
+| FF | 59 | `K, L, L` — forward at +2 |
+| STOP | 63 | `K` — stop |
+| PLAY | 80 | STOP → `Space` (+1); +1 → `Space` (pause); other moving gears → `K, L` (+1) |
+| TRACK ◀ | 60 | `Up` — previous edit |
+| TRACK ▶ | 61 | `Down` — next edit |
 
-A duplikált Resolve-timeline-ban: **PLAY, PLAY, STOP; CYCLE kétszer; MUTE 1 lenyom/felenged; SELECT 1; SOLO 1**. Az NK menüben a *LED (Scene 1 External)* sor MIDI-kimeneti állapotot is mutat. A **LED visszajelzés BE/KI** menüponttal az összes ismert LED lenullázható.
+The following Scene 1 marker buttons are **not** global across the other scenes:
+
+| Scene 1 button | CC | Shortcut / action |
+| --- | ---: | --- |
+| Large transport REC | 81 | `Cmd+Z` — Undo |
+| MARKER SET | 55 | `V` edit-point selection; hold for JOG trim |
+| MARKER ◀ | 56 | `,` — trim left |
+| MARKER ▶ | 57 | `.` — trim right |
+
+## Scene 1 — eight channel strips
+
+The printed Korg **MUTE** button names below are *physical labels*, not Resolve track mute functions in Scene 1.
+
+| Strip | MUTE (CC21–28) | SOLO CC (unassigned) | REC CC (unassigned) | SELECT (CC46–53) |
+| ---: | --- | ---: | ---: | --- |
+| 1 | CC21 → keyboard `1` (CAM 1) | 29 | 38 | CC46 → Cut page |
+| 2 | CC22 → keyboard `2` (CAM 2) | 30 | 39 | CC47 → Edit page |
+| 3 | CC23 → keyboard `3` (CAM 3) | 31 | 40 | CC48 → `T` (Trim tool) |
+| 4 | CC24 → keyboard `4` (CAM 4) | 33 | 41 | CC49 → `A` (Selection tool) |
+| 5 | CC25 → `I` (In point) | 34 | 42 | CC50 → Deselect (`Cmd+Shift+A`), then Split (`Cmd+B`) |
+| 6 | CC26 → `O` (Out point) | 35 | 43 | CC51 → unassigned |
+| 7 | CC27 → `Alt+X` (Clear In/Out) | 36 | 44 | CC52 → unassigned |
+| 8 | CC28 → `Esc` | 37 | 45 | CC53 → unassigned |
+
+CAM 1–4 sends the **number keys** only; camera selection depends on the appropriate Resolve Cut/Sync Bin context and keyboard mapping. This is not a Resolve API multicam switch or Source Overwrite operation. Cut/Edit page selection uses Resolve's application menu, not an arbitrary keystroke. The Split action operates on whatever unlocked/enabled tracks and selection Resolve currently allows.
+
+SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action today. With External LED feedback enabled, their physical press/release still lights the corresponding LED momentarily.
+
+## Rotary knobs and sliders
+
+| Strip | Rotary knob (CC) | Slider/fader (CC) |
+| ---: | --- | --- |
+| 1 | 13 — unassigned | **2 — SHUTTLE** |
+| 2 | 14 — unassigned | 3 — unassigned |
+| 3 | 15 — unassigned | 4 — unassigned |
+| 4 | 16 — unassigned | 5 — unassigned |
+| 5 | 17 — unassigned | 6 — unassigned |
+| 6 | 18 — unassigned | 8 — unassigned |
+| 7 | 19 — unassigned | 9 — unassigned |
+| 8 | 20 — unassigned | 12 — unassigned |
+
+Unassigned controls may still send MIDI data to Hammerspoon; the current Lua simply does not associate them with a Resolve action. **There is no Scene 2 gain control or actual track mute implementation yet.**
+
+## Persistent LED feedback
+
+In KORG KONTROL Editor, enable **LED Mode = External** and **Write Scene Data** for each scene that should display the transport LEDs.
+
+| LED | When it is on |
+| --- | --- |
+| PLAY / CC80 | Any known moving transport state (+1…+4 or −1…−4) |
+| STOP / CC63 | Known stopped state (gear 0) |
+| REW / CC58 | Reverse playback (−1…−4), together with PLAY |
+| FF / CC59 | Accelerated forward playback (+2…+4), together with PLAY |
+| CYCLE / CC54 | SHUTTLE mode selected |
+| Other configured buttons | While physically pressed; off on release |
+
+The status LEDs are refreshed every **0.5 seconds**, including after a hardware-only SCENE change. When the state is unknown (for example, just after a configuration reload) the four transport LEDs are left off rather than claiming Resolve is stopped. The **LED feedback ON/OFF** item in the Hammerspoon NK menu can blank all 44 known Scene 1 button LEDs.
+
+## Updating or relearning
+
+The 28-step Scene 1 wizard stores its bindings only on successful completion; these are preserved across `install.command` upgrades. Do **not** relearn merely because the Lua file or these documents change.
+
+If a CC mapping was deliberately changed in KORG KONTROL Editor, **Write Scene Data**, then run the complete relearn. No half-learned mapping is saved. See the [README setup section](../README.md#run-the-28-step-setup).
