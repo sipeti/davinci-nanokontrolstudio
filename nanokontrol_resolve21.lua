@@ -365,26 +365,34 @@ local function action(name)
     title()
   elseif name == "begin" then key("left",{"cmd"})
   elseif name == "rew" then
-    stop(); key("j")
-    transportIntent, transportDirection, transportGear = "shuttle", -1, -1
-    refreshStateLEDs()
+    -- A single REW from STOP means reverse 1x. Keep wheel speed in sync.
+    shuttle(-1,"rew")
   elseif name == "ff" then
-    stop(); key("l")
-    transportIntent, transportDirection, transportGear = "shuttle", 1, 1
-    refreshStateLEDs()
+    -- Deliberately start at forward 2x (K, L, L), not forward 1x.
+    -- Using the shared shuttle setter lets one counterclockwise wheel
+    -- pulse subsequently step from +2 to +1.
+    shuttle(2,"ff")
   elseif name == "stop" then stop()
   elseif name == "play" then
-    -- Do NOT send K first: PLAY is a true Space toggle. A second PLAY
-    -- pauses/stops rather than sending K then immediately restarting.
-    local wasRunning = (transportIntent == "playing"
-      or transportIntent == "shuttle" or speed ~= 0)
-    cancelShuttle()
-    speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
-    key("space")
-    transportIntent, transportDirection, transportGear =
-      wasRunning and "stopped" or "playing", 0, wasRunning and 0 or 1
-    refreshStateLEDs()
-    title()
+    -- PLAY is a normal-speed command when rewinding or fast-shuttling.
+    -- From +2 it must DOWN-SHIFT to +1 (K, L), not pause via Space.
+    -- From -1 it changes direction to normal forward 1x.
+    if transportIntent == "shuttle" and transportGear ~= 1 then
+      faderArmed, faderActive = false, false
+      shuttle(1,"play")
+    else
+      -- Preserve the familiar PLAY -> PLAY = pause/stop behavior when
+      -- already at normal speed (or Space-toggle when stopped).
+      local wasRunning = (transportIntent == "playing"
+        or transportIntent == "shuttle" or speed ~= 0)
+      cancelShuttle()
+      speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
+      key("space")
+      transportIntent, transportDirection, transportGear =
+        wasRunning and "stopped" or "playing", 0, wasRunning and 0 or 1
+      refreshStateLEDs()
+      title()
+    end
   elseif name == "undo" then key("z",{"cmd"})
   elseif name == "trackPrev" then key("up")
   elseif name == "trackNext" then key("down")
@@ -722,7 +730,11 @@ local function onKeyboardDown(event)
     nextGear = 1
   end
   cancelShuttle()
-  speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
+  -- Reuse the same signed speed on the physical keyboard and the
+  -- SHUTTLE wheel; after a real L,L, wheel-left means +2 -> +1.
+  speed = mode == "SHUTTLE" and nextGear or 0
+  shuttleSource = speed ~= 0 and "keyboard" or nil
+  faderArmed, faderActive = false, false
   transportGear = nextGear
   if nextGear == 0 then
     transportIntent, transportDirection = "stopped", 0
