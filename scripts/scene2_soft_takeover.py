@@ -1,0 +1,151 @@
+"""Pure, write-free Scene 2 clip-gain pickup logic.
+
+No Resolve imports, SetProperties, MIDI callback or I/O in this module.
+A future integration must supply an authoritative fresh snapshot for each
+physical event, prove clip automation is safe, and separately perform a
+revalidated setter/verification before calling confirm().
+"""
+
+from dataclasses import dataclass
+import math
+
+
+# Absolute CC13..20 in Korg Scene 2 (incoming zero-based MIDI channel 1).
+SCENE2_CHANNEL = 1
+FIRST_KNOB_CC = 13
+LAST_KNOB_CC = 20
+EPSILON_DB = 0.055
+PICKUP_WINDOW_DB = 0.55
+MAX_SINGLE_MOVE_DB = 1.20
+
+
+@dataclass(frozen=True)
+class Decision:
+    state: str
+    strip: int = 0
+    proposed_db: float = None
+    reason: str = ""
+
+
+def gain_for_cc(value):
+    """Monotonic -100..+30 dB map; ~0.44 dB/step from -24 to +18."""
+    if type(value) is not int or not 0 <= value <= 127:
+        raise ValueError("MIDI value must be a CC integer in 0..127")
+    if value <= 16:
+        gain = -100.0 + (76.0 * value / 16.0)
+    elif value <= 111:
+        gain = -24.0 + (42.0 * (value - 16) / 95.0)
+    else:
+        gain = 18.0 + (12.0 * (value - 111) / 16.0)
+    return round(gain, 3)
+
+
+def _valid_identity(identity, strip):
+    """Require (project UID, timeline UID, track, clip UID, start, end)."""
+    return (
+        isinstance(identity, tuple) and len(identity) == 6
+        and all(value is not None and value != "" for value in identity)
+        and all(isinstance(identity[index], str) for index in (0, 1, 3))
+        and type(identity[2]) is int and identity[2] == strip
+        and all(type(identity[index]) in (int, float) and
+                math.isfinite(identity[index]) for index in (4, 5))
+        and identity[4] < identity[5]
+    )
+
+
+def _valid_db(db):
+    return type(db) in (float, int) and math.isfinite(db) and -100 <= db <= 30
+
+
+class SoftTakeover:
+    """Independent, fail-closed pickup for eight Scene 2 rotary knobs.
+
+    feed() returns an untrusted WRITE_INTENT, never a performed write. The
+    caller MUST verify project, timeline, item, playhead, automation state
+    and fresh dB once again immediately before SetProperties; then verify
+    setter/readback and call confirm(). Any failure must call reject().
+    """
+
+    def __init__(self):
+        self._strips = {}
+
+    def reset(self):
+        """Required on scene change, project/timeline switch and reconnect."""
+        self._strips.clear()
+
+    def reject(self, strip):
+        self._strips.pop(strip, None)
+
+    def state(self, strip):
+        return self._strips.get(strip, {}).get("state", "DISABLED")
+
+    def feed(self, channel, cc, value, identity=None, observed_db=None,
+             authority_ok=False):
+        """Process exactly one incoming CC event and a FRESH gain snapshot."""
+        if type(channel) is not int or channel != SCENE2_CHANNEL:
+            # No scene-change event is guaranteed by hardware; invalidate on
+            # every observed different input scene (and explicitly on switch).
+            self.reset()
+            return Decision("DISABLED", reason="outside Scene 2")
+        if type(cc) is not int or not FIRST_KNOB_CC <= cc <= LAST_KNOB_CC:
+            return Decision("IGNORED", reason="not a Scene 2 knob")
+        strip = cc - FIRST_KNOB_CC + 1
+        if type(value) is not int or not 0 <= value <= 127:
+            self.reject(strip)
+            return Decision("DISABLED", strip, reason="invalid MIDI CC value")
+        if (authority_ok is not True or
+                not _valid_identity(identity, strip) or
+                not _valid_db(observed_db)):
+            self.reject(strip)
+            return Decision("DISABLED", strip, reason="missing trusted snapshot")
+        current = self._strips.get(strip)
+        if current is None or current["identity"] != identity or abs(
+                current["expected_db"] - observed_db) > EPSILON_DB:
+            # New clip or an external edit MUST rearm, never reuse position.
+            self._strips[strip] = {
+                "identity": identity, "expected_db": observed_db,
+                "state": "PICKUP_PENDING", "last_cc": value,
+            }
+            return Decision("PICKUP_PENDING", strip,
+                            reason="new target or out-of-band gain")
+        if current["state"] == "AWAIT_ACK":
+            # No second intent until the previous setter result is verified.
+            self.reject(strip)
+            return Decision("DISABLED", strip, reason="unacknowledged intent")
+
+        previous_cc = current["last_cc"]
+        current["last_cc"] = value
+        if current["state"] == "PICKUP_PENDING":
+            if previous_cc != value and abs(
+                    gain_for_cc(value) - observed_db) <= PICKUP_WINDOW_DB:
+                current["state"] = "ENGAGED"
+                # Even successful pickup does NOT write on this event.
+                return Decision("ENGAGED", strip, reason="pickup; no write")
+            return Decision("PICKUP_PENDING", strip, reason="waiting for pickup")
+
+        if previous_cc == value:
+            return Decision("ENGAGED", strip, reason="no physical movement")
+        wanted_db = gain_for_cc(value)
+        if abs(wanted_db - observed_db) > MAX_SINGLE_MOVE_DB:
+            self.reject(strip)
+            return Decision("DISABLED", strip, reason="excessive volume jump")
+        if abs(wanted_db - observed_db) <= EPSILON_DB:
+            return Decision("ENGAGED", strip, reason="no gain change")
+        current["state"] = "AWAIT_ACK"
+        current["wanted_db"] = wanted_db
+        return Decision("WRITE_INTENT", strip, wanted_db,
+                        "needs fresh context check, setter and readback")
+
+    def confirm(self, strip, identity, verified_db, setter_succeeded):
+        """Accept only an explicitly verified WRITE_INTENT on same item."""
+        current = self._strips.get(strip)
+        if (current is None or current["state"] != "AWAIT_ACK" or
+                current["identity"] != identity or setter_succeeded is not True
+                or not _valid_db(verified_db) or abs(
+                    verified_db - current["wanted_db"]) > EPSILON_DB):
+            self.reject(strip)
+            return False
+        current["expected_db"] = verified_db
+        current["state"] = "ENGAGED"
+        current.pop("wanted_db", None)
+        return True
