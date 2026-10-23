@@ -2,7 +2,7 @@
 
 A lightweight, keyboard-driven MIDI control surface for **DaVinci Resolve 21 on macOS**, implemented in **Hammerspoon/Lua**. Use the Korg nanoKONTROL Studio to jog through frames, shuttle playback, navigate edits, trigger common editing shortcuts, and see transport status on the controller LEDs.
 
-**Tested on real hardware:** nanoKONTROL Studio in USB / Assignable Mode, DaVinci Resolve Studio 21, and Hammerspoon. The script does **not** emulate Mackie Control/HUI and does **not** require Resolve's scripting API.
+**Tested on real hardware:** nanoKONTROL Studio in USB / Assignable Mode, DaVinci Resolve Studio 21, and Hammerspoon. The five-scene JOG/SHUTTLE controls and the PLAY LED preservation while jogging during playback were confirmed on the physical controller. The script does **not** emulate Mackie Control/HUI and does **not** require Resolve's scripting API.
 
 [Full button, CC, knob and fader mapping](docs/CONTROL_MAP.md)
 
@@ -114,6 +114,8 @@ A cancelled or incomplete calibration **does not overwrite** the last successful
 
 **Examples:** STOP → FF (+2) → PLAY (+1) → PLAY (pause). Or STOP → FF (+2) → one SHUTTLE tick left (+1). STOP → REW (−1) → one tick right (STOP).
 
+**JOG while playing:** frame nudges do not reset the last known PLAY/STOP/REW/FF LEDs or the script's speed estimate. A subsequent PLAY still uses the previously observed state. This is intentional command feedback, not proof of the timeline's actual playback state.
+
 **Lighting reflects observed requests, not Resolve's actual transport state.** An on-screen mouse click, a customized shortcut, or playback already running when the script loads may not be tracked. A Hammerspoon event tap watches the unmodified physical Space/J/K/L keys only while Resolve is frontmost; it lets them pass through.
 
 LED Mode **External** must be written separately for every scene in which you want transport feedback. The five shared status LEDs (PLAY, STOP, REW, FF, CYCLE) are re-sent every 0.5 seconds after hardware scene changes, on output channels 0–4. **Scene 1 and Scene 2 outputs are hardware-verified**; outputs for Scenes 3–5 are not yet hardware-confirmed. **This does not change playback or poll Resolve.**
@@ -148,4 +150,4 @@ lua5.4 tests/clean_controller.lua
 
 GitHub Actions runs this on pull requests and on `main`. A green simulated test does not replace final verification on real Korg hardware and a disposable Resolve timeline. Contributions and reports with exact hardware mode, incoming CC/channel, macOS version and test steps are particularly helpful.
 
-The current program intentionally keeps a small scope: no MIDI/HUI emulation, no Resolve scripting, and no unverified Scene 2 audio-mixing functionality. Scenes 3–5 LED outputs require physical acceptance before this feature is considered released.
+The current program intentionally keeps a small scope: no MIDI/HUI emulation, no Resolve scripting, and no Scene 2 audio-mixing functionality. JOG/SHUTTLE across all five scenes has been physically accepted; independent validation of the Scene 3–5 output LED routes is still welcome.
