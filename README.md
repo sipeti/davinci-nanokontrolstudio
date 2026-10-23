@@ -3,15 +3,16 @@
 **Kísérleti, egyszerű változat; a működő v1.2 továbbra is a main ágon marad.**
 Nincs HUI/Mackie emuláció, nincs kimenő LED MIDI CC, nincs Resolve API-szinkron. Egyetlen 28 lépéses betanító a teljes Scene 1 kiosztáshoz.
 
-## 0. Biztonsági mentés és factory reset
+## 0. Biztonsági mentés; gyári visszaállítás NEM kötelező
 
-Mentsd a Korg teljes Scene Set és Global Data konfigurációját a KORG KONTROL Editorban. A factory reset a Korg hardverbeállításait visszaállítja!
+Mentsd a Korg teljes Scene Set és Global Data konfigurációját a KORG KONTROL Editorban. Ha az Editorban `Assignable` látszik, és a Scene 1 JOG Sign Magnitude/Const/CC82, illetve SLIDER 1 CC2 már be van állítva, **ne végezz felesleges factory resetet**.
 
+**Csak szükség esetén**, a hivatalos nanoKONTROL Studio kézikönyv 17. oldala szerint:
 1. Korg hátul → Standby.
-2. Tartsd lenyomva: **SCENE + TRACK ◀ (balra mutató track-gomb) + STOP**.
-3. Kapcsold USB állásba, és várd meg az öt Scene LED villogásának végét. Ne kapcsold ki villogás alatt.
+2. Tartsd lenyomva: **SCENE + RETURN TO ZERO (`|◀`, a transzport legbaloldalibb gombja) + STOP**. **Nem** a TRACK ◀ gomb!
+3. Kapcsold USB állásba, és várd meg a Scene gomb és az öt Scene LED villogásának végét. Ne kapcsold ki villogás alatt.
 
-Hivatalos kézikönyv, 17. oldal: https://cdn.korg.com/us/support/download/files/d66996c95d7d55be1aa119b8fbb88e71.pdf
+A reset a Korg hardverkonfigurációját felülírja. Hivatalos kézikönyv: https://cdn.korg.com/us/support/download/files/d66996c95d7d55be1aa119b8fbb88e71.pdf
 
 ## 1. Assignable Mode — nem HUI, nem Mackie
 
@@ -19,13 +20,17 @@ Hivatalos kézikönyv, 17. oldal: https://cdn.korg.com/us/support/download/files
 2. **SCENE + CYCLE** együtt nyomva, majd USB bekapcsolás.
 3. KORG KONTROL Editor:
    - Global Controller Mode = **Assignable**
-   - Global LED Mode = **Internal**
+   - **Scene 1 → LED Mode = Internal** (a kézikönyv Scene Parameters része, nem az Editor Global/Power Management nézete)
    - Scene 1, Global MIDI Channel = 1
    - JOG = **Sign Magnitude**, Acceleration = **Const**, CC 82
    - Minden betanítandó gomb: CC / **Momentary**, On 127 / Off 0
    - A bal első **tolópotméter** FADER 1 = CC 2; a bal első **tekerő** nem FADER 1.
 4. Communication → Write Scene Data / Write Global Data a Korgra (mindig a megfelelő szerkesztett beállítást írd ki).
 5. Teszthez maradj **Scene 1**-en, és ne használd párhuzamosan másik programban a HUI/Mackie control surface-t.
+
+A Global ablakban látható **Use Scene Button as Scrub = Enable** csak DAW Mixer Control Mode-ban vonatkozik a Scrub funkcióra; Assignable-hez opcionálisan `Disable` lehet. **USB Auto LED Off** csökkenti a fényerőt inaktivitáskor; az **USB LED Illumination** díszkivilágítást kapcsol be tétlenség után. A díszkivilágítás elkerülésére azt állítsd `Disable`-re, ha zavar. Ezek **nem** a Scene 1 `LED Mode = Internal/External` beállításai.
+
+A képernyőn látható Scene 1 fizikai kiosztásban: **első tolópotméter = CC2**, **első forgó poti = CC13**.
 
 Korg hivatalos útmutató: https://support.korg.co.uk/en-US/using-the-nanokontrol-studio-with-logic-in-assignable-mode-405741
 
