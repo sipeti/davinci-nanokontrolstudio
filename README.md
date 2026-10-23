@@ -63,6 +63,8 @@ NK menü → **TELJES UJRABETANITAS (28 lepes)**. A menüsor jelzi: NK SETUP 1/2
 | 23–27 | SELECT 1–5 (Cut / Edit / Trim / Selection / Cmd+B Split) |
 | **28** | **FADER 1, a legbaloldalibb TOLÓPOTMÉTER** teljesen le, majd teljesen fel |
 
+**JOG kalibráció:** Sign Magnitude esetén CC82 / 1–64 = jobbra, CC82 / 65–127 = balra. Ha a 2/28-as lépés nem lép tovább, az NK menüben nézd az **utolsó MIDI** sort. Ha `cc:1:86` vagy `cc:1:82=1..64` érkezik balra tekerésre, akkor a fizikai eszköz konfigurációját kell ellenőrizni. A `KORG KONTROL Editor` megjelenített beállítása önmagában nem azonos a készülékben tárolt állapottal: **Communication → Write Scene Data**, megerősítés, majd új próba. A frissített betanító már **nem engedi tovább a CC86-ot az 1/28 lépésnél**, és egyszeri figyelmeztetést mutat a nem megfelelő MIDI-kódra.
+
 A gomboknál a **lenyomás ÉS a felengedés** fejezi be a lépést. A poti/fader CC-jeleket nem tanulja meg gombként. Az utolsó lépésben **kizárólag CC 1:2** és szinte teljes 0–127 tartomány fogadható el, így nem csúszhat be helyette az első tekerő poti.
 
 A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik felül. Megszakításkor semmi nincs félkészen elmentve.
