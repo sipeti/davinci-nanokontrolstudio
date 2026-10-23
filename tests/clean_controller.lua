@@ -111,9 +111,11 @@ assert(menus.title=="NK SETUP 2/28","clockwise magnitude must not pass CCW")
 assert(alerts[#alerts]:find("JOG BALRA",1,true),"wrong CCW magnitude must be diagnosed")
 cc(82,65)
 assert(menus.title=="NK SETUP 3/28")
--- 25 unique button CCs. Press only must NOT advance (momentary release required).
+-- 25 real button CCs in learn order, captured by the Korg MIDI logger.
+local buttonIDs = {54,62,58,59,63,80,81,60,61,55,56,57,
+  21,22,23,24,25,26,27,28,46,47,48,49,50}
 for i=1,25 do
-  local ccId=29+i -- values 30..54
+  local ccId=buttonIDs[i]
   assert(menus.title=="NK SETUP "..(i+2).."/28")
   cc(ccId,127)
   assert(menus.title=="NK SETUP "..(i+2).."/28","advanced before release")
@@ -130,12 +132,12 @@ cc(2,0);cc(2,127)
 assert(menus.title=="NK JOG")
 assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:0:2")
 assert(saved.wheel=="cc:0:82")
-assert(saved.buttons.splitAll=="cc:0:54")
+assert(saved.buttons.splitAll=="cc:0:50")
 -- At successful 28/28 the External-mode controller receives a fresh OFF
 -- on each known LED, and the input channel 0 must map to OUTPUT channel 1.
 assert(#outputs==44,"expected 44 known Scene 1 LEDs reset after setup")
 assert(allLEDBlanked(1),"initial LED OFF commands need output channel=1")
-assert(latestLED(35)==0,"PLAY should start unlit")
+assert(latestLED(80)==0,"PLAY should start unlit")
 -- The physical fader can't start transport until it has been centered.
 keys={}
 cc(2,127)
@@ -152,22 +154,22 @@ assert(#keys==n,"wheel should not trim during live fader shuttle")
 cc(2,64)
 assert(keyCount("k")==2,"center STOP must send K")
 -- STOP button disarms fader, must center again.
-cc(34,127) -- step 5: STOP
+cc(63,127) -- physical STOP (CC63)
 n=#keys
 cc(2,127);runPending()
 assert(#keys==n,"STOP must disarm fader")
 cc(2,64);cc(2,0);runPending()
 assert(keyCount("j")==4,"4 reverse JKL gears")
 -- A held marker changes wheel to edit-point nudge; release cancels.
-cc(2,64);cc(35,127) -- PLAY action stops fader
-cc(39,127) -- step 10: editSelect 
+cc(2,64);cc(80,127) -- physical PLAY
+cc(55,127) -- physical MARKER SET 
 cc(82,1)
 assert(keyCount(".")==1,"held MARKER SET should trim")
-cc(39,0)
+cc(55,0)
 cc(82,1)
 assert(keyCount("right")>=1,"release restores plain JOG")
 -- Wheel SHUTTLE response must be immediate (one tick) and burst-coalesced.
-cc(30,127) -- CYCLE after JOG; old full-learn mapping is CC30
+cc(54,127) -- physical CYCLE (CC54)
 assert(menus.title=="NK SHUTTLE","CYCLE should switch to wheel SHUTTLE")
 keys={}
 cc(82,1)
@@ -195,12 +197,12 @@ assert(keyCount("k")==1 and keyCount("l")==3,
 assert(menus.title=="NK SHUTTLE +3")
 keys={}
 cc(82,65) -- queue a wheel update
-cc(34,127) -- physical STOP must cancel queued wheel changes
+cc(63,127) -- physical STOP must cancel queued wheel changes
 runPending()
 assert(keyCount("k")==1 and keyCount("l")==0,
   "STOP must cancel a pending wheel batch")
 assert(menus.title=="NK SHUTTLE")
-cc(30,127) -- CYCLE returns to JOG
+cc(54,127) -- physical CYCLE returns to JOG
 assert(menus.title=="NK JOG")
 keys={}
 cc(82,1)
@@ -221,34 +223,34 @@ assert(latestLED(29)==0,"unbound button LED release feedback")
 
 -- Active PLAY light reflects local Space requests, not an unverified Resolve API.
 keys={}
-cc(35,127);cc(35,0)
+cc(80,127);cc(80,0)
 assert(keyCount("space")==1 and keyCount("k")==0,
   "PLAY must send Space without a preceding K")
-assert(latestLED(35)==127,"first PLAY must latch the local request LED")
-cc(35,127);cc(35,0)
+assert(latestLED(80)==127,"first PLAY must latch the local request LED")
+cc(80,127);cc(80,0)
 assert(keyCount("space")==2 and keyCount("k")==0,
   "second PLAY must pause with Space and no K")
-assert(latestLED(35)==0,"second PLAY must clear the LED")
+assert(latestLED(80)==0,"second PLAY must clear the LED")
 
 -- STOP sends K, cancels PLAY light, and should flash only while held.
-cc(35,127);cc(35,0)
-cc(34,127)
-assert(latestLED(35)==0 and latestLED(34)==127,
+cc(80,127);cc(80,0)
+cc(63,127)
+assert(latestLED(80)==0 and latestLED(63)==127,
   "STOP should extinguish PLAY, keep its own momentary LED")
-cc(34,0)
-assert(latestLED(34)==0,"STOP must go OFF on release")
+cc(63,0)
+assert(latestLED(63)==0,"STOP must go OFF on release")
 
 -- CYCLE LED stays ON in SHUTTLE and goes OFF returning to JOG.
-cc(30,127);cc(30,0)
-assert(latestLED(30)==127,"CYCLE should show SHUTTLE")
-cc(30,127);cc(30,0)
-assert(latestLED(30)==0,"CYCLE should clear in JOG")
+cc(54,127);cc(54,0)
+assert(latestLED(54)==127,"CYCLE should show SHUTTLE")
+cc(54,127);cc(54,0)
+assert(latestLED(54)==0,"CYCLE should clear in JOG")
 
 -- MUTE/CAM LED uses the received physical CC, not an inferred camera state.
-cc(42,127)
-assert(latestLED(42)==127,"MUTE 1 pressed LED")
-cc(42,0)
-assert(latestLED(42)==0,"MUTE 1 released LED")
+cc(21,127)
+assert(latestLED(21)==127,"MUTE 1 pressed LED")
+cc(21,0)
+assert(latestLED(21)==0,"MUTE 1 released LED")
 
 -- The one LED menu toggle must turn *all* 44 LEDs off, and suspend feedback.
 local after=#outputs
@@ -256,10 +258,10 @@ menuAction("LED visszajelzes BE/KI")
 assert(#outputs==after+44 and allLEDBlanked(after+1),
   "LED OFF must reset all known buttons on output channel 1")
 after=#outputs
-cc(42,127);cc(42,0)
+cc(21,127);cc(21,0)
 assert(#outputs==after,"LED disabled must send no ACK")
 menuAction("LED visszajelzes BE/KI")
-assert(#outputs>=after+44 and latestLED(35)==0,
+assert(#outputs>=after+44 and latestLED(80)==0,
   "LED enable should refresh after a clean reset")
 
 print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
