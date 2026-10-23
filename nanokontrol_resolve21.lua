@@ -42,6 +42,12 @@ for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
 local GLOBAL_TRANSPORT = {"cycle","begin","rew","ff","stop","play","trackPrev","trackNext"}
 local SCENE_COUNT = 5
 local LED_HEARTBEAT_SECONDS = 0.5
+-- On the tested setup channel=0 lights Scene 1, but that does not prove
+-- a true all-channel broadcast reaches Scene 2. Reassert ONLY the five
+-- shared transport/mode LEDs on the Scene 2 output channel as well.
+-- Scene 2 itself must have LED Mode = External and Write Scene Data.
+local SCENE2_LED_OUTPUT_CHANNEL = 1
+local SHARED_LED_NAMES = {"play","stop","rew","ff","cycle"}
 local lastLearnProblem = nil
 local lastLearnValues = {}
 local menu = hs.menubar.new()
@@ -127,16 +133,17 @@ local function ccFromSignal(signal)
   if channel ~= sceneInputChannel() then return nil end
   return cc
 end
-local function sendLED(cc, on, force)
+local function sendLED(cc, on, force, outputChannel)
   if not device or not cfg then return false end
   if not LED_BUTTON_SET[cc] then return false end
   local value = on and 127 or 0
   if not force and not ledEnabled then return false end
-  if not force and ledOutputState[cc] == value then return true end
-  local inputChannel = sceneInputChannel()
-  if inputChannel == nil then return false end
-  -- Hardware probe: channel=0 (broadcast) WORKS; channel=1 does not.
-  local outputChannel = 0
+  -- Preserve the working Scene 1 route (0). Scene 2 uses a second,
+  -- separately cached MIDI channel for shared state LEDs only.
+  outputChannel = outputChannel or 0
+  local cacheKey = outputChannel * 128 + cc
+  if not force and ledOutputState[cacheKey] == value then return true end
+  if sceneInputChannel() == nil then return false end
   local ok, result = pcall(function()
     return device:sendCommand("controlChange",
       {channel=outputChannel, controllerNumber=cc, controllerValue=value})
@@ -146,14 +153,19 @@ local function sendLED(cc, on, force)
     hs.printf("[NK LED] SEND_FAILED cc=%d out_channel=%d",cc,outputChannel)
     return false
   end
-  ledOutputState[cc] = value
-  ledOutputStatus = "API OK / ch0 (hardveres probe PASS)"
+  ledOutputState[cacheKey] = value
+  ledOutputStatus = "API OK (physical Scene 2 unverified)"
   return true
 end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
   for _, cc in ipairs(LED_BUTTONS) do sendLED(cc, false, true) end
+  -- Clearing LEDs must also clear Scene 2's latched status indicators.
+  for _, name in ipairs(SHARED_LED_NAMES) do
+    local cc = ccFromSignal(cfg.buttons[name])
+    if cc then sendLED(cc, false, true, SCENE2_LED_OUTPUT_CHANNEL) end
+  end
 end
 local function refreshStateLEDs(force)
   if not cfg or not ledEnabled then return end
@@ -167,9 +179,12 @@ local function refreshStateLEDs(force)
     ff=transportIntent == "shuttle" and (transportGear or 0) >= 2,
     cycle=mode == "SHUTTLE",
   }
-  for _, name in ipairs({"play","stop","rew","ff","cycle"}) do
+  for _, name in ipairs(SHARED_LED_NAMES) do
     local cc = ccFromSignal(cfg.buttons[name])
-    if cc then sendLED(cc, states[name], force) end
+    if cc then
+      sendLED(cc, states[name], force) -- verified Scene 1 output remains intact
+      sendLED(cc, states[name], force, SCENE2_LED_OUTPUT_CHANNEL)
+    end
   end
 end
 local function inputLED(command, meta, signal, value)
@@ -249,8 +264,9 @@ local function ledProbe()
         send(0,0)
         ledProbeRunning = false
         hs.printf("[NK LED PROBE] kesz. Az API true nem bizonyitja a fizikai LED felvillanasat!")
-        -- Restore any locally tracked Play/Cycle indicators.
-        refreshStateLEDs()
+        -- The probe temporarily changed a physical LED; restore it
+        -- even when our software-side CC cache claims it is unchanged.
+        refreshStateLEDs(true)
       end)
     end)
   end)
@@ -683,8 +699,9 @@ end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
 -- The hardware SCENE button can blank locally-held External LEDs without
--- emitting any MIDI event. Reassert the five shared state LEDs every 0.5 s:
--- PLAY/STOP/REW/FF/CYCLE, bypassing the output deduplication cache.
+-- emitting any MIDI event. Reassert PLAY/STOP/REW/FF/CYCLE every 0.5 s
+-- on both tested Scene 1 (0) and candidate Scene 2 (1) MIDI routes.
+-- The second route is intentionally limited to these five shared LEDs.
 -- No Resolve polling, no changed key actions, no rerunning the 28-step wizard.
 local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
   if ledEnabled and enabled and device and cfg and not learning
