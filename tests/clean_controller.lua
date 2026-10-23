@@ -70,7 +70,7 @@ local function latestLED(cc)
 end
 local function allLEDBlanked(startIndex)
   for i=startIndex or 1,#outputs do
-    if outputs[i].value~=0 or outputs[i].channel~=1
+    if outputs[i].value~=0 or outputs[i].channel~=0
        or outputs[i].cmd~="controlChange" then return false end
   end
   return true
@@ -134,10 +134,13 @@ assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:0:2")
 assert(saved.wheel=="cc:0:82")
 assert(saved.buttons.splitAll=="cc:0:50")
 -- At successful 28/28 the External-mode controller receives a fresh OFF
--- on each known LED, and the input channel 0 must map to OUTPUT channel 1.
+-- on each known LED. Hardware test verified output channel 0 (ALL),
+-- whereas output channel 1 returned true without lighting the Korg.
 assert(#outputs==44,"expected 44 known Scene 1 LEDs reset after setup")
-assert(allLEDBlanked(1),"initial LED OFF commands need output channel=1")
+assert(allLEDBlanked(1),"initial LED OFF commands need hardware-verified output channel=0")
 assert(latestLED(80)==0,"PLAY should start unlit")
+assert(outputs[1].channel==0,
+  "normal LED feedback MUST use hardware-verified output=0, not the failed channel=1")
 -- The physical fader can't start transport until it has been centered.
 keys={}
 cc(2,127)
@@ -256,13 +259,19 @@ assert(latestLED(21)==0,"MUTE 1 released LED")
 local after=#outputs
 menuAction("LED visszajelzes BE/KI")
 assert(#outputs==after+44 and allLEDBlanked(after+1),
-  "LED OFF must reset all known buttons on output channel 1")
+  "LED OFF must reset all known buttons on output channel 0")
 after=#outputs
 cc(21,127);cc(21,0)
 assert(#outputs==after,"LED disabled must send no ACK")
 menuAction("LED visszajelzes BE/KI")
 assert(#outputs>=after+44 and latestLED(80)==0,
   "LED enable should refresh after a clean reset")
+
+-- The physical 2026-10-23 test: only LED_PROBE channel=0 illuminated.
+-- Normal PLAY/CYCLE/MUTE feedback must therefore all use channel=0.
+for _,e in ipairs(outputs) do
+  assert(e.channel==0,"normal Scene1 feedback sent to a non-working channel")
+end
 
 -- Direct LED probe must use the SAME hs.midi device, never fire shortcuts,
 -- and compare physical channel 1 vs channel 0 (all-channel broadcast).
@@ -287,4 +296,4 @@ print("CLEAN_WIZARD_28=PASS")
 print("FADER_1_STRICT_CC2=PASS")
 print("SHUTTLE_ONE_TICK_AND_BURST=PASS")
 print("JOG_SHUTTLE_STOP=PASS")
-print("EXTERNAL_LED_CHANNEL1_PLAY_TOGGLE=PASS")
+print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
