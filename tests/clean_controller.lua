@@ -1,22 +1,51 @@
 -- Hardware-free regression test for the one-shot 28-step MIDI wizard.
 local menus, queue, keys, outputs, repeatingTimers = {}, {}, {}, {}, {}
-local saved, midiCallback = nil, nil
+local saved, midiCallback, keyboardCallback, keyboardTap = nil, nil, nil, nil
+local nowSeconds = 1000
+local SPACE_KEYCODE = 49
 local alerts, midiLogs = {}, {}
 local app = {
   title=function() return "DaVinci Resolve" end,
   bundleID=function() return "com.blackmagic-design.DaVinciResolve" end,
   selectMenuItem=function() return true end,
 }
+local frontmost = app
+local function keyEvent(keycode, flags, autorepeat)
+  return {
+    getKeyCode=function() return keycode end,
+    getFlags=function() return flags or {} end,
+    getProperty=function() return autorepeat or 0 end,
+  }
+end
 hs = {
+  keycodes={map={space=SPACE_KEYCODE}},
   settings = {
     get=function() return {wheel="cc:1:86", buttons={stop="cc:1:59"}} end,
     set=function(_,value) saved=value end,
   },
   alert={show=function(msg) alerts[#alerts+1]=msg end},
   printf=function(fmt,...) midiLogs[#midiLogs+1]=string.format(fmt, ...) end,
-  application={frontmostApplication=function() return app end},
-  eventtap={keyStroke=function(mods,k) keys[#keys+1]={key=k, mods=mods} end},
-  timer={doEvery=function(interval,fn)
+  application={frontmostApplication=function() return frontmost end},
+  eventtap={
+    event={types={keyDown=10},properties={keyboardEventAutorepeat=99}},
+    new=function(types,fn)
+      assert(#types==1 and types[1]==10,"only watch keyboard keyDown")
+      keyboardCallback=fn
+      keyboardTap={active=false}
+      function keyboardTap:start() self.active=true;return self end
+      return keyboardTap
+    end,
+    keyStroke=function(mods,k)
+      keys[#keys+1]={key=k,mods=mods}
+      -- Worst case: Hammerspoon's own synthetic key is seen synchronously.
+      -- The watcher must NOT count it as an extra human Space keypress.
+      if k=="space" and keyboardCallback then
+        keyboardCallback(keyEvent(SPACE_KEYCODE))
+      end
+    end,
+  },
+  timer={secondsSinceEpoch=function() return nowSeconds end,
+  doEvery=function(interval,fn)
     local t={interval=interval,fn=fn,stopped=false}
     function t:stop() self.stopped=true end
     repeatingTimers[#repeatingTimers+1]=t
@@ -51,6 +80,8 @@ hs = {
 local controller=assert(loadfile("nanokontrol_resolve21.lua"))()
 assert(controller.ledHeartbeat==repeatingTimers[1],
   "LED heartbeat timer must be kept reachable after module load (GC safe)")
+assert(controller.keyboardTap==keyboardTap and keyboardTap.active,
+  "Keyboard event tap must be started and retained against GC")
 local function cc(id,v,ch)
   assert(midiCallback)
   ch=ch or 0
@@ -226,6 +257,47 @@ keys={}
 cc(82,1)
 assert(keyCount("right")==1, "normal JOG must remain 1 frame per tick")
 
+-- The Korg user can use the physical Resolve Space without resync STOP:
+-- the eventtap observes the key but MUST not swallow it or emit extra keys.
+cc(63,127);cc(63,0) -- known STOP state
+keys={}
+nowSeconds=1001
+assert(keyboardCallback(keyEvent(SPACE_KEYCODE))==false,
+  "physical Space must pass through to Resolve")
+assert(#keys==0 and latestLED(80)==127,
+  "keyboard Space must light PLAY without synthetic Resolve commands")
+nowSeconds=1002
+keyboardCallback(keyEvent(SPACE_KEYCODE))
+assert(#keys==0 and latestLED(80)==0,
+  "second physical Space must clear PLAY LED")
+-- Modifiers, key autorepeat, other applications, uninteresting keys ignored.
+keyboardCallback(keyEvent(SPACE_KEYCODE,{cmd=true}))
+keyboardCallback(keyEvent(SPACE_KEYCODE,nil,1))
+assert(latestLED(80)==0,"modified/repeated Space must not change PLAY LED")
+frontmost={title=function() return "Hammerspoon" end,
+  bundleID=function() return "org.hammerspoon.Hammerspoon" end}
+keyboardCallback(keyEvent(SPACE_KEYCODE))
+assert(latestLED(80)==0,"Space in another app must not affect Resolve state")
+frontmost=app
+keyboardCallback(keyEvent(0)) -- 'A' key, not Space
+assert(latestLED(80)==0,"unrelated keys must not affect transport")
+-- Korg PLAY posts its own Space. The event tap can receive that synthetic
+-- event: the 150ms guard MUST stop a double toggle of transportIntent.
+keys={}
+nowSeconds=1003
+cc(80,127);cc(80,0)
+assert(keyCount("space")==1 and latestLED(80)==127,
+  "Korg PLAY must light LED once without double-counting own Space")
+nowSeconds=1003.2
+keyboardCallback(keyEvent(SPACE_KEYCODE))
+assert(keyCount("space")==1 and latestLED(80)==0,
+  "physical Space after Korg PLAY must pause and clear LED without STOP")
+nowSeconds=1004
+keyboardCallback(keyEvent(SPACE_KEYCODE))
+assert(latestLED(80)==127,
+  "physical Space must resume and relight LED without STOP")
+cc(63,127);cc(63,0) -- reset for the remainder of existing tests
+
 -- Complete one-shot relearn must preserve old saved config if interrupted.
 local original=saved
 menuAction("TELJES UJRABETANITAS")
@@ -387,3 +459,4 @@ print("JOG_SHUTTLE_STOP=PASS")
 print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
 print("GLOBAL_TRANSPORT_SCENES_1_TO_5=PASS")
 print("SILENT_SCENE_SWITCH_LED_RESTORE=PASS")
+print("PHYSICAL_RESOLVE_SPACE_LED_SYNC=PASS")
