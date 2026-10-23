@@ -63,9 +63,9 @@ NK menü → **TELJES UJRABETANITAS (28 lepes)**. A menüsor jelzi: NK SETUP 1/2
 | 23–27 | SELECT 1–5 (Cut / Edit / Trim / Selection / Cmd+B Split) |
 | **28** | **FADER 1, a legbaloldalibb TOLÓPOTMÉTER** teljesen le, majd teljesen fel |
 
-**JOG kalibráció:** Sign Magnitude esetén CC82 / 1–64 = jobbra, CC82 / 65–127 = balra. Ha a 2/28-as lépés nem lép tovább, az NK menüben nézd az **utolsó MIDI** sort. Ha `cc:1:86` vagy `cc:1:82=1..64` érkezik balra tekerésre, akkor a fizikai eszköz konfigurációját kell ellenőrizni. A `KORG KONTROL Editor` megjelenített beállítása önmagában nem azonos a készülékben tárolt állapottal: **Communication → Write Scene Data**, megerősítés, majd új próba. A frissített betanító már **nem engedi tovább a CC86-ot az 1/28 lépésnél**, és egyszeri figyelmeztetést mutat a nem megfelelő MIDI-kódra.
+**JOG kalibráció:** Sign Magnitude esetén CC82 / 1–64 = jobbra, CC82 / 65–127 = balra. Ha a 2/28-as lépés nem lép tovább, az NK menüben nézd az **utolsó MIDI** sort. Ha `cc:0:86` vagy `cc:0:82=1..64` érkezik balra tekerésre, akkor a fizikai eszköz konfigurációját kell ellenőrizni. A `KORG KONTROL Editor` megjelenített beállítása önmagában nem azonos a készülékben tárolt állapottal: **Communication → Write Scene Data**, megerősítés, majd új próba. A frissített betanító már **nem engedi tovább a CC86-ot az 1/28 lépésnél**, és egyszeri figyelmeztetést mutat a nem megfelelő MIDI-kódra.
 
-A gomboknál a **lenyomás ÉS a felengedés** fejezi be a lépést. A poti/fader CC-jeleket nem tanulja meg gombként. Az utolsó lépésben **kizárólag CC 1:2** és szinte teljes 0–127 tartomány fogadható el, így nem csúszhat be helyette az első tekerő poti.
+A gomboknál a **lenyomás ÉS a felengedés** fejezi be a lépést. A poti/fader CC-jeleket nem tanulja meg gombként. Az utolsó lépésben **kizárólag a JOG-gal azonos MIDI-csatornájú CC2-t** (Hammerspoonban általában `cc:0:2`) és szinte teljes 0–127 tartományt fogadható el, így nem csúszhat be helyette az első tekerő poti.
 
 A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik felül. Megszakításkor semmi nincs félkészen elmentve.
 
@@ -82,6 +82,14 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 ## 5. Nincs több millió menüpont
 
 Az NK menüben csak csatlakozás/státusz, egyetlen teljes betanítás, megszakítás és vezérlés BE/KI maradt. Betanítás alatt az utolsó bejövő CC is látható.
+
+**Teljes MIDI-napló:** Hammerspoon menüsor ikon → **Console** (vagy Hammerspoon Console megnyitása). A 28 lépéses betanítás alatt **minden MIDI-esemény** automatikusan megjelenik például így:
+
+~~~text
+[NK MIDI] step=2/28 type=controlChange channel=0 controller=cc:0:86 value=61 delta=-4 raw=B0 56 3D
+~~~
+
+A `channel=0` Hammerspoonban az **1-es fizikai MIDI-csatorna**, a `controller=cc:0:86` a Continuous JOG. A `delta` csak az adott vezérlő **előző** értékéhez képesti különbség (pozitív = növekedett, negatív = csökkent). A Sign Magnitude JOG a `cc:0:82` vezérlőn küld 1–64 / 65–127 értékeket. A naplózás kizárólag a betanító alatt aktív: normál vágás közben nincs MIDI-spam. A Hammerspoon Console egy valódi ablak, nem kell hozzá külön menüpontot készíteni.
 
 ### Visszaállítás
 
