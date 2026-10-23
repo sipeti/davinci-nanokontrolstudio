@@ -28,6 +28,11 @@ local LED_BUTTONS = {21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,
   54,55,56,57,58,59,60,61,62,63,80,81}
 local LED_BUTTON_SET = {}
 for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
+-- Shared transport/navigation across the five Korg scenes. Other buttons
+-- remain Scene 1-only until a future scene-specific mapping is agreed.
+local GLOBAL_TRANSPORT = {"cycle","begin","rew","ff","stop","play","trackPrev","trackNext"}
+local SCENE_COUNT = 5
+local LED_HEARTBEAT_SECONDS = 0.5
 local lastLearnProblem = nil
 local lastLearnValues = {}
 local menu = hs.menubar.new()
@@ -94,11 +99,19 @@ end
 local function sceneInputChannel()
   return cfg and cfg.wheel and tonumber(cfg.wheel:match("^cc:(%d+):82$")) or nil
 end
-local function ccFromSignal(signal)
+local function sceneCC(signal)
   if type(signal) ~= "string" then return nil end
   local channel, cc = signal:match("^cc:(%d+):(%d+)$")
-  if not channel or tonumber(channel) ~= sceneInputChannel() then return nil end
-  return tonumber(cc)
+  local base = sceneInputChannel()
+  channel = tonumber(channel)
+  if not channel or not base or channel < base or channel >= base + SCENE_COUNT
+    then return nil end
+  return tonumber(cc),channel
+end
+local function ccFromSignal(signal)
+  local cc,channel = sceneCC(signal)
+  if channel ~= sceneInputChannel() then return nil end
+  return cc
 end
 local function sendLED(cc, on, force)
   if not device or not cfg then return false end
@@ -128,21 +141,22 @@ local function resetLEDs()
   pressedLEDs, ledOutputState = {}, {}
   for _, cc in ipairs(LED_BUTTONS) do sendLED(cc, false, true) end
 end
-local function refreshStateLEDs()
+local function refreshStateLEDs(force)
   if not cfg or not ledEnabled then return end
   local playCC = ccFromSignal(cfg.buttons.play)
   local cycleCC = ccFromSignal(cfg.buttons.cycle)
-  if playCC then sendLED(playCC, transportIntent == "playing") end
-  if cycleCC then sendLED(cycleCC, mode == "SHUTTLE") end
+  if playCC then sendLED(playCC, transportIntent == "playing", force) end
+  if cycleCC then sendLED(cycleCC, mode == "SHUTTLE", force) end
 end
 local function inputLED(command, meta, signal, value)
   if not cfg or not ledEnabled or command ~= "controlChange" then return end
-  local cc = ccFromSignal(signal)
+  local cc = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
   if value ~= 0 and value ~= 127 then return end
-  -- PLAY and CYCLE are persistent *local* mode indicators. On release, do
-  -- not wipe their status; all other buttons reflect physical press/release.
-  if signal == cfg.buttons.play or signal == cfg.buttons.cycle then
+  -- PLAY/CYCLE are persistent *shared* mode indicators on every scene.
+  -- The other buttons get momentary physical LED acknowledgment only.
+  if cc == ccFromSignal(cfg.buttons.play)
+    or cc == ccFromSignal(cfg.buttons.cycle) then
     refreshStateLEDs()
     return
   end
@@ -552,6 +566,20 @@ local function midiCallback(_,_,command,_,meta)
     return
   end
   if not buttonPress(command,value) then return end
+  -- Every Scene keeps the same CC numbers for the physical transport strip,
+  -- but switches incoming MIDI channel (Scene 1: ch0, Scene 2: ch1, ...).
+  -- Share transport and navigation only; scene-specific functions remain
+  -- untouched and require the exact Scene 1 learned binding.
+  local cc,channel = sceneCC(signal)
+  if cc and channel ~= sceneInputChannel() then
+    for _,name in ipairs(GLOBAL_TRANSPORT) do
+      if cc == ccFromSignal(cfg.buttons[name]) then
+        action(name)
+        return
+      end
+    end
+    return
+  end
   if signal == cfg.buttons.editSelect then
     if speed ~= 0 then stop() end
     key("v")
@@ -614,6 +642,17 @@ menu:setMenu(function()
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
+-- The hardware SCENE button is a local selector: it can reset the visible
+-- External LED state without emitting a scene-change MIDI event. The previous
+-- MIDI send cache therefore cannot tell when PLAY/CYCLE lamps were cleared.
+-- Reassert ONLY the two shared mode LEDs, at 2 CC messages every 0.5 s.
+-- No Resolve polling, no changed key actions, no rerunning the 28-step wizard.
+local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
+  if ledEnabled and enabled and device and cfg and not learning
+    and not ledProbeRunning then
+    refreshStateLEDs(true) -- bypass cache: scene switch may have blanked LEDs
+  end
+end)
 title()
 return {setup=beginLearn, ledProbe=ledProbe,
   isResolveFrontmost=function() return resolveApp() ~= nil end}
