@@ -3,7 +3,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    # PR #8 is stacked on the read-only discovery PR; keep its CI active.
+    # Stacked research PRs must run CI against their actual target branches.
     branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test"]
 
 permissions:
@@ -26,3 +26,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audio_roundtrip_probe.py'
       - name: Write-free Scene 2 soft takeover tests
         run: python3 -m unittest discover -s tests -p 'test_scene2_soft_takeover.py'
+      - name: Passive Scene 2 physical MIDI logger tests
+        run: |
+          luac5.4 -p scripts/scene2_midi_readonly.lua tests/test_scene2_midi_readonly.lua
+          lua5.4 tests/test_scene2_midi_readonly.lua
