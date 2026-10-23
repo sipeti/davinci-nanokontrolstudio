@@ -56,7 +56,9 @@ The user ran this exact script in **Resolve's Py3 Console on macOS**. The probe 
 
 **Not yet verified:** that those reported dB values match the Inspector on a representative clip; that `SetProperties` writes/reads back/undoes correctly; that clip identity remains stable across timeline changes, overlapping audio, linked media or gain automation; and that the Fairlight **track fader** has a separate authoritative read/write interface.
 
-**Next smallest safe check:** with a **disposable timeline**, visually compare one reported A4 clip value to the Inspector's Audio Volume field. If the values disagree, do not enable gain writing. When values agree, test changing that Inspector value **manually** and rerun this read-only probe to prove that external edits are visible. No automated audio writes are authorized yet.
+**Inspector/manual-edit check — PASS on the user's Resolve 21.1:** on the audio track A4, the Inspector showed +10.0 dB and the read-only Py3 probe showed `AudioVolume_dB=10.0`. After the user manually adjusted the Inspector to +9.0 dB, the subsequent probe reported `AudioVolume_dB=9.0` on A4, `AudioVolumeEnabled=True`, and `item_id=available`; the command ended with `WRITES=0`. This establishes matching dB readback and that a manual UI change becomes visible to the API. The script did not print item IDs, so cross-run identifier equality is **not** independently verified by this evidence.
+
+**Next isolated step:** on a disposable project only, test a tightly bounded `TimelineItem.SetProperties({"AudioVolume": value})` round-trip with a *fresh* identity+gain read immediately before writing; verify the resulting Inspector value, re-read via `GetProperties()`, then restore the original dB and verify again. Keep all production Scene 2 MIDI knob/fader writes **disabled**. Do not run a setter on live material before an explicitly reviewed test.
 
 ## Before activating any Scene 2 gain controls
 
