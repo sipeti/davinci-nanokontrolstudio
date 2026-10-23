@@ -196,23 +196,29 @@ def monitor(controller, seconds, event_file=EVENT_FILE):
         stream.seek(0, 2)
         deadline = time.monotonic() + seconds
         next_poll = time.monotonic()
+        pending = []
         while time.monotonic() < deadline:
             # If the logger restarts and truncates the CSV, stop instead
             # of silently reading old offsets or mixing different sessions.
-            if event_file.stat().st_size < stream.tell():
-                controller.engine.reset()
-                print("SCENE2_8ROTARY=BLOCKED; MIDI logger restarted", flush=True)
+            try:
+                if event_file.stat().st_size < stream.tell():
+                    controller.engine.reset()
+                    print("SCENE2_8ROTARY=BLOCKED; MIDI logger restarted", flush=True)
+                    return 1
+                pending.extend(stream.readlines())
+            except OSError:
+                print("SCENE2_8ROTARY=BLOCKED; MIDI logger file missing", flush=True)
                 return 1
-            lines = stream.readlines()
-            if not lines or time.monotonic() < next_poll:
-                time.sleep(0.04)
-                continue
-            next_poll = time.monotonic() + POLL_SECONDS
-            if len(lines) > 80:
+            if len(pending) > 80:
                 controller.engine.reset()
                 print("SCENE2_8ROTARY=BLOCKED; MIDI backlog; no blind writes",
                       flush=True)
                 return 1
+            if not pending or time.monotonic() < next_poll:
+                time.sleep(0.04)
+                continue
+            next_poll = time.monotonic() + POLL_SECONDS
+            lines, pending = pending, []
             # Collapse bursts to latest value per strip. One fresh Resolve
             # snapshot per strip per poll; rapid movement fails closed if
             # a safe pickup or gain step cannot be established.
