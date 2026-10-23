@@ -38,10 +38,10 @@ A PLAY/CYCLE visszajelzés csak azokban a scene-ekben lesz fizikailag látható,
 | --- | ---: | --- |
 | CYCLE | 54 | JOG ⇄ SHUTTLE mód |
 | RETURN TO ZERO | 62 | \`⌘←\` |
-| REW | 58 | \`J\` |
-| FF | 59 | \`L\` |
+| REW | 58 | `K`, majd `J` → −1 sebesség, PLAY+REW LED |
+| FF | 59 | `K`, majd `L`, `L` → +2 sebesség, PLAY+FF LED |
 | STOP | 63 | \`K\` |
-| PLAY | 80 | \`Space\` — **megnyomásra PLAY, második megnyomásra STOP/PAUSE** (nincs előtte K) |
+| PLAY | 80 | STOP → `Space` (+1); +1 → `Space` (pause); **FF +2…+4 vagy REW −1…−4 → `K`, `L` (+1)** |
 | nagy REC | 81 | \`⌘Z\` (Undo) |
 | TRACK ◀ | 60 | \`↑\` (előző vágáspont) |
 | TRACK ▶ | 61 | \`↓\` (következő vágáspont) |
@@ -107,7 +107,7 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 | +1 | K, L | PLAY (1× előre) |
 | +2…+4 | K, L×2…4 | PLAY + FF |
 
-**Példák:** +2 → egyet balra = +1 (csak PLAY); +1 → egyet balra = 0 (STOP); 0 → egyet balra = −1 (PLAY+REW); −1 → egyet jobbra = 0 (STOP). A Korg FF gombja a jelenlegi kiosztásban **egyetlen L-t** küld; tehát 1× előre indít, nem gyorsít automatikusan 2×-re. A Korg REW gombja egyetlen J-t küld, az 1× hátramenet. Ezek sebességének módosítása külön döntés, nem része a mostani LED-javításnak.
+**Példák:** +2 → egyet balra = +1 (csak PLAY); +1 → egyet balra = 0 (STOP); 0 → egyet balra = −1 (PLAY+REW); −1 → egyet jobbra = 0 (STOP). **STOP → Korg FF** = +2 (K, L, L; PLAY+FF); innen **Korg PLAY** = +1 (K, L; csak PLAY), és újabb PLAY már STOP/PAUSE. **STOP → Korg REW** = −1 (K, J; PLAY+REW). A gomb és a tárcsa ugyanazt az előjeles fokozatot állítja, így az első tárcsakattanás mindig a megfelelő szomszédos állapotra lép. Ismételt FF megnyomás esetén a gomb fixen +2-re állít, nem növeli tovább a fokozatot.
 
 **Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE/J/K/L billentyűket** a Hammerspoon figyeli, módosítók és billentyűismétlés nélkül, és továbbengedi a Resolve felé. A Korg saját szimulált J/K/L/Space eseményeit rövid védőablak kizárja a dupla számolásból. A transzport-led visszajelzés scene-váltás után fél másodpercen belül helyreállítódhat a PLAY/STOP/REW/FF/CYCLE újraküldésétől. A betöltéskor még ismeretlen állapot esetén **egyik transzport LED sem világít**, amíg nem láttunk parancsot. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
 
