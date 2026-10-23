@@ -114,7 +114,7 @@ class EightRotaryTest(unittest.TestCase):
         item = self.timeline.track_items[4]
         self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
         self.assertEqual(item.calls, [])
-        self.assertEqual(self.feed(c, 1, 16, 96), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
         self.assertEqual(item.calls, [])
 
     def test_idle_gap_rearms_without_writing(self):
