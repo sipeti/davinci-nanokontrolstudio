@@ -10,6 +10,7 @@ It does not control the Korg, mixer faders, or track mute.
 import math
 import re
 import secrets
+import time
 
 _CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
 _ARMED = None
@@ -79,6 +80,8 @@ def _snapshot(track):
         raise ProbeBlocked("project/timeline identity unavailable")
 
     settings = _get(timeline, "GetSettings")
+    if not isinstance(settings, dict):
+        raise ProbeBlocked("timeline settings unavailable")
     raw_fps = _number(settings.get("timelineFrameRate"))
     if not raw_fps.is_integer() or not 1 <= raw_fps <= 120:
         raise ProbeBlocked("non-integer timeline FPS")
@@ -178,8 +181,18 @@ def scene2_roundtrip(token=None, expected_project=None, confirmation=None):
     if fresh["key"] != arm["snapshot"]:
         print("SCENE2_ROUNDTRIP=BLOCKED; WRITES=0; target/context/dB changed")
         return False
+    # A silent UI pause is not enough: refuse if the playhead advances.
+    time.sleep(0.15)
+    try:
+        stable = _snapshot(arm["track"])
+    except ProbeBlocked as exc:
+        print("SCENE2_ROUNDTRIP=BLOCKED; WRITES=0; " + str(exc))
+        return False
+    if stable["key"] != arm["snapshot"]:
+        print("SCENE2_ROUNDTRIP=BLOCKED; WRITES=0; playhead/context moved")
+        return False
 
-    item, original = fresh["item"], fresh["db"]
+    item, original = stable["item"], stable["db"]
     test_db = _candidate(original)
     if not _DB_MIN <= test_db <= _DB_MAX:
         print("SCENE2_ROUNDTRIP=BLOCKED; WRITES=0; invalid test dB")
