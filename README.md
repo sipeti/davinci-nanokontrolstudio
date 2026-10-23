@@ -102,7 +102,7 @@ A cancelled or incomplete calibration **does not overwrite** the last successful
 
 | Control | Behavior |
 | --- | --- |
-| JOG wheel, Scenes 1–5 | One frame per tick (JOG mode), with CC82 / Sign Magnitude configured in each scene |
+| JOG wheel, Scenes 1–5 | One frame per tick (JOG mode), with CC82 / Sign Magnitude configured in each scene. **Does not clear the current PLAY/STOP LEDs while nudging** |
 | MARKER SET + JOG | Select edit point and nudge ±1 frame |
 | CYCLE | JOG ↔ SHUTTLE; switches mode and stops transport |
 | SHUTTLE wheel, Scenes 1–5 | One tick = one **shared** signed speed step, −4…+4, even after a scene switch |
