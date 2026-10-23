@@ -89,13 +89,25 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 
 | LED | Visszajelzés |
 | --- | --- |
-| PLAY (CC80) | Világít minden mozgó lejátszásnál: PLAY/Space, REW/FF, SHUTTLE/JOG és FADER ±1…±4 |
+| PLAY (CC80) | Világít minden mozgó lejátszásnál: Space, J, L, SHUTTLE/FADER ±1…±4. SHUTTLE +1 és egyetlen L esetén **csak PLAY**, FF nélkül |
 | STOP (CC63) | Megálláskor **folyamatosan világít**, felengedés után is; következő lejátszáskor kialszik |
 | REW (CC58) | Visszafelé mozgásnál **világít** a PLAY mellett, pl. J vagy SHUTTLE −1…−4 |
-| FF (CC59) | Előrefelé SHUTTLE/FF-nél **világít** a PLAY mellett, pl. L vagy SHUTTLE +1…+4 |
+| FF (CC59) | **Csak gyorsított előre** a PLAY mellett: SHUTTLE/FADER +2…+4, vagy legalább két egymást követő fizikai L |
 | CYCLE (CC54) | SHUTTLE mód aktív → világít; JOG mód → kialszik |
 | MUTE, SELECT, MARKER, SOLO, REC és egyéb gombok | **Lenyomásra fel**, felengedésre le |
 | NK menü → LED visszajelzés KI | mind a **44 ismert Scene 1 gomb LED-je kikapcsolva** |
+
+**SHUTTLE tárcsa = előjeles sebesség:** jobbra +1, balra −1 fokozat; a nulla STOP. A program változáskor `K`-val megállít, majd a célfokozat abszolút értékének megfelelő számú `L` vagy `J` billentyűt küld. A LED-tábla a fokozatokhoz:
+
+| Pozíció | Resolve JKL | Visszajelzés |
+| ---: | --- | --- |
+| −4…−2 | K, J×2…4 | PLAY + REW |
+| −1 | K, J | PLAY + REW (1× vissza) |
+| 0 | K | STOP |
+| +1 | K, L | PLAY (1× előre) |
+| +2…+4 | K, L×2…4 | PLAY + FF |
+
+**Példák:** +2 → egyet balra = +1 (csak PLAY); +1 → egyet balra = 0 (STOP); 0 → egyet balra = −1 (PLAY+REW); −1 → egyet jobbra = 0 (STOP). A Korg FF gombja a jelenlegi kiosztásban **egyetlen L-t** küld; tehát 1× előre indít, nem gyorsít automatikusan 2×-re. A Korg REW gombja egyetlen J-t küld, az 1× hátramenet. Ezek sebességének módosítása külön döntés, nem része a mostani LED-javításnak.
 
 **Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE/J/K/L billentyűket** a Hammerspoon figyeli, módosítók és billentyűismétlés nélkül, és továbbengedi a Resolve felé. A Korg saját szimulált J/K/L/Space eseményeit rövid védőablak kizárja a dupla számolásból. A transzport-led visszajelzés scene-váltás után fél másodpercen belül helyreállítódhat a PLAY/STOP/REW/FF/CYCLE újraküldésétől. A betöltéskor még ismeretlen állapot esetén **egyik transzport LED sem világít**, amíg nem láttunk parancsot. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
 
