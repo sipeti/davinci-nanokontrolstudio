@@ -11,7 +11,10 @@ local enabled, mode, speed = true, "JOG", 0
 local device, deviceName = nil, nil
 local learning, draft, pending, step = false, nil, nil, 0
 local trimHeld, faderArmed, faderActive = false, false, false
-local shuttleSource, shuttlePulses, shuttleTimers = nil, 0, {}
+-- 1 jog tick = 1 shuttle gear. Coalesce small MIDI bursts before one J/K/L
+-- restart so quick turns cannot repeatedly cancel the pending L/J presses.
+local SHUTTLE_WHEEL_BATCH_SECONDS = 0.045
+local shuttleSource, shuttlePulses, shuttleTimers, shuttleWheelTimer = nil, 0, {}, nil
 local splitBusy, lastMidi = false, "-"
 local lastLearnProblem = nil
 local lastLearnValues = {}
@@ -79,6 +82,7 @@ local function title()
 end
 
 local function cancelShuttle()
+  if shuttleWheelTimer then shuttleWheelTimer:stop(); shuttleWheelTimer = nil end
   for _, t in ipairs(shuttleTimers) do t:stop() end
   shuttleTimers, shuttlePulses = {}, 0
 end
@@ -132,11 +136,20 @@ local function wheel(value)
   elseif mode == "JOG" then
     key(direction > 0 and "right" or "left")
   else
-    shuttlePulses = shuttlePulses + direction
-    if math.abs(shuttlePulses) >= 4 then
-      local amount = shuttlePulses > 0 and 1 or -1
-      shuttlePulses = 0
-      shuttle(speed + amount,"wheel")
+    -- One physical wheel pulse changes one shuttle gear. A rapid string of
+    -- pulses is applied together after 45 ms instead of issuing STOP for
+    -- every pulse (which could cancel all pending J/L events).
+    shuttlePulses = math.max(-8,math.min(8,shuttlePulses + direction))
+    if not shuttleWheelTimer then
+      shuttleWheelTimer = hs.timer.doAfter(SHUTTLE_WHEEL_BATCH_SECONDS,function()
+        shuttleWheelTimer = nil
+        local delta = shuttlePulses
+        shuttlePulses = 0
+        if delta ~= 0 and enabled and not learning and not faderActive
+          and mode == "SHUTTLE" and resolveApp() then
+          shuttle(speed + delta,"wheel")
+        end
+      end)
     end
   end
 end
