@@ -20,6 +20,10 @@ local splitBusy, lastMidi = false, "-"
 -- Transport state is a best-effort estimate of the last observed action,
 -- never a Resolve playback API reading. After startup it's UNKNOWN.
 local transportIntent, transportDirection = "unknown", 0
+-- Signed last requested JKL gear: 0 = STOP, +1 = L/PLAY 1x,
+-- +2..+4 = fast forward; -1..-4 = reverse (J, JJ...).
+-- Separate from 'speed', which is only the knob/fader shuttle position.
+local transportGear = nil
 -- Suppress Korg-generated synthetic J/K/L/Space in the keyboard event tap,
 -- otherwise we'd double count actions we already handled as MIDI.
 local SYNTHETIC_KEY_GUARD_SECONDS = 0.15
@@ -158,7 +162,9 @@ local function refreshStateLEDs(force)
     play=moving,
     stop=transportIntent == "stopped",
     rew=transportIntent == "shuttle" and transportDirection < 0,
-    ff=transportIntent == "shuttle" and transportDirection > 0,
+    -- A single L (+1) is 1x PLAY, NOT fast-forward. The second L
+    -- (+2) and above are accelerated and illuminate FF.
+    ff=transportIntent == "shuttle" and (transportGear or 0) >= 2,
     cycle=mode == "SHUTTLE",
   }
   for _, name in ipairs({"play","stop","rew","ff","cycle"}) do
@@ -268,7 +274,7 @@ local function stop()
   cancelShuttle()
   speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
   if resolveApp() then key("k") end
-  transportIntent, transportDirection = "stopped", 0
+  transportIntent, transportDirection, transportGear = "stopped", 0, 0
   refreshStateLEDs()
   title()
 end
@@ -281,6 +287,7 @@ local function shuttle(target, source)
   speed, shuttleSource = target, target == 0 and nil or source
   transportIntent = target == 0 and "stopped" or "shuttle"
   transportDirection = target > 0 and 1 or (target < 0 and -1 or 0)
+  transportGear = target
   refreshStateLEDs()
   title()
   local direction = target > 0 and "l" or "j"
@@ -319,7 +326,7 @@ local function wheel(value)
   elseif mode == "JOG" then
     -- An external nudge may pause/shift playback; avoid stale PLAY LED.
     if transportIntent ~= "unknown" then
-      transportIntent, transportDirection = "unknown", 0
+      transportIntent, transportDirection, transportGear = "unknown", 0, nil
       refreshStateLEDs()
     end
     key(direction > 0 and "right" or "left")
@@ -359,11 +366,11 @@ local function action(name)
   elseif name == "begin" then key("left",{"cmd"})
   elseif name == "rew" then
     stop(); key("j")
-    transportIntent, transportDirection = "shuttle", -1
+    transportIntent, transportDirection, transportGear = "shuttle", -1, -1
     refreshStateLEDs()
   elseif name == "ff" then
     stop(); key("l")
-    transportIntent, transportDirection = "shuttle", 1
+    transportIntent, transportDirection, transportGear = "shuttle", 1, 1
     refreshStateLEDs()
   elseif name == "stop" then stop()
   elseif name == "play" then
@@ -374,7 +381,8 @@ local function action(name)
     cancelShuttle()
     speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
     key("space")
-    transportIntent, transportDirection = wasRunning and "stopped" or "playing", 0
+    transportIntent, transportDirection, transportGear =
+      wasRunning and "stopped" or "playing", 0, wasRunning and 0 or 1
     refreshStateLEDs()
     title()
   elseif name == "undo" then key("z",{"cmd"})
@@ -472,7 +480,7 @@ local function finishLearn()
   hs.settings.set(KEY,draft) -- commit only after ALL 28 steps
   cfg = draft
   resetLEDs()
-  transportIntent, transportDirection = "stopped", 0
+  transportIntent, transportDirection, transportGear = "stopped", 0, 0
   learning, draft, pending, step = false,nil,nil,0
   faderArmed, faderActive, trimHeld = false,false,false
   mode, speed = "JOG",0
@@ -699,19 +707,34 @@ local function onKeyboardDown(event)
   end
   local wasRunning = transportIntent == "playing"
     or transportIntent == "shuttle" or speed ~= 0
+  -- Consecutive physical J or L presses raise that direction's gear;
+  -- switching direction starts at first gear. Resolve gets the real key.
+  local nextGear
+  if observed == "j" then
+    nextGear = transportIntent == "shuttle" and transportDirection < 0
+      and math.max(-4,(transportGear or 0)-1) or -1
+  elseif observed == "l" then
+    nextGear = transportIntent == "shuttle" and transportDirection > 0
+      and math.min(4,(transportGear or 0)+1) or 1
+  elseif observed == "k" or wasRunning then
+    nextGear = 0
+  else
+    nextGear = 1
+  end
   cancelShuttle()
   speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
-  if observed == "space" then
-    transportIntent, transportDirection = wasRunning and "stopped" or "playing", 0
-  elseif observed == "k" then
+  transportGear = nextGear
+  if nextGear == 0 then
     transportIntent, transportDirection = "stopped", 0
+  elseif observed == "j" or observed == "l" then
+    transportIntent, transportDirection = "shuttle", nextGear < 0 and -1 or 1
   else
-    transportIntent, transportDirection = "shuttle", observed == "j" and -1 or 1
+    transportIntent, transportDirection = "playing", 0
   end
   refreshStateLEDs()
   title()
-  hs.printf("[NK TRANSPORT] physical %s => %s dir=%d (local estimate)",
-    observed,transportIntent,transportDirection)
+  hs.printf("[NK TRANSPORT] physical %s => %s dir=%d gear=%d (local estimate)",
+    observed,transportIntent,transportDirection,transportGear or 0)
   return false -- never consume physical keys; Resolve gets the original
 end
 local tapStarted, keyboardTap = pcall(function()
