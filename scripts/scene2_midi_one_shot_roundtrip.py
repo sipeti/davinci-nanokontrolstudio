@@ -18,7 +18,8 @@ TRACK = 4
 CC = 16
 CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
 COPY_WORDS = ("test", "copy", "backup", "qa", "teszt", "masolat", "másolat")
-MAX_TEST_DELTA_DB = 0.6
+MAX_MIDI_INTENT_DELTA_DB = 1.2  # already enforced by the pickup engine
+MAX_ACTUAL_TEST_DELTA_DB = 0.5  # stronger cap on the actual Resolve setter
 
 
 def _snapshot(app):
@@ -53,9 +54,19 @@ def one_shot_roundtrip(app, expected_key, proposed_db, expected_project=None,
         original = fresh["db"]
         if (type(proposed_db) not in (int, float) or
                 not -100 <= proposed_db <= 30 or
-                not 0.055 < abs(proposed_db - original) <= MAX_TEST_DELTA_DB):
-            print("MIDI_WRITE=BLOCKED; requested step exceeds one-shot safety bound; WRITES=0",
+                not 0.055 < abs(proposed_db - original) <= MAX_MIDI_INTENT_DELTA_DB):
+            print("MIDI_WRITE=BLOCKED; invalid or excessively large MIDI intent; WRITES=0",
                   flush=True)
+            return False
+        # The physical CC quantization is ~0.442 dB per step near speech levels.
+        # A skipped MIDI value may request ~0.7 dB after a valid pickup;
+        # do not loosen the actual write bound. Clamp the one-shot proof.
+        delta = proposed_db - original
+        bounded_db = round(original + max(-MAX_ACTUAL_TEST_DELTA_DB,
+                                          min(MAX_ACTUAL_TEST_DELTA_DB, delta)), 3)
+        if (not -100 <= bounded_db <= 30 or
+                not 0.055 < abs(bounded_db - original) <= MAX_ACTUAL_TEST_DELTA_DB):
+            print("MIDI_WRITE=BLOCKED; bounded test value unsafe; WRITES=0", flush=True)
             return False
         pause(0.12)
         stable, _ = _snapshot(app)
@@ -69,14 +80,14 @@ def one_shot_roundtrip(app, expected_key, proposed_db, expected_project=None,
     item = stable["item"]
     wrote = False
     restored = False
-    print("MIDI_WRITE=ARMED; original=%.3f dB; candidate=%.3f dB" %
-          (original, proposed_db), flush=True)
+    print("MIDI_WRITE=ARMED; original=%.3f dB; midi_intent=%.3f dB; bounded_test=%.3f dB" %
+          (original, proposed_db, bounded_db), flush=True)
     try:
-        result = item.SetProperties({"AudioVolume": proposed_db})
+        result = item.SetProperties({"AudioVolume": bounded_db})
         # Do not accept success on the setter return value alone.
         after, _ = _snapshot(app)
         if (result is not True or after["key"][:-1] != stable["key"][:-1]
-                or not api._close(after["db"], proposed_db)):
+                or not api._close(after["db"], bounded_db)):
             raise api.ProbeBlocked("setter/readback/context mismatch")
         wrote = True
         print("MIDI_TEST_WRITE_READBACK=PASS", flush=True)
