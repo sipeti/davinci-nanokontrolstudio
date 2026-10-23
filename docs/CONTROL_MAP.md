@@ -10,9 +10,27 @@
 | JOG, CYCLE után | ugyanaz a CC82 | SHUTTLE −4…+4, 1 MIDI impulzus = 1 fokozat |
 | MARKER SET + JOG | CC55 nyomva + CC82 | \`V\`, majd \`,\` / \`.\` (kijelölt vágáspont finomítása) |
 | FADER 1 (bal szélső **tolópotméter**) | CC2, 0–127 | középállásos SHUTTLE, ±4 fokozat; 60–68 = STOP |
-| SCENE | hardveres, körkörös 1→2→3→4→5 | **nincs szoftveresen hozzárendelve**; teszthez Scene 1 |
+| SCENE | hardveres, körkörös 1→2→3→4→5 | A scene-váltást a hardver intézi; a PLAY/CYCLE LED-et a szoftver fél másodpercenként szinkronizálja |
 
 A MIDI-csatorna a Korg Editorban `1`, a Hammerspoon **bemenetén** `channel=0`. A 2026-10-23-i valós LED-próba alapján a **kimeneten** is `sendCommand(..., channel=0)` működik, de ott ez a Hammerspoon dokumentációjában *minden csatornás küldés*; `channel=1` API-szinten sikerült, de a fizikai LED nem villant fel.
+
+## Az öt scene közös transzportja
+
+A Korg mentésben mind az öt scene **ugyanazokat a fizikai transport CC-ket** tartalmazza, csak a MIDI-csatorna változik:
+
+| Scene | MIDI bemeneti csatorna Hammerspoonban | Fix közös kezelőszervek |
+| --- | ---: | --- |
+| 1 | 0 | PLAY, STOP, REW, FF, Return to Zero, CYCLE, TRACK ◀/▶ |
+| 2 | 1 | ugyanaz |
+| 3 | 2 | ugyanaz |
+| 4 | 3 | ugyanaz |
+| 5 | 4 | ugyanaz |
+
+A MODE (CYCLE) a Hammerspoon teljes kontrollerállapota, **nem jelenetenként külön mód**. A Scene 2–5 JOG-tárcsája a mentésben eltérő, Continuous/CC86 beállítású; ezeket a jelenlegi Lua **nem** kezeli JOG-ként. Az összes MUTE/SOLO/REC/SELECT/KNOB/FADER akció Scene 1-specifikus marad, kivéve a fenti fizikai transzportgombokat.
+
+**Scene-váltás közben PLAY tovább fut**; SCENE lenyomására nem küldünk STOP-ot és nem változtatjuk a Resolve állapotát. A Korg helyi LED-memóriája scene-váltáskor törlődhet; ezért a Hammerspoon fél másodpercenként újraküldi a PLAY (CC80) és CYCLE (CC54) pillanatnyi **lokális** LED-állapotát a hardverpróbán működő output channel=0 (all-channel broadcast) paraméterrel, a deduplikációt szándékosan megkerülve. Ez nem küld Resolve-billentyűparancsokat.
+
+A PLAY/CYCLE visszajelzés csak azokban a scene-ekben lesz fizikailag látható, amelyeket a KORG KONTROL Editorban External LED módra állítottál, és **Write Scene Data** paranccsal ki is írtál a készülékre. A legutóbb elemzett mentésben Scene 1–2 External és Scene 3–5 Internal volt.
 
 ## Transzport és navigáció
 
@@ -78,7 +96,7 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 
 **Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** Ha egérrel vagy a Resolve saját billentyűzetével módosítod, a PLAY LED nem feltétlenül a tényleges állapotot mutatja; ez *lokális parancs-visszajelzés*, nem valós idejű DAW feedback.
 
-**A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. Más scene-ek szoftveres LED-vezérlése jelenleg nem része a kódnak; teszthez maradj Scene 1-en.
+**A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. A PLAY és CYCLE LED-állapot mind az öt scene között közös; a **nem transzport** gombok Resolve-funkciói Scene 1-re korlátozódnak.
 
 ## Rövid telepítés / próba
 
