@@ -1,0 +1,17 @@
+name: Clean nanoKONTROL Lua
+on:
+  push:
+    branches: ["fix/clean-assignable-relearn"]
+  pull_request:
+
+jobs:
+  lua:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.4
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.4
+      - name: Syntax
+        run: luac5.4 -p nanokontrol_resolve21.lua tests/clean_controller.lua
+      - name: Simulated hardware
+        run: lua5.4 tests/clean_controller.lua
