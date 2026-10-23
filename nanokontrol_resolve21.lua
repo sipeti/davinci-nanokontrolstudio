@@ -85,9 +85,12 @@ local function key(k, mods)
   hs.eventtap.keyStroke(mods or {}, k, 10000)
 end
 
--- The *incoming* hs.midi callback numbers channels 0..15. In contrast,
--- hs.midi:sendCommand documents output channel 0 as "all channels", 1..16
--- for one physical channel. First scene input 0 => output MIDI channel 1.
+-- Empirically verified on the user's nanoKONTROL Studio (2026-10-23):
+-- MUTE 1 LED only illuminates with hs.midi:sendCommand(channel=0).
+-- Hammerspoon defines OUTPUT channel=0 as all-channel broadcast.
+-- Explicit output channel=1 returned true but DID NOT light the hardware.
+-- Input MIDI channel=0 remains the first physical channel for binding matches.
+-- Keep the broadcast restricted to known Scene 1 button CCs.
 local function sceneInputChannel()
   return cfg and cfg.wheel and tonumber(cfg.wheel:match("^cc:(%d+):82$")) or nil
 end
@@ -103,19 +106,21 @@ local function sendLED(cc, on, force)
   local value = on and 127 or 0
   if not force and not ledEnabled then return false end
   if not force and ledOutputState[cc] == value then return true end
-  local channel = sceneInputChannel()
-  if channel == nil then return false end
+  local inputChannel = sceneInputChannel()
+  if inputChannel == nil then return false end
+  -- Hardware probe: channel=0 (broadcast) WORKS; channel=1 does not.
+  local outputChannel = 0
   local ok, result = pcall(function()
     return device:sendCommand("controlChange",
-      {channel=channel + 1, controllerNumber=cc, controllerValue=value})
+      {channel=outputChannel, controllerNumber=cc, controllerValue=value})
   end)
   if not ok or result == false then
     ledOutputStatus = "MIDI output hiba"
-    hs.printf("[NK LED] SEND_FAILED cc=%d out_channel=%d",cc,channel + 1)
+    hs.printf("[NK LED] SEND_FAILED cc=%d out_channel=%d",cc,outputChannel)
     return false
   end
   ledOutputState[cc] = value
-  ledOutputStatus = "API elfogadta (fizikai LED nem igazolt)"
+  ledOutputStatus = "API OK / ch0 (hardveres probe PASS)"
   return true
 end
 local function resetLEDs()
