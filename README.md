@@ -72,12 +72,15 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 ## 4. Használat
 
 - JOG tárcsa = képkockánkénti lépés. MARKER SET nyomva + JOG = szerkesztési pont ±1 frame.
-- CYCLE = JOG/SHUTTLE.
+- CYCLE = JOG/SHUTTLE. **Wheel SHUTTLE: egy CC82 impulzus = egy fokozat**; a program a 45 ms-on belüli gyors tekerést összevonja, így nem indít minden impulzusra új STOP/J/L sorozatot. ±4 fokozat; a STOP bármikor megállítja. A JOG 1 impulzus = 1 frame változatlan.
 - FADER 1 = önálló SHUTTLE ±4 J/K/L sebességfokozat. 60–68 középen STOP. Indulás/STOP után **előbb középre kell húzni**, csak aztán aktív.
 - SELECT 1/2 = Cut/Edit; SELECT 5 = Cmd+Shift+A, majd Cmd+B Split az aktív, szerkeszthető sávokon.
 - MUTE 1–4 = CAM 1–4, csak a megfelelő Resolve nézetben.
 - LED-eket csak a Korg **Internal** módja kezeli; nincs kimenő MIDI LED-parancs.
 - Duplikált ATEM ISO timeline-on tesztelj.
+
+
+**Érzékenységfrissítés a sikeres 28/28 betanítás után:** nem kell újrakalibrálni a Korgot vagy a Hammerspoon MIDI-kiosztást. Elég a branchen `git pull --ff-only && sh ./install.command`, majd Hammerspoon → Reload Config. A korábbi `setupVersion=2` mentés megmarad.
 
 ## 5. Nincs több millió menüpont
 
