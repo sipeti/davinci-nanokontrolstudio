@@ -1,8 +1,9 @@
 -- nanoKONTROL Studio -> DaVinci Resolve 21 | clean Assignable Mode v1.3
 -- ONE guided 28-step setup. No MCU/HUI emulation or Resolve scripting.
--- Scene 1 External LEDs are software-controlled, scoped to the current scene.
--- KORG KONTROL Editor: SCENE 1, CH1, buttons Momentary/CC 127/0,
--- jog Sign Magnitude CC82 Const, first SLIDER CC2, LED Mode External.
+-- Shared JOG/SHUTTLE + transport for all five Assignable scenes.
+-- KORG KONTROL Editor: each scene's jog = Sign Magnitude / Const / CC82;
+-- incoming MIDI channels increase by scene. Scene 1 Slider1 stays CC2.
+-- The physical controller must be written via Write Scene Data per scene.
 local hs = hs
 local KEY = "nanokontrol_studio_resolve21_v1"
 local stored = hs.settings.get(KEY)
@@ -42,12 +43,13 @@ for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
 local GLOBAL_TRANSPORT = {"cycle","begin","rew","ff","stop","play","trackPrev","trackNext"}
 local SCENE_COUNT = 5
 local LED_HEARTBEAT_SECONDS = 0.5
--- On the tested setup channel=0 lights Scene 1, but that does not prove
--- a true all-channel broadcast reaches Scene 2. Reassert ONLY the five
--- shared transport/mode LEDs on the Scene 2 output channel as well.
--- Scene 2 itself must have LED Mode = External and Write Scene Data.
-local SCENE2_LED_OUTPUT_CHANNEL = 1
+-- Scene 1 output 0 and Scene 2 output 1 were verified on real hardware.
+-- Scene 3-5 output channels 2-4 need physical confirmation. Only the
+-- five shared transport/mode status CCs are sent beyond Scene 1.
+-- External LED mode + Write Scene Data are required separately per scene.
+local SHARED_LED_OUTPUT_CHANNELS = {0,1,2,3,4}
 local SHARED_LED_NAMES = {"play","stop","rew","ff","cycle"}
+local warnedContinuousScenes = {}
 local lastLearnProblem = nil
 local lastLearnValues = {}
 local menu = hs.menubar.new()
@@ -138,8 +140,8 @@ local function sendLED(cc, on, force, outputChannel)
   if not LED_BUTTON_SET[cc] then return false end
   local value = on and 127 or 0
   if not force and not ledEnabled then return false end
-  -- Preserve the working Scene 1 route (0). Scene 2 uses a second,
-  -- separately cached MIDI channel for shared state LEDs only.
+  -- Preserve the working Scene 1 route (0); other shared status CCs
+  -- use independently cached output routes 1-4 for Scenes 2-5.
   outputChannel = outputChannel or 0
   local cacheKey = outputChannel * 128 + cc
   if not force and ledOutputState[cacheKey] == value then return true end
@@ -154,17 +156,22 @@ local function sendLED(cc, on, force, outputChannel)
     return false
   end
   ledOutputState[cacheKey] = value
-  ledOutputStatus = "API OK (physical Scene 2 unverified)"
+  ledOutputStatus = "API OK / Scenes 1-2 verified; 3-5 unverified"
   return true
 end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
   for _, cc in ipairs(LED_BUTTONS) do sendLED(cc, false, true) end
-  -- Clearing LEDs must also clear Scene 2's latched status indicators.
-  for _, name in ipairs(SHARED_LED_NAMES) do
-    local cc = ccFromSignal(cfg.buttons[name])
-    if cc then sendLED(cc, false, true, SCENE2_LED_OUTPUT_CHANNEL) end
+  -- Clear shared status on the other scenes too, without sending Scene 1
+  -- editing-button CCs to their MIDI output routes.
+  for _, outputChannel in ipairs(SHARED_LED_OUTPUT_CHANNELS) do
+    if outputChannel ~= 0 then
+      for _, name in ipairs(SHARED_LED_NAMES) do
+        local cc = ccFromSignal(cfg.buttons[name])
+        if cc then sendLED(cc, false, true, outputChannel) end
+      end
+    end
   end
 end
 local function refreshStateLEDs(force)
@@ -182,8 +189,9 @@ local function refreshStateLEDs(force)
   for _, name in ipairs(SHARED_LED_NAMES) do
     local cc = ccFromSignal(cfg.buttons[name])
     if cc then
-      sendLED(cc, states[name], force) -- verified Scene 1 output remains intact
-      sendLED(cc, states[name], force, SCENE2_LED_OUTPUT_CHANNEL)
+      for _, outputChannel in ipairs(SHARED_LED_OUTPUT_CHANNELS) do
+        sendLED(cc, states[name], force, outputChannel)
+      end
     end
   end
 end
@@ -334,10 +342,12 @@ local function fader(value)
     shuttle(target,"fader")
   end
 end
-local function wheel(value)
-  if value == 0 or value > 127 or faderActive then return end
+local function wheel(value, scene1Wheel)
+  -- Only CC82 Sign Magnitude is admitted, and all scenes share the SAME
+  -- mode and shuttle speed. MARKER SET trim is Scene 1-specific.
+  if type(value) ~= "number" or value < 1 or value > 127 or faderActive then return end
   local direction = value <= 64 and 1 or -1
-  if trimHeld then
+  if trimHeld and scene1Wheel then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
     -- An external nudge may pause/shift playback; avoid stale PLAY LED.
@@ -617,9 +627,20 @@ local function midiCallback(_,_,command,_,meta)
     fader(value)
     return
   end
-  if command == "controlChange" and signal == cfg.wheel then
-    wheel(value)
-    return
+  if command == "controlChange" then
+    local wheelCC, channel = sceneCC(signal)
+    if wheelCC and wheelCC == ccFromSignal(cfg.wheel) then
+      -- A scene's wheel must be configured to exactly the learned Scene 1
+      -- CC82 Sign Magnitude format. No implicit CC86 Continuous decoder.
+      wheel(value, channel == sceneInputChannel())
+      return
+    end
+    if wheelCC == 86 and channel ~= sceneInputChannel()
+      and not warnedContinuousScenes[channel] then
+      warnedContinuousScenes[channel] = true
+      hs.printf("[NK JOG] Scene %d wheel CC86 ignored: configure Sign Magnitude / Const / CC82, then Write Scene Data",
+        channel - sceneInputChannel() + 1)
+    end
   end
   if not buttonPress(command,value) then return end
   -- Every Scene keeps the same CC numbers for the physical transport strip,
@@ -700,8 +721,8 @@ hs.midi.deviceCallback(function() attach() end)
 attach()
 -- The hardware SCENE button can blank locally-held External LEDs without
 -- emitting any MIDI event. Reassert PLAY/STOP/REW/FF/CYCLE every 0.5 s
--- on both tested Scene 1 (0) and candidate Scene 2 (1) MIDI routes.
--- The second route is intentionally limited to these five shared LEDs.
+-- on all five output routes. Scenes 3-5 still need physical LED testing.
+-- Other scenes never receive Scene 1-only editing button CCs.
 -- No Resolve polling, no changed key actions, no rerunning the 28-step wizard.
 local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
   if ledEnabled and enabled and device and cfg and not learning
