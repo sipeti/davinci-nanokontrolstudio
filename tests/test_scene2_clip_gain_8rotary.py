@@ -107,15 +107,73 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(self.timeline.track_items[8].calls, [])
         self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
 
-    def test_scene_change_requires_new_pickup_and_no_stale_writes(self):
-        c = self.controller(write=True)
+    def test_readonly_scene_change_requires_new_pickup(self):
+        c = self.controller(write=False)
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 0, 82, 1), "RESET")
+        self.assertEqual(self.feed(c, 0, 82, 1), "RESET")
+        self.assertEqual(self.output.getvalue().count("OTHER_SCENE_INPUT=RESET"), 1)
         item = self.timeline.track_items[4]
         self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
         self.assertEqual(item.calls, [])
         self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
         self.assertEqual(item.calls, [])
+
+    def test_writable_scene_change_halts_instead_of_rearming(self):
+        c = self.controller(write=True)
+        self.pickup_a4(c)
+        self.assertEqual(self.feed(c, 0, 82, 1), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(self.timeline.track_items[4].calls, [])
+        self.assertEqual(c.writes, 0)
+        self.assertIn("non-Scene-2 MIDI channel", self.output.getvalue())
+
+    def test_midi_poll_compacts_large_foreign_storm_without_gain_intent(self):
+        p = driver.MidiPoll()
+        for i in range(4000):
+            p.add("0,82,%d" % (i % 128))
+        foreign, count, events = p.take()
+        self.assertEqual(foreign[:2], (0, 82))
+        self.assertEqual(count, 0)
+        self.assertEqual(events, [])
+        # Subsequent clean Scene 2 period can begin new pickup.
+        p.add("1,16,90")
+        p.add("1,16,97")
+        foreign, count, events = p.take()
+        self.assertIsNone(foreign)
+        self.assertEqual(count, 2)
+        self.assertEqual(events, [(1,16,90),(1,16,97)])
+
+    def test_midi_poll_drops_mixed_channel_batch_and_preserves_safety(self):
+        p = driver.MidiPoll()
+        p.add("1,16,90")
+        p.add("0,21,127")
+        p.add("1,16,98")
+        foreign, count, events = p.take()
+        self.assertEqual(foreign, (0,21,127))
+        self.assertEqual(count, 1)
+        self.assertEqual(events, [])
+        c = self.controller(write=True)
+        self.assertEqual(self.feed(c, *foreign), "HALTED")
+        self.assertFalse(self.timeline.track_items[4].calls)
+
+    def test_midi_poll_preserves_first_and_last_rotary_value(self):
+        p = driver.MidiPoll()
+        for value in [80,85,91,97,98]:
+            p.add("1,16,%d" % value)
+        foreign, count, events = p.take()
+        self.assertIsNone(foreign)
+        self.assertEqual(count, 5)
+        self.assertEqual(events, [(1,16,80), (1,16,98)])
+        self.assertFalse(self.timeline.track_items[4].calls)
+
+    def test_midi_poll_burst_counter_enforces_rate_guard(self):
+        p = driver.MidiPoll()
+        for n in range(81):
+            p.add("1,16,%d" % (n % 128))
+        self.assertGreater(p.rotary_count,p.MAX_ROTARY_EVENTS)
+        self.assertEqual(len(p.events[16]),2)
+
 
     def test_idle_gap_rearms_without_writing(self):
         c = self.controller(write=True)
