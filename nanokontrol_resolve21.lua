@@ -19,6 +19,10 @@ local shuttleSource, shuttlePulses, shuttleTimers, shuttleWheelTimer = nil, 0, {
 local splitBusy, lastMidi = false, "-"
 -- Transport state is our last requested action, NOT Resolve's actual play status.
 local transportIntent = "stopped"
+-- The physical Space key is observed while Resolve is frontmost. Suppress
+-- Hammerspoon's own simulated Space so a Korg PLAY is not counted twice.
+local SYNTHETIC_SPACE_GUARD_SECONDS = 0.15
+local syntheticSpaceUntil = 0
 local ledEnabled = true
 local ledOutputState, pressedLEDs = {}, {}
 local ledOutputStatus = "meg nem tesztelt"
@@ -87,6 +91,11 @@ local function resolveApp()
   return nil
 end
 local function key(k, mods)
+  if k == "space" then
+    -- Event taps can observe our generated keystroke. The 10ms keyStroke
+    -- is guarded for 150ms, including delayed macOS event delivery.
+    syntheticSpaceUntil = hs.timer.secondsSinceEpoch() + SYNTHETIC_SPACE_GUARD_SECONDS
+  end
   hs.eventtap.keyStroke(mods or {}, k, 10000)
 end
 
@@ -653,7 +662,35 @@ local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
     refreshStateLEDs(true) -- bypass cache: scene switch may have blanked LEDs
   end
 end)
+
+-- Observe the *human* Space key; do not consume it. This corrects PLAY LED
+-- after starting/pausing with the keyboard instead of the Korg. It cannot
+-- detect clicking the Resolve GUI or playback already running at startup.
+local function onKeyboardDown(event)
+  if not cfg or not enabled or learning or not resolveApp() then return false end
+  if event:getKeyCode() ~= hs.keycodes.map.space then return false end
+  local flags = event:getFlags()
+  if flags.cmd or flags.alt or flags.ctrl or flags.shift or flags.fn then
+    return false
+  end
+  local repeated = event:getProperty(hs.eventtap.event.properties.keyboardEventAutorepeat)
+  if repeated and repeated ~= 0 then return false end
+  if hs.timer.secondsSinceEpoch() < syntheticSpaceUntil then
+    return false -- do not double-count our own Korg PLAY synthetic Space
+  end
+  local wasRunning = transportIntent == "playing"
+    or transportIntent == "shuttle" or speed ~= 0
+  cancelShuttle()
+  speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
+  transportIntent = wasRunning and "stopped" or "playing"
+  refreshStateLEDs()
+  title()
+  hs.printf("[NK PLAY] physical SPACE => %s (local estimate)",transportIntent)
+  return false -- important: let the physical key reach DaVinci Resolve
+end
+local keyboardTap = hs.eventtap.new(
+  {hs.eventtap.event.types.keyDown}, onKeyboardDown):start()
 title()
 return {setup=beginLearn, ledProbe=ledProbe,
-  ledHeartbeat=ledHeartbeat, -- retain repeating timer across GC after require()
+  ledHeartbeat=ledHeartbeat, keyboardTap=keyboardTap,
   isResolveFrontmost=function() return resolveApp() ~= nil end}
