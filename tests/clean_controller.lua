@@ -660,6 +660,39 @@ assert(keyCount("right")==5 and keyCount("left")==5,
   "JOG must step one frame CW/CCW on each of the five input channels")
 assert(keyCount("k")==0 and keyCount("l")==0 and keyCount("j")==0,
   "JOG must never accidentally trigger JKL playback")
+-- Bug: JOG one frame while PLAY runs used to mark transport UNKNOWN,
+-- blanking PLAY / STOP / REW / FF LEDs despite no transport command.
+-- Jog arrow keys must leave the last known transport status intact in
+-- every scene. Physical Space or K still changes the status normally.
+keys={}
+checkTransportLEDs(false,true,false,false,"STOP before jog regression")
+cc(80,127,0);cc(80,0,0)
+assert(keyCount("space")==1,"start one normal PLAY")
+checkTransportLEDs(true,false,false,false,"PLAY before JOG")
+for ch=0,4 do
+  local beforeRight=keyCount("right")
+  local beforeLeft=keyCount("left")
+  cc(82,1,ch);cc(82,65,ch)
+  assert(keyCount("right")==beforeRight+1
+    and keyCount("left")==beforeLeft+1,
+    "Scene"..(ch+1).." JOG must still step both directions")
+  checkTransportLEDs(true,false,false,false,
+    "PLAY LED must remain lit after Scene"..(ch+1).." JOG")
+end
+assert(keyCount("space")==1 and keyCount("k")==0,
+  "JOG must not emit Space/K while normal PLAY is running")
+tickLED()
+checkTransportLEDs(true,false,false,false,
+  "status must also survive forced LED refresh after JOG")
+cc(80,127,0);cc(80,0,0)
+assert(keyCount("space")==2,
+  "PLAY after JOG should still pause on second press, not restart")
+checkTransportLEDs(false,true,false,false,
+  "PLAY pause following Scene1-5 JOG should light STOP")
+-- JOG while already stopped must also preserve the stopped indicator.
+cc(82,1,4);cc(82,65,0)
+checkTransportLEDs(false,true,false,false,"STOP persists through JOG")
+
 -- The old Korg Scene2-5 wheel was CC86 Continuous. Do NOT interpret its
 -- absolute values as Sign Magnitude turns (which could jump speed).
 keys={}
@@ -814,6 +847,7 @@ print("JOG_SHUTTLE_STOP=PASS")
 print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
 print("GLOBAL_TRANSPORT_SCENES_1_TO_5=PASS")
 print("JOG_SIGN_MAGNITUDE_SCENES_1_TO_5=PASS")
+print("JOG_DURING_PLAY_PRESERVES_TRANSPORT_LEDS=PASS")
 print("SHUTTLE_SHARED_GEARS_ACROSS_SCENES=PASS")
 print("CONTINUOUS_CC86_REJECTED=PASS")
 print("EXTERNAL_LED_SCENES_1_TO_5=PASS")
