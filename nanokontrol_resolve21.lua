@@ -115,7 +115,7 @@ local function sendLED(cc, on, force)
     return false
   end
   ledOutputState[cc] = value
-  ledOutputStatus = "OK"
+  ledOutputStatus = "API elfogadta (fizikai LED nem igazolt)"
   return true
 end
 local function resetLEDs()
@@ -157,6 +157,58 @@ local function toggleLEDFeedback()
     refreshStateLEDs()
     toast("NK: LED be (External / csak Scene 1)", 2.5)
   end
+end
+
+-- Run ONLY when called in Hammerspoon Console:
+-- require("nanokontrol_resolve21").ledProbe()
+-- This tests the current physical MIDI destination without adding menu items,
+-- making keyboard shortcuts, changing the Scene, or saving settings.
+local ledProbeRunning = false
+local function ledProbe()
+  if ledProbeRunning then
+    hs.printf("[NK LED PROBE] mar fut, varjuk meg a végét")
+    return false
+  end
+  if not device or not cfg then
+    hs.printf("[NK LED PROBE] NINCS KORG vagy teljes 28/28 kalibracio")
+    return false
+  end
+  local cc = ccFromSignal(cfg.buttons.cam1)
+  if not cc then
+    hs.printf("[NK LED PROBE] NINCS Scene 1 MUTE1 CC, aktualis: %s",
+      tostring(cfg.buttons.cam1))
+    return false
+  end
+  local onlineOK, online = pcall(function() return device:isOnline() end)
+  hs.printf("[NK LED PROBE] device=%s online=%s midi_in=%s ledEnabled=%s",
+    tostring(deviceName),onlineOK and tostring(online) or "unknown",
+    tostring(sceneInputChannel()),tostring(ledEnabled))
+  hs.printf("[NK LED PROBE] Figyeld a MUTE 1-et. 1. felvillanas: MIDI channel=1, 2. felvillanas: channel=0 (ALL).")
+  local function send(ch,value)
+    local ok, result = pcall(function()
+      return device:sendCommand("controlChange",
+        {channel=ch, controllerNumber=cc, controllerValue=value})
+    end)
+    hs.printf("[NK LED PROBE] ch=%d cc=%d value=%d pcall=%s result=%s",
+      ch,cc,value,tostring(ok),tostring(result))
+    return ok and result == true
+  end
+  ledProbeRunning = true
+  send(1,127)
+  hs.timer.doAfter(1.5,function()
+    send(1,0)
+    hs.timer.doAfter(0.6,function()
+      send(0,127)
+      hs.timer.doAfter(1.5,function()
+        send(0,0)
+        ledProbeRunning = false
+        hs.printf("[NK LED PROBE] kesz. Az API true nem bizonyitja a fizikai LED felvillanasat!")
+        -- Restore any locally tracked Play/Cycle indicators.
+        refreshStateLEDs()
+      end)
+    end)
+  end)
+  return true
 end
 
 local function title()
@@ -558,4 +610,5 @@ end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
 title()
-return {setup=beginLearn, isResolveFrontmost=function() return resolveApp() ~= nil end}
+return {setup=beginLearn, ledProbe=ledProbe,
+  isResolveFrontmost=function() return resolveApp() ~= nil end}
