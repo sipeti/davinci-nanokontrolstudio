@@ -1,7 +1,8 @@
 -- nanoKONTROL Studio -> DaVinci Resolve 21 | clean Assignable Mode v1.3
--- ONE guided 28-step setup. No MCU/HUI emulation, outgoing LED CC or scripting.
+-- ONE guided 28-step setup. No MCU/HUI emulation or Resolve scripting.
+-- Scene 1 External LEDs are software-controlled, scoped to the current scene.
 -- KORG KONTROL Editor: SCENE 1, CH1, buttons Momentary/CC 127/0,
--- jog Sign Magnitude CC82 Const, first SLIDER CC2, LED Mode Internal.
+-- jog Sign Magnitude CC82 Const, first SLIDER CC2, LED Mode External.
 local hs = hs
 local KEY = "nanokontrol_studio_resolve21_v1"
 local stored = hs.settings.get(KEY)
@@ -16,6 +17,17 @@ local trimHeld, faderArmed, faderActive = false, false, false
 local SHUTTLE_WHEEL_BATCH_SECONDS = 0.045
 local shuttleSource, shuttlePulses, shuttleTimers, shuttleWheelTimer = nil, 0, {}, nil
 local splitBusy, lastMidi = false, "-"
+-- Transport state is our last requested action, NOT Resolve's actual play status.
+local transportIntent = "stopped"
+local ledEnabled = true
+local ledOutputState, pressedLEDs = {}, {}
+local ledOutputStatus = "meg nem tesztelt"
+-- Scene 1 configured button CCs; all cleared on init/disable to avoid stale LEDs.
+local LED_BUTTONS = {21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,
+  38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,
+  54,55,56,57,58,59,60,61,62,63,80,81}
+local LED_BUTTON_SET = {}
+for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
 local lastLearnProblem = nil
 local lastLearnValues = {}
 local menu = hs.menubar.new()
@@ -71,6 +83,80 @@ local function resolveApp()
 end
 local function key(k, mods)
   hs.eventtap.keyStroke(mods or {}, k, 10000)
+end
+
+-- The *incoming* hs.midi callback numbers channels 0..15. In contrast,
+-- hs.midi:sendCommand documents output channel 0 as "all channels", 1..16
+-- for one physical channel. First scene input 0 => output MIDI channel 1.
+local function sceneInputChannel()
+  return cfg and cfg.wheel and tonumber(cfg.wheel:match("^cc:(%d+):82$")) or nil
+end
+local function ccFromSignal(signal)
+  if type(signal) ~= "string" then return nil end
+  local channel, cc = signal:match("^cc:(%d+):(%d+)$")
+  if not channel or tonumber(channel) ~= sceneInputChannel() then return nil end
+  return tonumber(cc)
+end
+local function sendLED(cc, on, force)
+  if not device or not cfg then return false end
+  if not LED_BUTTON_SET[cc] then return false end
+  local value = on and 127 or 0
+  if not force and not ledEnabled then return false end
+  if not force and ledOutputState[cc] == value then return true end
+  local channel = sceneInputChannel()
+  if channel == nil then return false end
+  local ok, result = pcall(function()
+    return device:sendCommand("controlChange",
+      {channel=channel + 1, controllerNumber=cc, controllerValue=value})
+  end)
+  if not ok or result == false then
+    ledOutputStatus = "MIDI output hiba"
+    hs.printf("[NK LED] SEND_FAILED cc=%d out_channel=%d",cc,channel + 1)
+    return false
+  end
+  ledOutputState[cc] = value
+  ledOutputStatus = "OK"
+  return true
+end
+local function resetLEDs()
+  if not device or not cfg then return end
+  pressedLEDs, ledOutputState = {}, {}
+  for _, cc in ipairs(LED_BUTTONS) do sendLED(cc, false, true) end
+end
+local function refreshStateLEDs()
+  if not cfg or not ledEnabled then return end
+  local playCC = ccFromSignal(cfg.buttons.play)
+  local cycleCC = ccFromSignal(cfg.buttons.cycle)
+  if playCC then sendLED(playCC, transportIntent == "playing") end
+  if cycleCC then sendLED(cycleCC, mode == "SHUTTLE") end
+end
+local function inputLED(command, meta, signal, value)
+  if not cfg or not ledEnabled or command ~= "controlChange" then return end
+  local cc = ccFromSignal(signal)
+  if not cc or not LED_BUTTON_SET[cc] then return end
+  if value ~= 0 and value ~= 127 then return end
+  -- PLAY and CYCLE are persistent *local* mode indicators. On release, do
+  -- not wipe their status; all other buttons reflect physical press/release.
+  if signal == cfg.buttons.play or signal == cfg.buttons.cycle then
+    refreshStateLEDs()
+    return
+  end
+  pressedLEDs[cc] = (value == 127) or nil
+  sendLED(cc, value == 127)
+end
+local function toggleLEDFeedback()
+  if ledEnabled then
+    -- Disabling explicitly turns every known Scene 1 LED off, including ones
+    -- that may have been left on by an earlier external-LED experiment.
+    resetLEDs()
+    ledEnabled = false
+    toast("NK: LED ki, minden Scene 1 LED nullazva", 2.5)
+  else
+    ledEnabled = true
+    resetLEDs()
+    refreshStateLEDs()
+    toast("NK: LED be (External / csak Scene 1)", 2.5)
+  end
 end
 
 local function title()
