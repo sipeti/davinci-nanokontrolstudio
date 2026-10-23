@@ -19,3 +19,11 @@ jobs:
         run: luac5.4 -p nanokontrol_resolve21.lua tests/clean_controller.lua
       - name: Simulated hardware
         run: lua5.4 tests/clean_controller.lua
+      - name: Standalone Scene 2 MUTE SOLO LED pulse tests
+        run: |
+          luac5.4 -p scripts/scene2_mute_solo_led_probe.lua tests/test_scene2_mute_solo_led_probe.lua
+          lua5.4 tests/test_scene2_mute_solo_led_probe.lua
+      - name: Standalone 16-button Scene 2 LED bank chase tests
+        run: |
+          luac5.4 -p scripts/scene2_led_bank_probe.lua tests/test_scene2_led_bank_probe.lua
+          lua5.4 tests/test_scene2_led_bank_probe.lua
