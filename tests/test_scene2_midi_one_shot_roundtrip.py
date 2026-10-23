@@ -42,6 +42,28 @@ class OneShotTest(unittest.TestCase):
         self.assertIn("RESTORE_VERIFIED=True", self.output.getvalue())
         self.assertIn("SCENE2_MIDI_ROUNDTRIP=PASS", self.output.getvalue())
 
+    def test_skipped_cc_intent_is_clamped_to_half_db(self):
+        # Real Scene 2 rotary 4 generated a valid +0.695 dB intent at +12 dB.
+        self.item.volume = 12.0
+        self.saved, _ = driver._snapshot(self.app)
+        self.assertTrue(self.write(desired=12.695))
+        self.assertEqual(self.item.calls, [
+            {"AudioVolume": 12.5}, {"AudioVolume": 12.0}])
+        self.assertEqual(self.item.volume, 12.0)
+        self.assertIn("bounded_test=12.500 dB", self.output.getvalue())
+        self.assertIn("RESTORE_VERIFIED=True", self.output.getvalue())
+
+    def test_clamps_negative_and_preserves_direction(self):
+        self.assertTrue(self.write(desired=8.305))
+        self.assertEqual(self.item.calls, [
+            {"AudioVolume": 8.5}, {"AudioVolume": 9.0}])
+        self.assertEqual(self.item.volume, 9.0)
+
+    def test_midi_intent_exceeding_pickup_limit_blocks_without_writes(self):
+        self.assertFalse(self.write(desired=10.201))
+        self.assertEqual(self.item.calls, [])
+        self.assertIn("WRITES=0", self.output.getvalue())
+
     def test_missing_or_wrong_consent_blocks_all_writes(self):
         for supplied in (None, "YES", "NOT A BACKUP"):
             self.assertFalse(self.write(consent=supplied))
@@ -74,7 +96,7 @@ class OneShotTest(unittest.TestCase):
             setattr(owner, attr, original)
 
     def test_bad_step_or_disabled_audio_blocks(self):
-        for desired in (9.01, 9.70, 120, -110, float("nan")):
+        for desired in (9.01, 10.21, 120, -110, float("nan")):
             self.assertFalse(self.write(desired=desired))
             self.assertEqual(self.item.calls, [])
         self.item.enabled = False
