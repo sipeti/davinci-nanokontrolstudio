@@ -77,14 +77,18 @@ PYTHONPATH="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Devel
 
 Turn physical Scene 2 rotary 4 slowly through pickup and just one small MIDI
 step further. Only the **first** eligible WRITE_INTENT is considered.
-The target must stay unchanged, and the delta must exceed 0.055 dB but be
-no more than **0.6 dB**. All context IDs, frames, clip bounds, original gain,
-and project name are rechecked twice before any setter call.
+The target must stay unchanged, and the incoming MIDI intent must be within
+0.055–1.2 dB of the original gain. Because the physical Korg can skip CC
+positions, the **actual one-off Resolve write is clamped to at most 0.5 dB**
+in the same direction. Example: at +12.000 dB, an intent for +12.695 dB
+results in one test setter call at +12.500 dB, then immediate restore to
++12.000 dB. All project/timeline/item IDs, frames, clip bounds, original
+gain and project name are checked again before setting.
 
 Expected:
 ~~~text
 A4 PICKUP=PASS; ...; WRITES=0
-MIDI_WRITE=ARMED; ...
+MIDI_WRITE=ARMED; original=...; midi_intent=...; bounded_test=...
 MIDI_TEST_WRITE_READBACK=PASS
 RESTORE_VERIFIED=True
 SCENE2_MIDI_ROUNDTRIP=PASS
@@ -105,3 +109,13 @@ enables live MIDI setters nor changes Scene 1, JOG/SHUTTLE, LEDs, track faders,
 mute/solo, bindings or main. A full control loop requires separate safety
 tests for external edits, scene switching without detectable MIDI, gap/overlap,
 linked clips, automation and disconnect handling.
+
+## Physical acceptance note (2026-10-24)
+
+With the Resolve project picker/render page dismissed and the Edit timeline
+active, the operator's real A4 clip readback gave +12.000 dB and the physical
+Korg pickup passed at CC97. The first post-pickup intent was +12.695 dB. The
+original 0.6 dB one-shot threshold correctly blocked it before any setter
+(`WRITES=0`). The updated version **does not broaden the actual write**: it
+clamps that example to +12.500 dB and restores +12.000 dB. Live acceptance
+of the revised writer is still pending.
