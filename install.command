@@ -18,6 +18,6 @@ if [ -f "$INIT" ]; then
 else
   printf '%s\n' "$LINE" > "$INIT"
 fi
-printf '\nINSTALLED v1.2: %s\n' "$TARGET"
-printf 'Saved MIDI bindings preserved in Hammerspoon hs.settings.\n'
-printf 'Use Hammerspoon -> Reload Config; NK menu: learn SELECT 5 only; existing 24 bindings stay.\n'
+printf '\nINSTALLED v1.3 CLEAN: %s\n' "$TARGET"
+printf 'Existing MIDI settings backed by hs.settings; clean setup is committed only after 28/28.\n'
+printf 'Hammerspoon -> Reload Config; NK menu -> TELJES UJRABETANITAS (28 lepes).\n'
