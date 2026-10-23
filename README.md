@@ -1,7 +1,9 @@
 # nanoKONTROL Studio → DaVinci Resolve 21 — CLEAN
 
 **Kísérleti, egyszerű változat; a működő v1.2 továbbra is a main ágon marad.**
-Nincs HUI/Mackie emuláció, nincs kimenő LED MIDI CC, nincs Resolve API-szinkron. Egyetlen 28 lépéses betanító a teljes Scene 1 kiosztáshoz.
+Nincs HUI/Mackie emuláció és nincs Resolve API-szinkron. **Scene 1 External LED módhoz Hammerspoon MIDI-visszajelzés** és **PLAY/PLAY toggle** működés van; a teljes kiosztást egy 28 lépéses betanító állítja be.
+
+**Teljes gomb/CC/poti/fader térkép: [docs/CONTROL_MAP.md](docs/CONTROL_MAP.md).**
 
 ## 0. Biztonsági mentés; gyári visszaállítás NEM kötelező
 
@@ -20,7 +22,7 @@ A reset a Korg hardverkonfigurációját felülírja. Hivatalos kézikönyv: htt
 2. **SCENE + CYCLE** együtt nyomva, majd USB bekapcsolás.
 3. KORG KONTROL Editor:
    - Global Controller Mode = **Assignable**
-   - **Scene 1 → LED Mode = Internal** (a kézikönyv Scene Parameters része, nem az Editor Global/Power Management nézete)
+   - **Scene 1 → LED Mode = External** (Scene 1 → Common, nem az Editor Global/Power Management nézete); utána **Write Scene Data**
    - Scene 1, Global MIDI Channel = 1
    - JOG = **Sign Magnitude**, Acceleration = **Const**, CC 82
    - Minden betanítandó gomb: CC / **Momentary**, On 127 / Off 0
@@ -76,7 +78,9 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 - FADER 1 = önálló SHUTTLE ±4 J/K/L sebességfokozat. 60–68 középen STOP. Indulás/STOP után **előbb középre kell húzni**, csak aztán aktív.
 - SELECT 1/2 = Cut/Edit; SELECT 5 = Cmd+Shift+A, majd Cmd+B Split az aktív, szerkeszthető sávokon.
 - MUTE 1–4 = CAM 1–4, csak a megfelelő Resolve nézetben.
-- LED-eket csak a Korg **Internal** módja kezeli; nincs kimenő MIDI LED-parancs.
+- PLAY = `Space`: **első megnyomás lejátszás, második megnyomás pause/stop**. Nem küld előtte `K`-t.
+- **External LED-ek:** PLAY világít, ha a Hammerspoon utoljára Play-t kért; CYCLE világít SHUTTLE módban; minden más gomb nyomva világít és felengedve kialszik. A Hammerspoon nem olvassa a Resolve tényleges playback/Sync Bin kameraállapotát, ezért ez **lokális kérést jelző**, nem hiteles Resolve-állapot.
+- **LED menü:** `LED visszajelzes BE/KI`; KI állásban az összes ismert Scene 1 LED-et kikapcsolja. A LED-kimenet fizikai MIDI Channel 1 (`hs.midi.sendCommand(channel=1)`); a Hammerspoon bemeneti csatornaértéke `0`.
 - Duplikált ATEM ISO timeline-on tesztelj.
 
 
@@ -84,7 +88,7 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 
 ## 5. Nincs több millió menüpont
 
-Az NK menüben csak csatlakozás/státusz, egyetlen teljes betanítás, megszakítás és vezérlés BE/KI maradt. Betanítás alatt az utolsó bejövő CC is látható.
+Az NK menüben csatlakozás/státusz, teljes betanítás, megszakítás, vezérlés BE/KI és **egyetlen LED BE/KI kapcsoló** van. Betanítás alatt az utolsó bejövő CC is látható. A LED-kapcsoló KI állásban nullázza a 44 ismert Scene 1 gomb LED-jét.
 
 **Teljes MIDI-napló:** Hammerspoon menüsor ikon → **Console** (vagy Hammerspoon Console megnyitása). A 28 lépéses betanítás alatt **minden MIDI-esemény** automatikusan megjelenik például így:
 
