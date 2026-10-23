@@ -154,7 +154,11 @@ local function refreshStateLEDs(force)
   if not cfg or not ledEnabled then return end
   local playCC = ccFromSignal(cfg.buttons.play)
   local cycleCC = ccFromSignal(cfg.buttons.cycle)
-  if playCC then sendLED(playCC, transportIntent == "playing", force) end
+  -- PLAY LED indicates that Resolve is moving, regardless of whether
+  -- playback was requested by SPACE/PLAY or by J/K/L SHUTTLE/REW/FF.
+  if playCC then
+    sendLED(playCC,transportIntent == "playing" or transportIntent == "shuttle",force)
+  end
   if cycleCC then sendLED(cycleCC, mode == "SHUTTLE", force) end
 end
 local function inputLED(command, meta, signal, value)
@@ -347,9 +351,11 @@ local function action(name)
   elseif name == "rew" then
     stop(); key("j")
     transportIntent = "shuttle"
+    refreshStateLEDs()
   elseif name == "ff" then
     stop(); key("l")
     transportIntent = "shuttle"
+    refreshStateLEDs()
   elseif name == "stop" then stop()
   elseif name == "play" then
     -- Do NOT send K first: PLAY is a true Space toggle. A second PLAY
