@@ -350,11 +350,10 @@ local function wheel(value, scene1Wheel)
   if trimHeld and scene1Wheel then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
-    -- An external nudge may pause/shift playback; avoid stale PLAY LED.
-    if transportIntent ~= "unknown" then
-      transportIntent, transportDirection, transportGear = "unknown", 0, nil
-      refreshStateLEDs()
-    end
+    -- Frame nudging is navigation, not an explicit transport command.
+    -- Keep the last known PLAY/STOP/REW/FF intent and persistent LEDs
+    -- intact; only PLAY/STOP/JKL/SHUTTLE may change transport status.
+    -- Otherwise one wheel tick while playing blanks the PLAY LEDs.
     key(direction > 0 and "right" or "left")
   else
     -- One physical wheel pulse changes one shuttle gear. A rapid string of
