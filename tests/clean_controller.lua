@@ -302,6 +302,61 @@ assert(menus.title=="NK SHUTTLE" and keyCount("k")==6,
   "-1 -> 0 must STOP, not play forward")
 checkTransportLEDs(false,true,false,false,"wheel -1 -> 0 STOP")
 
+-- User-requested mixed controls: STOP -> FF must jump to +2 (2x).
+-- From there, PLAY OR one wheel tick left must return to +1 (not STOP).
+-- REW from STOP is -1, wheel right returns to zero.
+keys={}
+cc(59,127);cc(59,0);runPending()
+assert(menus.title=="NK SHUTTLE +2",
+  "Korg FF from STOP must set shared shuttle gear +2")
+assert(keyCount("k")==1 and keyCount("l")==2,
+  "Korg FF must send K then two L commands (2x)")
+checkTransportLEDs(true,false,false,true,"STOP -> FF +2")
+cc(82,65);runPending()
+assert(menus.title=="NK SHUTTLE +1"
+  and keyCount("k")==2 and keyCount("l")==3,
+  "FF +2 followed by one wheel-left must downshift to +1, not -1")
+checkTransportLEDs(true,false,false,false,"FF +2 -> wheel-left +1")
+cc(63,127);cc(63,0)
+checkTransportLEDs(false,true,false,false,"STOP after mixed FF/SHUTTLE")
+keys={}
+cc(59,127);cc(59,0);runPending()
+assert(keyCount("k")==1 and keyCount("l")==2,
+  "second STOP -> FF again must emit two L")
+keys={}
+cc(80,127);cc(80,0);runPending()
+assert(menus.title=="NK SHUTTLE +1",
+  "FF +2 -> PLAY must downgrade to +1 speed")
+assert(keyCount("k")==1 and keyCount("l")==1
+  and keyCount("space")==0,
+  "PLAY from +2 must send K+L, not Space pause")
+checkTransportLEDs(true,false,false,false,"FF +2 -> PLAY +1")
+keys={}
+cc(80,127);cc(80,0)
+assert(keyCount("space")==1 and keyCount("k")==0,
+  "PLAY again at +1 must retain PLAY -> PLAY pause toggle")
+checkTransportLEDs(false,true,false,false,"PLAY +1 -> PLAY = pause")
+keys={}
+cc(58,127);cc(58,0);runPending()
+assert(menus.title=="NK SHUTTLE -1"
+  and keyCount("k")==1 and keyCount("j")==1,
+  "REW from STOP must move reverse at -1")
+checkTransportLEDs(true,false,true,false,"STOP -> REW -1")
+cc(82,1);runPending()
+assert(menus.title=="NK SHUTTLE" and keyCount("k")==2,
+  "REW -1 then wheel-right must return to zero STOP")
+checkTransportLEDs(false,true,false,false,"REW -1 -> wheel-right STOP")
+-- PLAY from reverse playback returns to forward +1, not pause.
+cc(58,127);cc(58,0);runPending()
+keys={}
+cc(80,127);cc(80,0);runPending()
+assert(menus.title=="NK SHUTTLE +1"
+  and keyCount("k")==1 and keyCount("l")==1
+  and keyCount("space")==0,
+  "REW -1 -> PLAY must switch to forward 1x")
+checkTransportLEDs(true,false,false,false,"REW -1 -> PLAY +1")
+cc(63,127);cc(63,0)
+
 -- Reproduce: a single SHUTTLE tick starts playback, then keyboard Space
 -- must pause it, without any manual STOP to resynchronize the PLAY LED.
 keys={}
@@ -401,12 +456,14 @@ checkTransportLEDs(false,true,false,false,"ignore modifiers and repeats")
 -- Korg-generated synthetic JKL gets observed by our mock event tap, but
 -- must be counted exactly once, including when we use JKL for SHUTTLE.
 keys={}
-cc(58,127);cc(58,0)
-assert(keyCount("j")==1,"Korg REW must inject J once")
+cc(58,127);cc(58,0);runPending()
+assert(keyCount("j")==1 and keyCount("k")==1,
+  "Korg REW must issue K then J exactly once")
 checkTransportLEDs(true,false,true,false,"Korg REW no double count")
-cc(59,127);cc(59,0)
-assert(keyCount("l")==1,"Korg FF must inject L once")
-checkTransportLEDs(true,false,false,false,"Korg FF single L no double count")
+cc(59,127);cc(59,0);runPending()
+assert(keyCount("l")==2 and keyCount("k")==2,
+  "Korg FF must issue K then two L, not one L")
+checkTransportLEDs(true,false,false,true,"Korg FF +2 no double count")
 cc(63,127);cc(63,0)
 checkTransportLEDs(false,true,false,false,"Korg STOP no double count")
 
@@ -503,12 +560,12 @@ cc(63,127,1);cc(63,0,1)
 assert(keyCount("k")==1 and latestLED(80)==0,
   "Scene2 STOP should stop Resolve and clear shared PLAY LED")
 keys={}
-cc(58,127,2);cc(58,0,2)
+cc(58,127,2);cc(58,0,2);runPending()
 assert(keyCount("j")==1,"Scene3 REW must keep fixed J shortcut")
 checkTransportLEDs(true,false,true,false,"Scene3 REW")
-cc(59,127,3);cc(59,0,3)
-assert(keyCount("l")==1,"Scene4 FF must keep fixed L shortcut")
-checkTransportLEDs(true,false,false,false,"Scene4 FF button sends one L = 1x")
+cc(59,127,3);cc(59,0,3);runPending()
+assert(keyCount("l")==2,"Scene4 FF must send two L to reach +2")
+checkTransportLEDs(true,false,false,true,"Scene4 FF button sends two L = 2x")
 cc(62,127,4);cc(62,0,4)
 assert(keyCount("left")==1,"Scene5 Return to Zero should keep Cmd+Left")
 cc(60,127,2);cc(60,0,2)
@@ -585,3 +642,4 @@ print("FADER_REW_FF_LED_SYNC=PASS")
 print("TRANSPORT_4_PERSISTENT_LEDS=PASS")
 print("PHYSICAL_JKL_AND_SYNTHETIC_GUARD=PASS")
 print("SHUTTLE_SIGNED_GEAR_ZERO_AND_FF_THRESHOLD=PASS")
+print("FF_2X_PLAY_DOWNSHIFT_WHEEL_COHERENCE=PASS")
