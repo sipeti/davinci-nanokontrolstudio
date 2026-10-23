@@ -49,6 +49,8 @@ hs = {
   },
 }
 local controller=assert(loadfile("nanokontrol_resolve21.lua"))()
+assert(controller.ledHeartbeat==repeatingTimers[1],
+  "LED heartbeat timer must be kept reachable after module load (GC safe)")
 local function cc(id,v,ch)
   assert(midiCallback)
   ch=ch or 0
