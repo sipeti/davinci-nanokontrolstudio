@@ -4,6 +4,7 @@ import importlib.util
 import io
 import pathlib
 import unittest
+from unittest.mock import patch
 
 
 PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "scene2_audio_roundtrip_probe.py"
@@ -150,6 +151,14 @@ class RoundtripSafetyTest(unittest.TestCase):
         self.timeline.tc = "01:00:05:00"
         self.item.enabled = False
         self.assertFalse(self.preview())
+
+    def test_playhead_motion_during_stability_wait_blocks_write(self):
+        self.assertTrue(self.preview())
+        def advance_playhead(_):
+            self.timeline.tc = "01:00:05:03"
+        with patch.object(self.mod.time, "sleep", side_effect=advance_playhead):
+            self.assertFalse(self.try_roundtrip())
+        self.assertEqual(self.item.calls, [])
 
     def test_unsafe_frame_rate_and_overlapping_items_block(self):
         self.timeline.fps = "29.97"
