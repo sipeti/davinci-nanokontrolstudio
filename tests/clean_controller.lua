@@ -647,6 +647,105 @@ tickLED()
 assert(latestLED(54)==127,"Silent switch back to Scene1 must relight CYCLE")
 cc(54,127,0);cc(54,0,0)
 assert(latestLED(54)==0,"Scene1 CYCLE goes back to JOG")
+-- The only supported Scene 2-5 wheel format is CC82 Sign Magnitude.
+-- All five scenes must produce the same JOG frame steps as Scene 1.
+cc(63,127,0);cc(63,0,0)
+keys={}
+for ch=0,4 do
+  selectHardwareScene(ch+1)
+  cc(82,1,ch)
+  cc(82,65,ch)
+end
+assert(keyCount("right")==5 and keyCount("left")==5,
+  "JOG must step one frame CW/CCW on each of the five input channels")
+assert(keyCount("k")==0 and keyCount("l")==0 and keyCount("j")==0,
+  "JOG must never accidentally trigger JKL playback")
+-- The old Korg Scene2-5 wheel was CC86 Continuous. Do NOT interpret its
+-- absolute values as Sign Magnitude turns (which could jump speed).
+keys={}
+local logBefore=#midiLogs
+cc(86,1,1);cc(86,60,1);cc(86,127,1)
+cc(86,1,4)
+assert(#keys==0,"CC86 Continuous must be ignored, not treated as JOG")
+local warningCount=0
+for i=logBefore+1,#midiLogs do
+  if midiLogs[i]:find("wheel CC86 ignored",1,true) then
+    warningCount=warningCount+1
+  end
+end
+assert(warningCount==2,
+  "warn exactly once per stale Continuous scene (Scenes2 and5)")
+cc(82,1,5);cc(82,65,5)
+assert(#keys==0,"input channel outside the five scenes must be ignored")
+
+-- Editing-point trim remains Scene 1 ONLY, even if Scene 2 wheel sends CC82.
+keys={}
+cc(55,127,0) -- MARKER SET / trim held, Scene1-specific
+cc(82,1,0)
+cc(82,1,1)
+cc(55,0,0)
+assert(keyCount("v")==1 and keyCount(".")==1
+  and keyCount("right")==1,
+  "Scene1 held-marker jog trims; Scene2 wheel still navigates frames")
+
+-- CYCLE is shared; SHUTTLE speed is global and follows scene switching.
+cc(54,127,3);cc(54,0,3)
+assert(menus.title=="NK SHUTTLE","Scene4 CYCLE must enter shared SHUTTLE")
+keys={}
+cc(82,1,0);runPending()
+assert(menus.title=="NK SHUTTLE +1"
+  and keyCount("k")==1 and keyCount("l")==1,
+  "Scene1 wheel starts shared +1 gear")
+checkTransportLEDs(true,false,false,false,"all-scenes shuttle +1")
+cc(82,1,1);runPending()
+assert(menus.title=="NK SHUTTLE +2"
+  and keyCount("k")==2 and keyCount("l")==3,
+  "Scene2 wheel must CONTINUE from +1 to +2")
+checkTransportLEDs(true,false,false,true,"Scene2 +2 FF")
+cc(82,65,2);runPending()
+assert(menus.title=="NK SHUTTLE +1",
+  "Scene3 wheel left must decelerate from +2 to +1")
+checkTransportLEDs(true,false,false,false,"Scene3 returns to normal")
+cc(82,65,3);runPending()
+assert(menus.title=="NK SHUTTLE",
+  "Scene4 wheel left from +1 must STOP at zero")
+checkTransportLEDs(false,true,false,false,"Scene4 zero")
+cc(82,65,4);runPending()
+assert(menus.title=="NK SHUTTLE -1",
+  "Scene5 wheel left from zero starts reverse -1")
+checkTransportLEDs(true,false,true,false,"Scene5 reverse -1")
+cc(82,1,1);runPending()
+assert(menus.title=="NK SHUTTLE",
+  "Scene2 wheel right from -1 must STOP")
+checkTransportLEDs(false,true,false,false,"Scene2 reverse to zero")
+-- Quick turning across scene changes is still one batched JKL restart.
+keys={}
+cc(82,1,0);cc(82,1,4);runPending()
+assert(menus.title=="NK SHUTTLE +2"
+  and keyCount("k")==1 and keyCount("l")==2,
+  "two ticks across Scenes1/5 should batch into one +2 request")
+-- The old Scene1-only fader binding does not leak into any other scene.
+keys={}
+cc(2,127,1);cc(2,0,1)
+assert(#keys==0,"Scene2 slider CC2 must stay unassigned")
+-- FF is shared with all scenes, and the Scene5 wheel can downshift +2->+1.
+cc(63,127,0);cc(63,0,0)
+keys={}
+cc(59,127,2);cc(59,0,2);runPending()
+assert(menus.title=="NK SHUTTLE +2","Scene3 FF should set +2")
+cc(82,65,4);runPending()
+assert(menus.title=="NK SHUTTLE +1",
+  "Scene5 wheel left after Scene3 FF must downshift to +1")
+checkTransportLEDs(true,false,false,false,"Scene5 after Scene3 FF")
+-- Switching modes must keep the current editing/navigation logic.
+cc(54,127,4);cc(54,0,4)
+assert(menus.title=="NK JOG",
+  "Scene5 CYCLE must restore shared JOG and stop transport")
+keys={}
+cc(82,1,1)
+assert(keyCount("right")==1,
+  "Scene2 wheel must immediately revert to frame JOG after CYCLE")
+
 -- Only transport is global: Scene2 MUTE acknowledges LED but MUST NOT
 -- invoke Scene1 CAM1 shortcut or any other editing side effect.
 keys={}
@@ -714,6 +813,10 @@ print("SHUTTLE_ONE_TICK_AND_BURST=PASS")
 print("JOG_SHUTTLE_STOP=PASS")
 print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
 print("GLOBAL_TRANSPORT_SCENES_1_TO_5=PASS")
+print("JOG_SIGN_MAGNITUDE_SCENES_1_TO_5=PASS")
+print("SHUTTLE_SHARED_GEARS_ACROSS_SCENES=PASS")
+print("CONTINUOUS_CC86_REJECTED=PASS")
+print("EXTERNAL_LED_SCENES_1_TO_5=PASS")
 print("SILENT_SCENE_SWITCH_LED_RESTORE=PASS")
 print("PHYSICAL_RESOLVE_SPACE_LED_SYNC=PASS")
 print("SHUTTLE_ONE_TICK_PLAY_LED_AND_SPACE=PASS")
