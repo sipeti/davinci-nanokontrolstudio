@@ -688,8 +688,14 @@ local function onKeyboardDown(event)
   hs.printf("[NK PLAY] physical SPACE => %s (local estimate)",transportIntent)
   return false -- important: let the physical key reach DaVinci Resolve
 end
-local keyboardTap = hs.eventtap.new(
-  {hs.eventtap.event.types.keyDown}, onKeyboardDown):start()
+local tapStarted, keyboardTap = pcall(function()
+  return hs.eventtap.new({hs.eventtap.event.types.keyDown},
+    onKeyboardDown):start()
+end)
+if not tapStarted or not keyboardTap then
+  hs.printf("[NK PLAY] Keyboard Space watcher unavailable; check Hammerspoon Input Monitoring / Accessibility.")
+  keyboardTap = nil -- fail open; working MIDI/JOG/PLAY must not crash
+end
 title()
 return {setup=beginLearn, ledProbe=ledProbe,
   ledHeartbeat=ledHeartbeat, keyboardTap=keyboardTap,
