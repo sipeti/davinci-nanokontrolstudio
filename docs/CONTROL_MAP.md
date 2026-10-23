@@ -24,7 +24,7 @@ The five Korg scene configurations share the **same transport CC numbers** but u
 
 | Physical control | CC | Current action |
 | --- | --- | --- |
-| Main JOG wheel, **Scenes 1–5** | **82** | In JOG mode: one frame right/left per MIDI pulse |
+| Main JOG wheel, **Scenes 1–5** | **82** | In JOG mode: one frame right/left per MIDI pulse; keeps the last known PLAY/STOP/REW/FF status LEDs intact |
 | Main JOG wheel, **Scenes 1–5**, CYCLE = SHUTTLE | **82** | One pulse = one **shared** signed speed step, limited to −4…+4 |
 | Hold MARKER SET + JOG, **Scene 1 only** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
 | Slider/Fader 1, **Scene 1 only** | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
