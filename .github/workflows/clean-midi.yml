@@ -3,7 +3,8 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    branches: ["main"]
+    # PR #8 is stacked on the read-only discovery PR; keep its CI active.
+    branches: ["main", "research/scene2-audio-readonly-probe"]
 
 permissions:
   contents: read
