@@ -14,6 +14,7 @@ local trimHeld, faderArmed, faderActive = false, false, false
 local shuttleSource, shuttlePulses, shuttleTimers = nil, 0, {}
 local splitBusy, lastMidi = false, "-"
 local lastLearnProblem = nil
+local lastLearnValues = {}
 local menu = hs.menubar.new()
 
 local steps = {
@@ -194,6 +195,24 @@ local function midiSignal(command, meta)
   end
   return nil,nil
 end
+-- Raw MIDI evidence, recorded in Hammerspoon -> Console ONLY during the
+-- 28-step wizard. Logs incoming channel as reported by Hammerspoon (0-based),
+-- CC/Note, value and the change since the previous event on that controller.
+local function logLearnMidi(command, meta, signal, value)
+  local movement = "-"
+  if command == "controlChange" and type(value) == "number" then
+    local previous = lastLearnValues[signal]
+    if previous ~= nil then
+      local change = value - previous
+      movement = string.format("%+d", change)
+    end
+    lastLearnValues[signal] = value
+  end
+  hs.printf("[NK MIDI] step=%d/%d type=%s channel=%s controller=%s value=%s delta=%s raw=%s",
+    step, TOTAL, tostring(command), tostring(meta.channel),
+    tostring(signal), tostring(value), movement, tostring(meta.data or "-"))
+end
+
 local function buttonPress(command, value)
   return (command == "controlChange" and value == 127)
     or (command == "noteOn" and value > 0)
@@ -220,6 +239,7 @@ local function beginLearn()
   if not device then toast("NK: nincs nanoKONTROL Studio USB MIDI"); return end
   stop()
   learning, pending, step = true,nil,1
+  lastLearnValues = {}
   draft = {setupVersion=2,buttons={},wheel=nil,faderShuttle=nil}
   stepText()
 end
@@ -278,9 +298,11 @@ local function learn(command,meta)
     return
   end
   if step == TOTAL then
-    -- From the saved Scene 1 configuration (also expected after factory reset):
-    -- first physical slider is MIDI channel 1 / CC 2, NOT knob 1 (CC 13).
-    if signal ~= "cc:1:2" or command ~= "controlChange" then return end
+    -- MIDI channel 1 appears as channel=0 in Hammerspoon callback metadata.
+    -- Follow the channel captured on the wheel; do not hardcode 0 or 1.
+    local wheelChannel = draft.wheel:match("^cc:(%d+):82$")
+    if signal ~= "cc:" .. tostring(wheelChannel) .. ":2"
+       or command ~= "controlChange" then return end
     if not draft.faderMin or value < draft.faderMin then draft.faderMin = value end
     if not draft.faderMax or value > draft.faderMax then draft.faderMax = value end
     if draft.faderMin <= 15 and draft.faderMax >= 112 then
@@ -291,10 +313,11 @@ local function learn(command,meta)
     return
   end
   local name = steps[step-2][1]
-  -- CC 0..20 are sliders/knobs in the standard Scene 1. Do not learn them as buttons.
+  -- CC 0..20 are knobs/sliders. Channel is 0-based on this Hammerspoon API.
   if command == "controlChange" then
     local chan,num = signal:match("^cc:(%d+):(%d+)$")
-    if tonumber(chan) ~= 1 or tonumber(num) <= 20 then return end
+    local wheelChannel = draft.wheel:match("^cc:(%d+):82$")
+    if not chan or chan ~= wheelChannel or tonumber(num) <= 20 then return end
   end
   if not pending then
     if not buttonPress(command,value) or signal == draft.wheel then return end
@@ -319,7 +342,11 @@ local function midiCallback(_,_,command,_,meta)
   local signal,value = midiSignal(command,meta)
   if not signal then return end
   lastMidi = signal .. "=" .. tostring(value)
-  if learning then learn(command,meta); return end
+  if learning then
+    logLearnMidi(command,meta,signal,value)
+    learn(command,meta)
+    return
+  end
   if not enabled or not cfg then return end
   if signal == cfg.buttons.editSelect and buttonRelease(command,value) then
     trimHeld = false
