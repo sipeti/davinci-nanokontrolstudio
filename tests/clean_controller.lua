@@ -34,8 +34,10 @@ hs = {
     new=function()
       local dev={}
       function dev:callback(cb) midiCallback=cb end
-      function dev:sendCommand()
-        outputs[#outputs+1]=true
+      function dev:sendCommand(cmd,meta)
+        outputs[#outputs+1]={cmd=cmd,cc=meta.controllerNumber,
+          value=meta.controllerValue,channel=meta.channel}
+        return true
       end
       return dev
     end,
@@ -59,6 +61,19 @@ local function keyCount(k)
   local n=0
   for _,entry in ipairs(keys) do if entry.key==k then n=n+1 end end
   return n
+end
+local function latestLED(cc)
+  for i=#outputs,1,-1 do
+    if outputs[i].cc==cc then return outputs[i].value end
+  end
+  return nil
+end
+local function allLEDBlanked(startIndex)
+  for i=startIndex or 1,#outputs do
+    if outputs[i].value~=0 or outputs[i].channel~=1
+       or outputs[i].cmd~="controlChange" then return false end
+  end
+  return true
 end
 local function menuAction(label)
   for _,x in ipairs(menus.items()) do
@@ -116,7 +131,11 @@ assert(menus.title=="NK JOG")
 assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:0:2")
 assert(saved.wheel=="cc:0:82")
 assert(saved.buttons.splitAll=="cc:0:54")
-assert(#outputs==0,"controller must NEVER send LED output CC")
+-- At successful 28/28 the External-mode controller receives a fresh OFF
+-- on each known LED, and the input channel 0 must map to OUTPUT channel 1.
+assert(#outputs==44,"expected 44 known Scene 1 LEDs reset after setup")
+assert(allLEDBlanked(1),"initial LED OFF commands need output channel=1")
+assert(latestLED(35)==0,"PLAY should start unlit")
 -- The physical fader can't start transport until it has been centered.
 keys={}
 cc(2,127)
@@ -193,11 +212,60 @@ menuAction("TELJES UJRABETANITAS")
 cc(82,1)
 menuAction("MEGSZAKITASA")
 assert(saved==original,"aborted wizard must not overwrite settings")
-assert(#outputs==0,"no LED output allowed")
+-- Unbound SOLO CC is still a momentary LED, without triggering a shortcut.
+local keyN=#keys
+cc(29,127)
+assert(latestLED(29)==127 and #keys==keyN,"unbound button LED press feedback")
+cc(29,0)
+assert(latestLED(29)==0,"unbound button LED release feedback")
+
+-- Active PLAY light reflects local Space requests, not an unverified Resolve API.
+keys={}
+cc(35,127);cc(35,0)
+assert(keyCount("space")==1 and keyCount("k")==0,
+  "PLAY must send Space without a preceding K")
+assert(latestLED(35)==127,"first PLAY must latch the local request LED")
+cc(35,127);cc(35,0)
+assert(keyCount("space")==2 and keyCount("k")==0,
+  "second PLAY must pause with Space and no K")
+assert(latestLED(35)==0,"second PLAY must clear the LED")
+
+-- STOP sends K, cancels PLAY light, and should flash only while held.
+cc(35,127);cc(35,0)
+cc(34,127)
+assert(latestLED(35)==0 and latestLED(34)==127,
+  "STOP should extinguish PLAY, keep its own momentary LED")
+cc(34,0)
+assert(latestLED(34)==0,"STOP must go OFF on release")
+
+-- CYCLE LED stays ON in SHUTTLE and goes OFF returning to JOG.
+cc(30,127);cc(30,0)
+assert(latestLED(30)==127,"CYCLE should show SHUTTLE")
+cc(30,127);cc(30,0)
+assert(latestLED(30)==0,"CYCLE should clear in JOG")
+
+-- MUTE/CAM LED uses the received physical CC, not an inferred camera state.
+cc(42,127)
+assert(latestLED(42)==127,"MUTE 1 pressed LED")
+cc(42,0)
+assert(latestLED(42)==0,"MUTE 1 released LED")
+
+-- The one LED menu toggle must turn *all* 44 LEDs off, and suspend feedback.
+local after=#outputs
+menuAction("LED visszajelzes BE/KI")
+assert(#outputs==after+44 and allLEDBlanked(after+1),
+  "LED OFF must reset all known buttons on output channel 1")
+after=#outputs
+cc(42,127);cc(42,0)
+assert(#outputs==after,"LED disabled must send no ACK")
+menuAction("LED visszajelzes BE/KI")
+assert(#outputs>=after+44 and latestLED(35)==0,
+  "LED enable should refresh after a clean reset")
+
 print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
 print("CLEAN_WIZARD_28=PASS")
 print("FADER_1_STRICT_CC2=PASS")
 print("SHUTTLE_ONE_TICK_AND_BURST=PASS")
 print("JOG_SHUTTLE_STOP=PASS")
-print("NO_LED_OUTPUT=PASS")
+print("EXTERNAL_LED_CHANNEL1_PLAY_TOGGLE=PASS")
