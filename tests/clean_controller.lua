@@ -147,6 +147,46 @@ assert(keyCount(".")==1,"held MARKER SET should trim")
 cc(39,0)
 cc(82,1)
 assert(keyCount("right")>=1,"release restores plain JOG")
+-- Wheel SHUTTLE response must be immediate (one tick) and burst-coalesced.
+cc(30,127) -- CYCLE after JOG; old full-learn mapping is CC30
+assert(menus.title=="NK SHUTTLE","CYCLE should switch to wheel SHUTTLE")
+keys={}
+cc(82,1)
+assert(#keys==0,"one wheel event should queue a short batch, not K spam")
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==1,
+  "one jog tick must trigger one forward shuttle gear")
+assert(menus.title=="NK SHUTTLE +1")
+cc(82,65)
+runPending()
+assert(keyCount("k")==2,"one reverse tick at +1 must STOP shuttle")
+assert(menus.title=="NK SHUTTLE")
+keys={}
+for _=1,4 do cc(82,1) end
+assert(#keys==0,"fast MIDI burst should not restart Resolve 4 times")
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==4,
+  "four forward ticks must make one K then Lx4 (not four separate restarts)")
+assert(menus.title=="NK SHUTTLE +4")
+keys={}
+cc(82,65)
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==3,
+  "one reverse tick at +4 should reduce to +3")
+assert(menus.title=="NK SHUTTLE +3")
+keys={}
+cc(82,65) -- queue a wheel update
+cc(34,127) -- physical STOP must cancel queued wheel changes
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==0,
+  "STOP must cancel a pending wheel batch")
+assert(menus.title=="NK SHUTTLE")
+cc(30,127) -- CYCLE returns to JOG
+assert(menus.title=="NK JOG")
+keys={}
+cc(82,1)
+assert(keyCount("right")==1, "normal JOG must remain 1 frame per tick")
+
 -- Complete one-shot relearn must preserve old saved config if interrupted.
 local original=saved
 menuAction("TELJES UJRABETANITAS")
@@ -158,5 +198,6 @@ print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
 print("CLEAN_WIZARD_28=PASS")
 print("FADER_1_STRICT_CC2=PASS")
+print("SHUTTLE_ONE_TICK_AND_BURST=PASS")
 print("JOG_SHUTTLE_STOP=PASS")
 print("NO_LED_OUTPUT=PASS")
