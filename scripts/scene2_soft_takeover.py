@@ -116,8 +116,16 @@ class SoftTakeover:
         previous_cc = current["last_cc"]
         current["last_cc"] = value
         if current["state"] == "PICKUP_PENDING":
-            if previous_cc != value and abs(
-                    gain_for_cc(value) - observed_db) <= PICKUP_WINDOW_DB:
+            before_db, after_db = gain_for_cc(previous_cc), gain_for_cc(value)
+            near_target = abs(after_db - observed_db) <= PICKUP_WINDOW_DB
+            # The physical log showed skipped MIDI values on quick turns.
+            # Recognize a bounded crossing even when the CC skips the
+            # pickup window. Crossing only arms; this event NEVER writes.
+            crossed = (min(before_db, after_db) <= observed_db <=
+                       max(before_db, after_db) and
+                       abs(before_db - observed_db) <= MAX_SINGLE_MOVE_DB and
+                       abs(after_db - observed_db) <= MAX_SINGLE_MOVE_DB)
+            if previous_cc != value and (near_target or crossed):
                 current["state"] = "ENGAGED"
                 # Even successful pickup does NOT write on this event.
                 return Decision("ENGAGED", strip, reason="pickup; no write")
