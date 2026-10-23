@@ -84,14 +84,15 @@ PYTHONPATH="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Devel
 /opt/homebrew/bin/python3 \
 /tmp/nk-scene2-eight/scripts/scene2_clip_gain_8rotary.py \
 --seconds 60 --write-test-copy \
---expected-project "hajoagyu_261022 testing" \
+--expected-project "YOUR EXACT TEST COPY PROJECT NAME" \
 --confirmed-no-automation \
 --max-writes 8 \
 --consent "YES, THIS IS A BACKED-UP TEST PROJECT"
 ~~~
 
-This specific project name is the user's previously designated test copy.
-The program also checks the **exact name of the active Resolve project**.
+Replace the placeholder with the exact local name of your own disposable
+copy. The program checks the **exact name of the active Resolve project**.
+Do not include private production project titles in public GitHub notes.
 
 The first MIDI touch on every strip does nothing; turn through its pickup
 point and then move slightly to adjust the value. Each actual write must
