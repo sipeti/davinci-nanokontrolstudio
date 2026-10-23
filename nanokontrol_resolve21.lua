@@ -13,6 +13,7 @@ local learning, draft, pending, step = false, nil, nil, 0
 local trimHeld, faderArmed, faderActive = false, false, false
 local shuttleSource, shuttlePulses, shuttleTimers = nil, 0, {}
 local splitBusy, lastMidi = false, "-"
+local lastLearnProblem = nil
 local menu = hs.menubar.new()
 
 local steps = {
@@ -47,6 +48,12 @@ assert(TOTAL == 28, "unexpected learn step count")
 
 local function toast(message, seconds)
   hs.alert.show(message, seconds or 4)
+end
+local function warnLearnOnce(reason, message)
+  -- Jog wheels can send dozens of MIDI messages per second.
+  if lastLearnProblem == reason then return end
+  lastLearnProblem = reason
+  toast("NK: " .. message, 7)
 end
 
 local function resolveApp()
@@ -205,6 +212,7 @@ local function stepText()
     prompt = "FADER 1 (bal szelso TOLOPOTI): teljesen LE, majd FEL (CC 2)"
   else prompt = "Nyomd meg ES ENGEDD EL: " .. steps[step-2][2]
   end
+  lastLearnProblem = nil
   toast("NK SETUP " .. step .. "/" .. TOTAL .. "\n" .. prompt, 8)
   title()
 end
@@ -236,14 +244,35 @@ local function learn(command,meta)
   local signal,value = midiSignal(command,meta)
   if not signal or value==nil then return end
   if step == 1 then
-    if command ~= "controlChange" or value < 1 or value > 64 then return end
+    -- A Continuous wheel can emit a CC in 1..64 and accidentally pass the
+    -- original check; its reverse movement then gets stuck forever on 2/28.
+    if command ~= "controlChange" then return end
+    if not signal:match("^cc:%d+:82$") then
+      if signal:match("^cc:%d+:86$") then
+        warnLearnOnce("cc86", "CC86 erkezik! A Korg meg Continuous modban lehet. Scene 1 -> Communication -> Write Scene Data.")
+      end
+      return
+    end
+    if value < 1 or value > 64 then
+      warnLearnOnce("wrongCW", "JOG JOBBRA: CC82 1..64 vart, kapott: " .. signal .. "=" .. value)
+      return
+    end
     draft.wheel = signal
     step=2
     stepText()
     return
   end
   if step == 2 then
-    if signal ~= draft.wheel or value < 65 or value > 127 then return end
+    if signal ~= draft.wheel then
+      if command == "controlChange" and signal:match("^cc:%d+:86$") then
+        warnLearnOnce("cc86", "CC86 erkezik! Varjuk a CC82-t. Korg Editor -> Communication -> Write Scene Data.")
+      end
+      return
+    end
+    if value < 65 or value > 127 then
+      warnLearnOnce("wrongCCW", "JOG BALRA: CC82 65..127 vart, kapott: " .. signal .. "=" .. value .. ". Ird ki a Scene 1-et a Korgra!")
+      return
+    end
     step=3
     stepText()
     return
