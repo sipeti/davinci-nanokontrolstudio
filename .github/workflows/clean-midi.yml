@@ -1,8 +1,13 @@
-name: Clean nanoKONTROL Lua
+name: nanoKONTROL Studio Lua tests
 on:
   push:
-    branches: ["fix/clean-assignable-relearn"]
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
 
 jobs:
   lua:
