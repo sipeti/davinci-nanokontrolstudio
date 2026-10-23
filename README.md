@@ -80,7 +80,7 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 - MUTE 1–4 = CAM 1–4, csak a megfelelő Resolve nézetben.
 - PLAY = `Space`: **első megnyomás lejátszás, második megnyomás pause/stop**. Nem küld előtte `K`-t.
 - **External LED-ek:** PLAY világít, ha a Hammerspoon utoljára Play-t kért; CYCLE világít SHUTTLE módban; minden más gomb nyomva világít és felengedve kialszik. A Hammerspoon nem olvassa a Resolve tényleges playback/Sync Bin kameraállapotát, ezért ez **lokális kérést jelző**, nem hiteles Resolve-állapot.
-- **LED menü:** `LED visszajelzes BE/KI`; KI állásban az összes ismert Scene 1 LED-et kikapcsolja. A LED-kimenet fizikai MIDI Channel 1 (`hs.midi.sendCommand(channel=1)`); a Hammerspoon bemeneti csatornaértéke `0`.
+- **LED menü:** `LED visszajelzes BE/KI`; KI állásban az összes ismert Scene 1 LED-et kikapcsolja. **Hardverpróba alapján a MIDI-kimenet `sendCommand(channel=0)`**, amely Hammerspoonban minden csatornára küld. `channel=1` küldés API-szinten sikeres volt, de a Korgon nem világított. A bejövő `channel=0` ettől függetlenül az első fizikai MIDI-csatornát jelzi.
 - Duplikált ATEM ISO timeline-on tesztelj.
 
 
@@ -111,7 +111,7 @@ require("nanokontrol_resolve21").ledProbe()
 4. Figyeld a **MUTE 1 LED-et**: előbb 1,5 másodpercig az **1-es MIDI-csatornán** próbál világítani, majd rövid szünet után 1,5 másodpercig **0 = összes csatorna** küldéssel. A kód automatikusan elküldi a kikapcsoló üzeneteket is.
 5. Küldd el a Console \`[NK LED PROBE]\` sorait, és írd meg, hogy **első / második / egyik sem** próbán felvillant-e a LED.
 
-**Értelmezés:** ha az első felvillan, a fizikai MIDI output jó a helyes 1-es csatornán, és a rendes MIDI callback/LED mappingot kell vizsgálni. Ha csak a második, csatornaeltérést vagy a Korg csatornabeállítását kell felülvizsgálni. Ha a sendCommand \`pcall=false\` vagy \`result=false\`, a Hammerspoon kimeneti eszközének elérhetőségét vizsgáljuk. Ha \`result=true\`, de egyik LED sem világít, az **csak API-szintű elfogadás**, nem a LED hardverének visszaigazolása: a Korg Scene 1 valódi External/Write állapotát és a MIDI-output útvonalat kell ellenőrizni.
+**2026-10-23-i valós eredmény:** **csak a második (`channel=0`, összes csatorna) próba világította ki a MUTE 1 LED-et**. A normál Scene 1 LED-visszajelzés ezért szintén `channel=0` kimenetre van állítva. Ez a konkrét Korgon mért helyes útvonal, nem általános javaslat minden MIDI-eszközhöz. A kétcsatornás Console-proba továbbra is elérhető diagnosztikához; a betanítás és Resolve-működés nem változott.
 
 A teszt nem küld Resolve billentyűket, nem nyúl a kalibrációhoz, és nem ír a Korg konfigurációjába.
 
