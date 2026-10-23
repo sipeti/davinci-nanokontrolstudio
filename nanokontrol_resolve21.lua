@@ -17,12 +17,13 @@ local trimHeld, faderArmed, faderActive = false, false, false
 local SHUTTLE_WHEEL_BATCH_SECONDS = 0.045
 local shuttleSource, shuttlePulses, shuttleTimers, shuttleWheelTimer = nil, 0, {}, nil
 local splitBusy, lastMidi = false, "-"
--- Transport state is our last requested action, NOT Resolve's actual play status.
-local transportIntent = "stopped"
--- The physical Space key is observed while Resolve is frontmost. Suppress
--- Hammerspoon's own simulated Space so a Korg PLAY is not counted twice.
-local SYNTHETIC_SPACE_GUARD_SECONDS = 0.15
-local syntheticSpaceUntil = 0
+-- Transport state is a best-effort estimate of the last observed action,
+-- never a Resolve playback API reading. After startup it's UNKNOWN.
+local transportIntent, transportDirection = "unknown", 0
+-- Suppress Korg-generated synthetic J/K/L/Space in the keyboard event tap,
+-- otherwise we'd double count actions we already handled as MIDI.
+local SYNTHETIC_KEY_GUARD_SECONDS = 0.15
+local syntheticKeyUntil = {space=0,j=0,k=0,l=0}
 local ledEnabled = true
 local ledOutputState, pressedLEDs = {}, {}
 local ledOutputStatus = "meg nem tesztelt"
@@ -91,10 +92,10 @@ local function resolveApp()
   return nil
 end
 local function key(k, mods)
-  if k == "space" then
-    -- Event taps can observe our generated keystroke. The 10ms keyStroke
-    -- is guarded for 150ms, including delayed macOS event delivery.
-    syntheticSpaceUntil = hs.timer.secondsSinceEpoch() + SYNTHETIC_SPACE_GUARD_SECONDS
+  if syntheticKeyUntil[k] ~= nil and (not mods or #mods == 0) then
+    -- The 10ms keyStroke can be observed by our event tap synchronously or
+    -- slightly later: guard it before emitting.
+    syntheticKeyUntil[k] = hs.timer.secondsSinceEpoch() + SYNTHETIC_KEY_GUARD_SECONDS
   end
   hs.eventtap.keyStroke(mods or {}, k, 10000)
 end
@@ -152,23 +153,30 @@ local function resetLEDs()
 end
 local function refreshStateLEDs(force)
   if not cfg or not ledEnabled then return end
-  local playCC = ccFromSignal(cfg.buttons.play)
-  local cycleCC = ccFromSignal(cfg.buttons.cycle)
-  -- PLAY LED indicates that Resolve is moving, regardless of whether
-  -- playback was requested by SPACE/PLAY or by J/K/L SHUTTLE/REW/FF.
-  if playCC then
-    sendLED(playCC,transportIntent == "playing" or transportIntent == "shuttle",force)
+  local moving = transportIntent == "playing" or transportIntent == "shuttle"
+  local states = {
+    play=moving,
+    stop=transportIntent == "stopped",
+    rew=transportIntent == "shuttle" and transportDirection < 0,
+    ff=transportIntent == "shuttle" and transportDirection > 0,
+    cycle=mode == "SHUTTLE",
+  }
+  for _, name in ipairs({"play","stop","rew","ff","cycle"}) do
+    local cc = ccFromSignal(cfg.buttons[name])
+    if cc then sendLED(cc, states[name], force) end
   end
-  if cycleCC then sendLED(cycleCC, mode == "SHUTTLE", force) end
 end
 local function inputLED(command, meta, signal, value)
   if not cfg or not ledEnabled or command ~= "controlChange" then return end
   local cc = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
   if value ~= 0 and value ~= 127 then return end
-  -- PLAY/CYCLE are persistent *shared* mode indicators on every scene.
-  -- The other buttons get momentary physical LED acknowledgment only.
+  -- Transport LEDs are persistent shared state, never momentary echoes.
+  -- A release must NOT turn STOP/REW/FF off again.
   if cc == ccFromSignal(cfg.buttons.play)
+    or cc == ccFromSignal(cfg.buttons.stop)
+    or cc == ccFromSignal(cfg.buttons.rew)
+    or cc == ccFromSignal(cfg.buttons.ff)
     or cc == ccFromSignal(cfg.buttons.cycle) then
     refreshStateLEDs()
     return
@@ -260,7 +268,7 @@ local function stop()
   cancelShuttle()
   speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
   if resolveApp() then key("k") end
-  transportIntent = "stopped"
+  transportIntent, transportDirection = "stopped", 0
   refreshStateLEDs()
   title()
 end
@@ -272,6 +280,7 @@ local function shuttle(target, source)
   key("k")
   speed, shuttleSource = target, target == 0 and nil or source
   transportIntent = target == 0 and "stopped" or "shuttle"
+  transportDirection = target > 0 and 1 or (target < 0 and -1 or 0)
   refreshStateLEDs()
   title()
   local direction = target > 0 and "l" or "j"
@@ -309,8 +318,8 @@ local function wheel(value)
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
     -- An external nudge may pause/shift playback; avoid stale PLAY LED.
-    if transportIntent ~= "stopped" then
-      transportIntent = "unknown"
+    if transportIntent ~= "unknown" then
+      transportIntent, transportDirection = "unknown", 0
       refreshStateLEDs()
     end
     key(direction > 0 and "right" or "left")
@@ -350,11 +359,11 @@ local function action(name)
   elseif name == "begin" then key("left",{"cmd"})
   elseif name == "rew" then
     stop(); key("j")
-    transportIntent = "shuttle"
+    transportIntent, transportDirection = "shuttle", -1
     refreshStateLEDs()
   elseif name == "ff" then
     stop(); key("l")
-    transportIntent = "shuttle"
+    transportIntent, transportDirection = "shuttle", 1
     refreshStateLEDs()
   elseif name == "stop" then stop()
   elseif name == "play" then
@@ -365,7 +374,7 @@ local function action(name)
     cancelShuttle()
     speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
     key("space")
-    transportIntent = wasRunning and "stopped" or "playing"
+    transportIntent, transportDirection = wasRunning and "stopped" or "playing", 0
     refreshStateLEDs()
     title()
   elseif name == "undo" then key("z",{"cmd"})
@@ -463,7 +472,7 @@ local function finishLearn()
   hs.settings.set(KEY,draft) -- commit only after ALL 28 steps
   cfg = draft
   resetLEDs()
-  transportIntent = "stopped"
+  transportIntent, transportDirection = "stopped", 0
   learning, draft, pending, step = false,nil,nil,0
   faderArmed, faderActive, trimHeld = false,false,false
   mode, speed = "JOG",0
@@ -657,10 +666,9 @@ menu:setMenu(function()
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
--- The hardware SCENE button is a local selector: it can reset the visible
--- External LED state without emitting a scene-change MIDI event. The previous
--- MIDI send cache therefore cannot tell when PLAY/CYCLE lamps were cleared.
--- Reassert ONLY the two shared mode LEDs, at 2 CC messages every 0.5 s.
+-- The hardware SCENE button can blank locally-held External LEDs without
+-- emitting any MIDI event. Reassert the five shared state LEDs every 0.5 s:
+-- PLAY/STOP/REW/FF/CYCLE, bypassing the output deduplication cache.
 -- No Resolve polling, no changed key actions, no rerunning the 28-step wizard.
 local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
   if ledEnabled and enabled and device and cfg and not learning
@@ -669,30 +677,42 @@ local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
   end
 end)
 
--- Observe the *human* Space key; do not consume it. This corrects PLAY LED
--- after starting/pausing with the keyboard instead of the Korg. It cannot
--- detect clicking the Resolve GUI or playback already running at startup.
+-- Observe *human* Space/J/K/L keys in Resolve, letting all events through.
+-- Our synthetic Korg shortcuts have already updated state in MIDI actions
+-- and are suppressed above via syntheticKeyUntil. This does NOT detect clicks.
 local function onKeyboardDown(event)
   if not cfg or not enabled or learning or not resolveApp() then return false end
-  if event:getKeyCode() ~= hs.keycodes.map.space then return false end
+  local code = event:getKeyCode()
+  local observed = nil
+  for _, name in ipairs({"space","j","k","l"}) do
+    if code == hs.keycodes.map[name] then observed=name;break end
+  end
+  if not observed then return false end
   local flags = event:getFlags()
   if flags.cmd or flags.alt or flags.ctrl or flags.shift or flags.fn then
     return false
   end
   local repeated = event:getProperty(hs.eventtap.event.properties.keyboardEventAutorepeat)
   if repeated and repeated ~= 0 then return false end
-  if hs.timer.secondsSinceEpoch() < syntheticSpaceUntil then
-    return false -- do not double-count our own Korg PLAY synthetic Space
+  if hs.timer.secondsSinceEpoch() < syntheticKeyUntil[observed] then
+    return false -- do not count the Korg's simulated shortcut again
   end
   local wasRunning = transportIntent == "playing"
     or transportIntent == "shuttle" or speed ~= 0
   cancelShuttle()
   speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
-  transportIntent = wasRunning and "stopped" or "playing"
+  if observed == "space" then
+    transportIntent, transportDirection = wasRunning and "stopped" or "playing", 0
+  elseif observed == "k" then
+    transportIntent, transportDirection = "stopped", 0
+  else
+    transportIntent, transportDirection = "shuttle", observed == "j" and -1 or 1
+  end
   refreshStateLEDs()
   title()
-  hs.printf("[NK PLAY] physical SPACE => %s (local estimate)",transportIntent)
-  return false -- important: let the physical key reach DaVinci Resolve
+  hs.printf("[NK TRANSPORT] physical %s => %s dir=%d (local estimate)",
+    observed,transportIntent,transportDirection)
+  return false -- never consume physical keys; Resolve gets the original
 end
 local tapStarted, keyboardTap = pcall(function()
   return hs.eventtap.new({hs.eventtap.event.types.keyDown},
