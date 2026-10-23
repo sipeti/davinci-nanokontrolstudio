@@ -24,7 +24,7 @@ A lightweight, keyboard-driven MIDI control surface for **DaVinci Resolve 21 on 
 - macOS with [Hammerspoon](https://www.hammerspoon.org/) installed.
 - DaVinci Resolve 21 (tested with the Studio edition).
 - Korg nanoKONTROL Studio, connected over USB in **Assignable Mode**.
-- [KORG KONTROL Editor](https://www.korg.com/us/support/download/software/0/552/2768/) for configuring and writing the controller's scenes.
+- [KORG KONTROL Editor](https://www.korg.com/us/support/download/software/0/552/1355/) for configuring and writing the controller's scenes.
 - Hammerspoon **Accessibility** permission; **Input Monitoring** may also be necessary for observing physical Space/J/K/L.
 - A Resolve keyboard shortcut layout compatible with the commands below. Custom shortcuts may need adjustment.
 
