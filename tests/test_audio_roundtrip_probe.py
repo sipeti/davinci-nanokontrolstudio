@@ -114,6 +114,11 @@ class RoundtripSafetyTest(unittest.TestCase):
         self.assertFalse(self.try_roundtrip(expected_project="wrong"))
         self.assertEqual(self.item.calls, [])
 
+    def test_exact_backup_consent_is_mandatory(self):
+        self.assertTrue(self.preview())
+        self.assertFalse(self.try_roundtrip(confirmation="NO"))
+        self.assertEqual(self.item.calls, [])
+
     def test_successful_roundtrip_restores_original(self):
         self.assertTrue(self.preview())
         self.assertTrue(self.try_roundtrip())
