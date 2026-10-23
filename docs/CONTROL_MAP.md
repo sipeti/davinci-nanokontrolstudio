@@ -89,7 +89,7 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 
 | LED | Visszajelzés |
 | --- | --- |
-| PLAY | az **utoljára Hammerspoonon keresztül kért** Play aktív → világít; újabb PLAY/STOP → kialszik |
+| PLAY | **Minden mozgó transzportkérésnél világít:** PLAY/Space, SHUTTLE ±1…±4 egyetlen JOG impulzusra is, FADER 1 mozgása, REW és FF. Kialszik STOP, SHUTTLE 0, FADER közép vagy Space által kért pause után |
 | CYCLE | SHUTTLE aktív → világít; JOG aktív → kialszik |
 | STOP, REW, FF, MUTE, SELECT, MARKER, SOLO, REC | **lenyomásra fel**, felengedésre le |
 | NK menü → LED visszajelzés KI | mind a **44 ismert Scene 1 gomb LED-je kikapcsolva** |
