@@ -25,6 +25,19 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(self.feed(91).state, 'PICKUP_PENDING')
         self.assertEqual(self.feed(90).state, 'ENGAGED')
 
+    def test_skipped_midi_values_cross_target_without_writing(self):
+        # User's physical log shows occasional 2-4 step CC skips.
+        # For 9 dB, CC90 to CC92 crosses the target even though
+        # the second value is outside the strict 0.55 dB window.
+        self.assertEqual(self.feed(90, db=9.0).state, 'PICKUP_PENDING')
+        result = self.feed(92, db=9.0)
+        self.assertEqual(result.state, 'ENGAGED')
+        self.assertIsNone(result.proposed_db)
+
+    def test_unbounded_fast_sweep_does_not_engage(self):
+        self.assertEqual(self.feed(10, db=9.0).state, 'PICKUP_PENDING')
+        self.assertEqual(self.feed(120, db=9.0).state, 'PICKUP_PENDING')
+
     def test_intent_needs_verified_ack(self):
         self.engage()
         intent = self.feed(92)
