@@ -837,6 +837,54 @@ assert(outputs[probeStart+4].channel==0 and outputs[probeStart+4].cc==21
   and outputs[probeStart+4].value==0,"Stage 2 all-channel OFF")
 assert(#keys==beforeProbeKeys,"LED probe must not edit Resolve")
 
+-- Observed Scene 2 input must invalidate the absolute Scene 1
+-- shuttle fader's pickup. Scene changes themselves are silent on hardware.
+-- The relative JOG wheel must work again on either scene without being
+-- blocked by the old faderActive state.
+cc(63,127,0) -- STOP disarms current fader
+keys={}
+cc(2,64,0)  -- physically center; arm without playback
+cc(2,127,0) -- now take ownership at +4
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==4,
+  "Scene1 fader should still work normally after centered pickup")
+selectHardwareScene(2)
+keys={}
+cc(13,88,1) -- Scene 2 knob: observed other-scene activity
+assert(#keys==0,"changing a Scene2 knob must not issue transport keys")
+cc(82,1,1) -- Scene2 JOG should no longer be blocked by stale faderActive
+assert(keyCount("right")==1,
+  "Scene2 jog must navigate after leaving active Scene1 shuttle fader")
+selectHardwareScene(1)
+keys={}
+cc(82,65,0)
+assert(keyCount("left")==1,
+  "return to Scene1 must restore wheel navigation despite old fader position")
+keys={}
+cc(2,127,0); runPending()
+assert(#keys==0,
+  "Scene1 parked nonneutral fader must not steal transport after Scene2")
+cc(2,64,0)
+assert(#keys==0,
+  "centering must only rearm the Scene1 shuttle fader")
+cc(2,0,0); runPending()
+assert(keyCount("k")==1 and keyCount("j")==4,
+  "after rearm, Scene1 fader must still control reverse shuttle")
+
+-- A held Scene1 MARKER/trim may not leak through a scene change when
+-- the release event is lost (the hardware may silently switch scenes).
+cc(63,127,0)
+cc(55,127,0) -- Scene 1 MARKER SET -> trim held
+keys={}
+cc(14,91,1) -- actual Scene 2 rotary 2
+assert(#keys==0,"Scene2 rotary cannot execute Scene1 editing actions")
+cc(82,1,0)
+assert(keyCount("right")==1 and keyCount(".")==0,
+  "Scene1 wheel after Scene2 activity must navigate, not stale MARKER trim")
+
+print("SCENE1_FADER_REARM_AFTER_SCENE_SWITCH=PASS")
+print("SCENE1_TRIM_STALE_STATE_RESET=PASS")
+
 print("LED_CONSOLE_TWO_CHANNEL_PROBE=PASS")
 print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
