@@ -12,7 +12,7 @@
 | FADER 1 (bal szélső **tolópotméter**) | CC2, 0–127 | középállásos SHUTTLE, ±4 fokozat; 60–68 = STOP |
 | SCENE | hardveres, körkörös 1→2→3→4→5 | **nincs szoftveresen hozzárendelve**; teszthez Scene 1 |
 
-A MIDI csatorna a Korg Editorban \`1\`, Hammerspoon bemenetén \`channel=0\`. A LED-kimenetnél viszont a Hammerspoon \`sendCommand(..., channel=1)\` paramétert használja a fizikai 1-es csatornához.
+A MIDI-csatorna a Korg Editorban `1`, a Hammerspoon **bemenetén** `channel=0`. A 2026-10-23-i valós LED-próba alapján a **kimeneten** is `sendCommand(..., channel=0)` működik, de ott ez a Hammerspoon dokumentációjában *minden csatornás küldés*; `channel=1` API-szinten sikerült, de a fizikai LED nem villant fel.
 
 ## Transzport és navigáció
 
@@ -78,7 +78,7 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 
 **Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** Ha egérrel vagy a Resolve saját billentyűzetével módosítod, a PLAY LED nem feltétlenül a tényleges állapotot mutatja; ez *lokális parancs-visszajelzés*, nem valós idejű DAW feedback.
 
-A LED-ek működéséhez a Hammerspoon a fizikailag 1-es MIDI-csatornát használja **kimeneten** (\`channel=1\`), nem a bejövő \`channel=0\` értéket. Más scene-ek szoftveres LED-vezérlése jelenleg nem része a kódnak.
+**A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. Más scene-ek szoftveres LED-vezérlése jelenleg nem része a kódnak; teszthez maradj Scene 1-en.
 
 ## Rövid telepítés / próba
 
