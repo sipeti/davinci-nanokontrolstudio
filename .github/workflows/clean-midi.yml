@@ -21,3 +21,5 @@ jobs:
         run: lua5.4 tests/clean_controller.lua
       - name: Read-only Scene 2 audio probe checks
         run: python3 -m unittest discover -s tests -p 'test_audio_readonly_probe.py'
+      - name: Guarded Scene 2 audio round-trip offline tests
+        run: python3 -m unittest discover -s tests -p 'test_audio_roundtrip_probe.py'
