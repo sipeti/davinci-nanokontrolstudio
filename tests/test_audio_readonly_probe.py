@@ -20,7 +20,6 @@ class AudioProbeSafetyTest(unittest.TestCase):
         cls.output = out.getvalue()
 
     def test_safe_when_resolve_absent(self):
-        self.assertIn("WRITES=0", "WRITES=0")  # explicit policy assertion
         self.assertIn("SCENE2_AUDIO_READONLY_PROBE=START", self.output)
         self.assertIn("No changes made.", self.output)
 
