@@ -197,11 +197,13 @@ assert(#keys==0,"centering should only arm")
 cc(2,127)
 runPending()
 assert(keyCount("k")==1 and keyCount("l")==4,"4 forward JKL gears")
+assert(latestLED(80)==127,"FADER forward JKL must light PLAY LED")
 local n=#keys
 cc(82,1)
 assert(#keys==n,"wheel should not trim during live fader shuttle")
 cc(2,64)
 assert(keyCount("k")==2,"center STOP must send K")
+assert(latestLED(80)==0,"FADER center must clear PLAY LED")
 -- STOP button disarms fader, must center again.
 cc(63,127) -- physical STOP (CC63)
 n=#keys
@@ -209,6 +211,7 @@ cc(2,127);runPending()
 assert(#keys==n,"STOP must disarm fader")
 cc(2,64);cc(2,0);runPending()
 assert(keyCount("j")==4,"4 reverse JKL gears")
+assert(latestLED(80)==127,"FADER reverse JKL must light PLAY LED")
 -- A held marker changes wheel to edit-point nudge; release cancels.
 cc(2,64);cc(80,127) -- physical PLAY
 cc(55,127) -- physical MARKER SET 
@@ -227,10 +230,12 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==1,
   "one jog tick must trigger one forward shuttle gear")
 assert(menus.title=="NK SHUTTLE +1")
+assert(latestLED(80)==127,"ONE clockwise SHUTTLE tick must light PLAY LED")
 cc(82,65)
 runPending()
 assert(keyCount("k")==2,"one reverse tick at +1 must STOP shuttle")
 assert(menus.title=="NK SHUTTLE")
+assert(latestLED(80)==0,"ONE reverse SHUTTLE tick to zero must clear PLAY LED")
 keys={}
 for _=1,4 do cc(82,1) end
 assert(#keys==0,"fast MIDI burst should not restart Resolve 4 times")
@@ -238,12 +243,14 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==4,
   "four forward ticks must make one K then Lx4 (not four separate restarts)")
 assert(menus.title=="NK SHUTTLE +4")
+assert(latestLED(80)==127,"4-tick SHUTTLE must light PLAY LED")
 keys={}
 cc(82,65)
 runPending()
 assert(keyCount("k")==1 and keyCount("l")==3,
   "one reverse tick at +4 should reduce to +3")
 assert(menus.title=="NK SHUTTLE +3")
+assert(latestLED(80)==127,"SHUTTLE speed changes must keep PLAY LED ON")
 keys={}
 cc(82,65) -- queue a wheel update
 cc(63,127) -- physical STOP must cancel queued wheel changes
@@ -251,6 +258,29 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==0,
   "STOP must cancel a pending wheel batch")
 assert(menus.title=="NK SHUTTLE")
+assert(latestLED(80)==0,"SHUTTLE STOP must clear PLAY LED")
+
+-- Reproduce: a single SHUTTLE tick starts playback, then keyboard Space
+-- must pause it, without any manual STOP to resynchronize the PLAY LED.
+keys={}
+cc(82,1)
+runPending()
+assert(menus.title=="NK SHUTTLE +1" and latestLED(80)==127,
+  "One wheel tick must indicate moving transport")
+local keysBeforeSpace=#keys
+nowSeconds=1000.5 -- safely outside earlier synthetic Space guard
+assert(keyboardCallback(keyEvent(SPACE_KEYCODE))==false,
+  "Physical Space must reach Resolve during SHUTTLE")
+assert(latestLED(80)==0 and menus.title=="NK SHUTTLE",
+  "Space from +1 SHUTTLE must extinguish PLAY and clear shuttle speed")
+assert(#keys==keysBeforeSpace,
+  "Keyboard watcher must not synthesize K or another Space")
+cc(82,1)
+runPending()
+assert(latestLED(80)==127,"Second SHUTTLE start must relight PLAY")
+cc(80,127);cc(80,0)
+assert(latestLED(80)==0,
+  "Korg PLAY must pause an active SHUTTLE without separate STOP")
 cc(54,127) -- physical CYCLE returns to JOG
 assert(menus.title=="NK JOG")
 keys={}
@@ -387,8 +417,10 @@ assert(keyCount("k")==1 and latestLED(80)==0,
 keys={}
 cc(58,127,2);cc(58,0,2)
 assert(keyCount("j")==1,"Scene3 REW must keep fixed J shortcut")
+assert(latestLED(80)==127,"Scene3 REW must light shared PLAY LED")
 cc(59,127,3);cc(59,0,3)
 assert(keyCount("l")==1,"Scene4 FF must keep fixed L shortcut")
+assert(latestLED(80)==127,"Scene4 FF must keep shared PLAY LED ON")
 cc(62,127,4);cc(62,0,4)
 assert(keyCount("left")==1,"Scene5 Return to Zero should keep Cmd+Left")
 cc(60,127,2);cc(60,0,2)
@@ -460,3 +492,5 @@ print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
 print("GLOBAL_TRANSPORT_SCENES_1_TO_5=PASS")
 print("SILENT_SCENE_SWITCH_LED_RESTORE=PASS")
 print("PHYSICAL_RESOLVE_SPACE_LED_SYNC=PASS")
+print("SHUTTLE_ONE_TICK_PLAY_LED_AND_SPACE=PASS")
+print("FADER_REW_FF_LED_SYNC=PASS")
