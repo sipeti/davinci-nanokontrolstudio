@@ -116,8 +116,11 @@ def main():
         if db is None or not isinstance(enabled, bool):
             print("A%d: AudioVolume readback incomplete; NO WRITABLE TARGET" % idx)
             continue
-        print("A%d: clips=%d playhead_clip=unique AudioVolume_dB=%s enabled=%s" %
-              (idx, len(items), db, enabled))
+        unique_id = call(matches[0], "GetUniqueId")
+        has_stable_id = isinstance(unique_id, str) and len(unique_id) > 0
+        print("A%d: clips=%d playhead_clip=unique AudioVolume_dB=%s enabled=%s item_id=%s" %
+              (idx, len(items), db, enabled,
+               "available" if has_stable_id else "MISSING"))
 
     print("SCENE2_AUDIO_READONLY_PROBE=COMPLETE; WRITES=0")
 
