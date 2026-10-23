@@ -166,7 +166,7 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(len(item.calls), 2)
         self.assertIn("ROLLBACK_VERIFIED=True", self.output.getvalue())
 
-    def test_failed_restore_is_critical(self):
+    def test_intentional_success_does_not_restore_itself(self):
         c = self.controller(write=True)
         item = self.timeline.track_items[4]
         old = item.SetProperties
@@ -179,8 +179,39 @@ class EightRotaryTest(unittest.TestCase):
         item.SetProperties = no_restore
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 1, 16, 97), "WRITTEN")
-        # A successful intentional write must NOT try to restore itself.
+        # A successful intentional edit should remain until the operator
+        # changes it or discards the disposable test project.
         self.assertEqual(len(item.calls), 1)
+        self.assertEqual(item.volume, gain_for_cc(97))
+
+    def test_failed_rollback_is_critical_and_halts_session(self):
+        c = self.controller(write=True)
+        item = self.timeline.track_items[4]
+        old = item.SetProperties
+
+        def partial_failure(props):
+            if props["AudioVolume"] == 12.0:
+                return False  # refuse attempted rollback
+            old(props)         # change gain but report failure
+            return False
+
+        item.SetProperties = partial_failure
+        self.pickup_a4(c)
+        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertAlmostEqual(item.volume, gain_for_cc(97))
+        self.assertEqual(c.writes, 0)
+        self.assertTrue(c.halted)
+        self.assertIn("ROLLBACK_VERIFIED=False", self.output.getvalue())
+        self.assertIn("CRITICAL", self.output.getvalue())
+
+    def test_each_cc_maps_to_matching_audio_track(self):
+        c = self.controller(write=False)
+        for track in range(1, 9):
+            cc = track + 12
+            self.assertEqual(self.feed(c, 1, cc, 0), "PICKUP_PENDING")
+            self.assertEqual(c.engine.state(track), "PICKUP_PENDING")
+            self.assertEqual(self.timeline.track_items[track].calls, [])
+
 
 
 if __name__ == "__main__":
