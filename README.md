@@ -80,6 +80,8 @@ A mentett MIDI konfiguráció **csak a 28/28 sikeres lépés után** íródik fe
 - MUTE 1–4 = CAM 1–4, csak a megfelelő Resolve nézetben.
 - PLAY = `Space`: **első megnyomás lejátszás, második megnyomás pause/stop**. Nem küld előtte `K`-t.
 - **External LED-ek:** PLAY világít, ha a Hammerspoon utoljára Play-t kért; CYCLE világít SHUTTLE módban; minden más gomb nyomva világít és felengedve kialszik. A Hammerspoon nem olvassa a Resolve tényleges playback/Sync Bin kameraállapotát, ezért ez **lokális kérést jelző**, nem hiteles Resolve-állapot.
+- **Scene-váltás LED-helyreállítás:** a Korg fizikai SCENE gombja nem feltétlenül küld külön MIDI scene-váltás jelet. A kontroller ezért **0,5 másodpercenként újraküldi kizárólag a PLAY (CC80) és CYCLE (CC54) LED-állapotot** a hardveren kipróbált kimeneti `channel=0` broadcasttal. Nincs Resolve-polling és nincs új gomb/menü. A LED BE/KI kapcsoló KI állásában és betanítás közben nincs periodikus küldés.
+- **Közös transzport mind az 5 scene-ben:** PLAY, STOP, REW, FF, Return to Zero, CYCLE, TRACK ◀/▶ a mentésből ismert azonos CC-ket használja, a Hammerspoon bemeneti csatornák Scene 1–5 esetén 0–4. A scene-specifikus MUTE/SOLO/SELECT/REC és potméterakciókat nem másoljuk át automatikusan.
 - **LED menü:** `LED visszajelzes BE/KI`; KI állásban az összes ismert Scene 1 LED-et kikapcsolja. **Hardverpróba alapján a MIDI-kimenet `sendCommand(channel=0)`**, amely Hammerspoonban minden csatornára küld. `channel=1` küldés API-szinten sikeres volt, de a Korgon nem világított. A bejövő `channel=0` ettől függetlenül az első fizikai MIDI-csatornát jelzi.
 - Duplikált ATEM ISO timeline-on tesztelj.
 
@@ -125,4 +127,4 @@ sh ./install.command
 
 Hammerspoon Reload Config. A main v1.2 nem érti az új setupVersion=2 kulcsot; ha azzal folytatod, régi 26 lépéses tanítás vagy a korábbi Lua/Hammerspoon backup visszaállítása szükséges. A Korg saját mentett Scene Set/Global Data fájljaiból bármikor visszatölthető a korábbi hardverkonfiguráció.
 
-**Ez a változat csak Scene 1 / Assignable Mode-hoz készült.** Resolve API, Fairlight MCU/HUI és az öt scene kezelése nem része ennek a diagnosztikai, tiszta verziónak.
+**A teljes 28 lépéses betanítás továbbra is csak Scene 1 / Assignable Mode-hoz készült.** Az öt scene között kizárólag a transzport/navigáció közös, minden más szerkesztőfunkció a Scene 1-en marad. A fizikai PLAY/CYCLE LED-visszajelzéshez az adott scene-ben **LED Mode = External** és **Communication → Write Scene Data** szükséges. A korábbi Korg mentésedben Scene 1–2 External, Scene 3–5 Internal volt. Resolve API és Fairlight MCU/HUI nincs használatban.
