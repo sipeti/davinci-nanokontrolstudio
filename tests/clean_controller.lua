@@ -1,7 +1,7 @@
 -- Hardware-free regression test for the one-shot 28-step MIDI wizard.
 local menus, queue, keys, outputs = {}, {}, {}, {}
 local saved, midiCallback = nil, nil
-local alerts = {}
+local alerts, midiLogs = {}, {}
 local app = {
   title=function() return "DaVinci Resolve" end,
   bundleID=function() return "com.blackmagic-design.DaVinciResolve" end,
@@ -13,6 +13,7 @@ hs = {
     set=function(_,value) saved=value end,
   },
   alert={show=function(msg) alerts[#alerts+1]=msg end},
+  printf=function(fmt,...) midiLogs[#midiLogs+1]=string.format(fmt, ...) end,
   application={frontmostApplication=function() return app end},
   eventtap={keyStroke=function(mods,k) keys[#keys+1]={key=k, mods=mods} end},
   timer={doAfter=function(delay,fn)
@@ -44,7 +45,7 @@ local controller=assert(loadfile("nanokontrol_resolve21.lua"))()
 local function cc(id,v)
   assert(midiCallback)
   midiCallback(nil,"nanoKONTROL Studio","controlChange",nil,
-    {channel=1,controllerNumber=id,controllerValue=v})
+    {channel=0,controllerNumber=id,controllerValue=v, data=string.format('B0 %02X %02X',id,v)})
 end
 local function runPending()
   local runs=0
@@ -77,8 +78,17 @@ assert(menus.title=="NK SETUP 1/28")
 -- Regression: a CC86 Continuous jog's clockwise values could previously
 -- masquerade as CC82 Sign Magnitude and leave setup stuck on step 2/28.
 cc(86,24)
+cc(86,36)
+cc(86,30)
 assert(menus.title=="NK SETUP 1/28","Continuous CC86 must NOT pass step 1")
 assert(alerts[#alerts]:find("CC86",1,true),"wrong MIDI mode must be diagnosed")
+local sawUp, sawDown, sawRaw = false,false,false
+for _,line in ipairs(midiLogs) do
+  if line:find("controller=cc:0:86",1,true) and line:find("delta=+12",1,true) then sawUp=true end
+  if line:find("controller=cc:0:86",1,true) and line:find("delta=-6",1,true) then sawDown=true end
+  if line:find("raw=B0 56",1,true) then sawRaw=true end
+end
+assert(sawUp and sawDown and sawRaw,"MIDI Console logging should include channel=0, delta and raw bytes")
 cc(82,1)
 assert(menus.title=="NK SETUP 2/28")
 cc(82,24)
@@ -103,8 +113,8 @@ cc(2,20);cc(2,95)
 assert(menus.title=="NK SETUP 28/28")
 cc(2,0);cc(2,127)
 assert(menus.title=="NK JOG")
-assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:1:2")
-assert(saved.wheel=="cc:1:82")
+assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:0:2")
+assert(saved.wheel=="cc:0:82")
 assert(saved.buttons.splitAll=="cc:1:54")
 assert(#outputs==0,"controller must NEVER send LED output CC")
 -- The physical fader can't start transport until it has been centered.
@@ -144,6 +154,7 @@ cc(82,1)
 menuAction("MEGSZAKITASA")
 assert(saved==original,"aborted wizard must not overwrite settings")
 assert(#outputs==0,"no LED output allowed")
+print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
 print("CLEAN_WIZARD_28=PASS")
 print("FADER_1_STRICT_CC2=PASS")
