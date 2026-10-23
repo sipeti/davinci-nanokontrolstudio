@@ -3,6 +3,7 @@ local menus, queue, keys, outputs, repeatingTimers = {}, {}, {}, {}, {}
 local saved, midiCallback, keyboardCallback, keyboardTap = nil, nil, nil, nil
 local nowSeconds = 1000
 local SPACE_KEYCODE = 49
+local TRANSPORT_KEYCODES = {space=SPACE_KEYCODE,j=38,k=40,l=37}
 local alerts, midiLogs = {}, {}
 local app = {
   title=function() return "DaVinci Resolve" end,
@@ -18,7 +19,7 @@ local function keyEvent(keycode, flags, autorepeat)
   }
 end
 hs = {
-  keycodes={map={space=SPACE_KEYCODE}},
+  keycodes={map=TRANSPORT_KEYCODES},
   settings = {
     get=function() return {wheel="cc:1:86", buttons={stop="cc:1:59"}} end,
     set=function(_,value) saved=value end,
@@ -37,10 +38,10 @@ hs = {
     end,
     keyStroke=function(mods,k)
       keys[#keys+1]={key=k,mods=mods}
-      -- Worst case: Hammerspoon's own synthetic key is seen synchronously.
-      -- The watcher must NOT count it as an extra human Space keypress.
-      if k=="space" and keyboardCallback then
-        keyboardCallback(keyEvent(SPACE_KEYCODE))
+      -- Worst case: Hammerspoon observes synthetic J/K/L/Space synchronously.
+      -- The watcher must not count any of those as physical key presses.
+      if keyboardCallback and TRANSPORT_KEYCODES[k] and #mods==0 then
+        keyboardCallback(keyEvent(TRANSPORT_KEYCODES[k]))
       end
     end,
   },
@@ -114,12 +115,22 @@ local function latestLED(cc)
   end
   return nil
 end
-local function allLEDBlanked(startIndex)
-  for i=startIndex or 1,#outputs do
+local function allLEDBlanked(startIndex,endIndex)
+  for i=startIndex or 1,endIndex or #outputs do
     if outputs[i].value~=0 or outputs[i].channel~=0
        or outputs[i].cmd~="controlChange" then return false end
   end
   return true
+end
+local function checkTransportLEDs(play,stop,rew,ff,label)
+  for _,x in ipairs({
+      {80,play,"PLAY"},{63,stop,"STOP"},{58,rew,"REW"},{59,ff,"FF"}
+    }) do
+    local want = x[2] and 127 or 0
+    assert(latestLED(x[1])==want,
+      (label or "transport").." "..x[3].." expected "..want
+      .." got "..tostring(latestLED(x[1])))
+  end
 end
 local function menuAction(label)
   for _,x in ipairs(menus.items()) do
@@ -182,9 +193,9 @@ assert(saved.buttons.splitAll=="cc:0:50")
 -- At successful 28/28 the External-mode controller receives a fresh OFF
 -- on each known LED. Hardware test verified output channel 0 (ALL),
 -- whereas output channel 1 returned true without lighting the Korg.
-assert(#outputs==44,"expected 44 known Scene 1 LEDs reset after setup")
-assert(allLEDBlanked(1),"initial LED OFF commands need hardware-verified output channel=0")
-assert(latestLED(80)==0,"PLAY should start unlit")
+assert(#outputs==45,"44 reset commands plus persistent STOP LED after setup")
+assert(allLEDBlanked(1,44),"initial LED OFF commands need output channel=0")
+checkTransportLEDs(false,true,false,false,"after 28/28 setup")
 assert(outputs[1].channel==0,
   "normal LED feedback MUST use hardware-verified output=0, not the failed channel=1")
 -- The physical fader can't start transport until it has been centered.
@@ -197,13 +208,13 @@ assert(#keys==0,"centering should only arm")
 cc(2,127)
 runPending()
 assert(keyCount("k")==1 and keyCount("l")==4,"4 forward JKL gears")
-assert(latestLED(80)==127,"FADER forward JKL must light PLAY LED")
+checkTransportLEDs(true,false,false,true,"FADER forward +4")
 local n=#keys
 cc(82,1)
 assert(#keys==n,"wheel should not trim during live fader shuttle")
 cc(2,64)
 assert(keyCount("k")==2,"center STOP must send K")
-assert(latestLED(80)==0,"FADER center must clear PLAY LED")
+checkTransportLEDs(false,true,false,false,"FADER centered")
 -- STOP button disarms fader, must center again.
 cc(63,127) -- physical STOP (CC63)
 n=#keys
@@ -211,7 +222,7 @@ cc(2,127);runPending()
 assert(#keys==n,"STOP must disarm fader")
 cc(2,64);cc(2,0);runPending()
 assert(keyCount("j")==4,"4 reverse JKL gears")
-assert(latestLED(80)==127,"FADER reverse JKL must light PLAY LED")
+checkTransportLEDs(true,false,true,false,"FADER reverse -4")
 -- A held marker changes wheel to edit-point nudge; release cancels.
 cc(2,64);cc(80,127) -- physical PLAY
 cc(55,127) -- physical MARKER SET 
@@ -230,12 +241,12 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==1,
   "one jog tick must trigger one forward shuttle gear")
 assert(menus.title=="NK SHUTTLE +1")
-assert(latestLED(80)==127,"ONE clockwise SHUTTLE tick must light PLAY LED")
+checkTransportLEDs(true,false,false,true,"SHUTTLE +1")
 cc(82,65)
 runPending()
 assert(keyCount("k")==2,"one reverse tick at +1 must STOP shuttle")
 assert(menus.title=="NK SHUTTLE")
-assert(latestLED(80)==0,"ONE reverse SHUTTLE tick to zero must clear PLAY LED")
+checkTransportLEDs(false,true,false,false,"SHUTTLE back to zero")
 keys={}
 for _=1,4 do cc(82,1) end
 assert(#keys==0,"fast MIDI burst should not restart Resolve 4 times")
@@ -243,14 +254,14 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==4,
   "four forward ticks must make one K then Lx4 (not four separate restarts)")
 assert(menus.title=="NK SHUTTLE +4")
-assert(latestLED(80)==127,"4-tick SHUTTLE must light PLAY LED")
+checkTransportLEDs(true,false,false,true,"SHUTTLE +4")
 keys={}
 cc(82,65)
 runPending()
 assert(keyCount("k")==1 and keyCount("l")==3,
   "one reverse tick at +4 should reduce to +3")
 assert(menus.title=="NK SHUTTLE +3")
-assert(latestLED(80)==127,"SHUTTLE speed changes must keep PLAY LED ON")
+checkTransportLEDs(true,false,false,true,"SHUTTLE +3")
 keys={}
 cc(82,65) -- queue a wheel update
 cc(63,127) -- physical STOP must cancel queued wheel changes
@@ -258,7 +269,7 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==0,
   "STOP must cancel a pending wheel batch")
 assert(menus.title=="NK SHUTTLE")
-assert(latestLED(80)==0,"SHUTTLE STOP must clear PLAY LED")
+checkTransportLEDs(false,true,false,false,"SHUTTLE STOP")
 
 -- Reproduce: a single SHUTTLE tick starts playback, then keyboard Space
 -- must pause it, without any manual STOP to resynchronize the PLAY LED.
@@ -271,8 +282,8 @@ local keysBeforeSpace=#keys
 nowSeconds=1000.5 -- safely outside earlier synthetic Space guard
 assert(keyboardCallback(keyEvent(SPACE_KEYCODE))==false,
   "Physical Space must reach Resolve during SHUTTLE")
-assert(latestLED(80)==0 and menus.title=="NK SHUTTLE",
-  "Space from +1 SHUTTLE must extinguish PLAY and clear shuttle speed")
+assert(menus.title=="NK SHUTTLE","Space should keep mode but clear speed")
+checkTransportLEDs(false,true,false,false,"physical Space stops shuttle")
 assert(#keys==keysBeforeSpace,
   "Keyboard watcher must not synthesize K or another Space")
 cc(82,1)
@@ -316,8 +327,8 @@ assert(latestLED(80)==0,"unrelated keys must not affect transport")
 keys={}
 nowSeconds=1003
 cc(80,127);cc(80,0)
-assert(keyCount("space")==1 and latestLED(80)==127,
-  "Korg PLAY must light LED once without double-counting own Space")
+assert(keyCount("space")==1,"Korg PLAY must send exactly one Space")
+checkTransportLEDs(true,false,false,false,"Korg PLAY")
 nowSeconds=1003.2
 keyboardCallback(keyEvent(SPACE_KEYCODE))
 assert(keyCount("space")==1 and latestLED(80)==0,
@@ -327,6 +338,43 @@ keyboardCallback(keyEvent(SPACE_KEYCODE))
 assert(latestLED(80)==127,
   "physical Space must resume and relight LED without STOP")
 cc(63,127);cc(63,0) -- reset for the remainder of existing tests
+
+-- Four keyboard transport commands change persistent LEDs without
+-- generating another Resolve keystroke, and never swallow the original.
+cc(63,127);cc(63,0)
+keys={}
+nowSeconds=1010
+assert(keyboardCallback(keyEvent(TRANSPORT_KEYCODES.j))==false)
+assert(#keys==0,"physical J must pass through unmodified")
+checkTransportLEDs(true,false,true,false,"physical keyboard J")
+nowSeconds=1011
+assert(keyboardCallback(keyEvent(TRANSPORT_KEYCODES.l))==false)
+checkTransportLEDs(true,false,false,true,"physical keyboard L")
+nowSeconds=1012
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.k))
+checkTransportLEDs(false,true,false,false,"physical keyboard K")
+nowSeconds=1013
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.space))
+checkTransportLEDs(true,false,false,false,"physical keyboard Space")
+nowSeconds=1014
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.space))
+checkTransportLEDs(false,true,false,false,"physical keyboard Space again")
+assert(#keys==0,"physical JKL/Space watcher must never inject key events")
+-- Modifiers and auto-repeat must never switch transport LED state.
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.j,{cmd=true}))
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.l,nil,1))
+checkTransportLEDs(false,true,false,false,"ignore modifiers and repeats")
+-- Korg-generated synthetic JKL gets observed by our mock event tap, but
+-- must be counted exactly once, including when we use JKL for SHUTTLE.
+keys={}
+cc(58,127);cc(58,0)
+assert(keyCount("j")==1,"Korg REW must inject J once")
+checkTransportLEDs(true,false,true,false,"Korg REW no double count")
+cc(59,127);cc(59,0)
+assert(keyCount("l")==1,"Korg FF must inject L once")
+checkTransportLEDs(true,false,false,true,"Korg FF no double count")
+cc(63,127);cc(63,0)
+checkTransportLEDs(false,true,false,false,"Korg STOP no double count")
 
 -- Complete one-shot relearn must preserve old saved config if interrupted.
 local original=saved
@@ -350,15 +398,14 @@ assert(latestLED(80)==127,"first PLAY must latch the local request LED")
 cc(80,127);cc(80,0)
 assert(keyCount("space")==2 and keyCount("k")==0,
   "second PLAY must pause with Space and no K")
-assert(latestLED(80)==0,"second PLAY must clear the LED")
+checkTransportLEDs(false,true,false,false,"second Korg PLAY stops")
 
--- STOP sends K, cancels PLAY light, and should flash only while held.
+-- STOP stays illuminated after release until playback starts again.
 cc(80,127);cc(80,0)
 cc(63,127)
-assert(latestLED(80)==0 and latestLED(63)==127,
-  "STOP should extinguish PLAY, keep its own momentary LED")
+checkTransportLEDs(false,true,false,false,"STOP pressed")
 cc(63,0)
-assert(latestLED(63)==0,"STOP must go OFF on release")
+checkTransportLEDs(false,true,false,false,"STOP released: latched")
 
 -- CYCLE LED stays ON in SHUTTLE and goes OFF returning to JOG.
 cc(54,127);cc(54,0)
@@ -392,14 +439,21 @@ cc(80,127,0);cc(80,0,0)
 assert(keyCount("space")==1,"Scene1 PLAY should start local playback")
 assert(latestLED(80)==127)
 local outBeforeHeartbeat=#outputs
-tickLED() -- simulate pressing SCENE away/back, which sends no MIDI message
-assert(#outputs==outBeforeHeartbeat+2,
-  "LED scene restore MUST resend PLAY/CYCLE even with unchanged state")
-assert(outputs[#outputs-1].cc==80 and outputs[#outputs-1].value==127
-  and outputs[#outputs-1].channel==0,
-  "PLAY must be relit after silent hardware scene switch")
-assert(outputs[#outputs].cc==54 and outputs[#outputs].channel==0,
-  "CYCLE must also get its shared mode state restored")
+tickLED() -- simulate pressing SCENE away/back without incoming MIDI
+assert(#outputs==outBeforeHeartbeat+5,
+  "LED scene restore must resend 4 transport LEDs plus CYCLE")
+local order={80,63,58,59,54}
+for i,ccid in ipairs(order) do
+  assert(outputs[outBeforeHeartbeat+i].cc==ccid
+    and outputs[outBeforeHeartbeat+i].channel==0,
+    "scene restore wrong CC/channel "..ccid)
+end
+assert(outputs[outBeforeHeartbeat+1].value==127,
+  "PLAY must relight after silent scene switch")
+assert(outputs[outBeforeHeartbeat+2].value==0
+   and outputs[outBeforeHeartbeat+3].value==0
+   and outputs[outBeforeHeartbeat+4].value==0,
+  "STOP/REW/FF must stay off in normal play")
 assert(keyCount("space")==1 and keyCount("k")==0,
   "LED sync MUST NOT change Resolve playback")
 
@@ -417,10 +471,10 @@ assert(keyCount("k")==1 and latestLED(80)==0,
 keys={}
 cc(58,127,2);cc(58,0,2)
 assert(keyCount("j")==1,"Scene3 REW must keep fixed J shortcut")
-assert(latestLED(80)==127,"Scene3 REW must light shared PLAY LED")
+checkTransportLEDs(true,false,true,false,"Scene3 REW")
 cc(59,127,3);cc(59,0,3)
 assert(keyCount("l")==1,"Scene4 FF must keep fixed L shortcut")
-assert(latestLED(80)==127,"Scene4 FF must keep shared PLAY LED ON")
+checkTransportLEDs(true,false,false,true,"Scene4 FF")
 cc(62,127,4);cc(62,0,4)
 assert(keyCount("left")==1,"Scene5 Return to Zero should keep Cmd+Left")
 cc(60,127,2);cc(60,0,2)
@@ -494,3 +548,5 @@ print("SILENT_SCENE_SWITCH_LED_RESTORE=PASS")
 print("PHYSICAL_RESOLVE_SPACE_LED_SYNC=PASS")
 print("SHUTTLE_ONE_TICK_PLAY_LED_AND_SPACE=PASS")
 print("FADER_REW_FF_LED_SYNC=PASS")
+print("TRANSPORT_4_PERSISTENT_LEDS=PASS")
+print("PHYSICAL_JKL_AND_SYNTHETIC_GUARD=PASS")
