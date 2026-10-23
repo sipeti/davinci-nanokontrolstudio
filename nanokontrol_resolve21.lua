@@ -176,6 +176,8 @@ local function stop()
   cancelShuttle()
   speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
   if resolveApp() then key("k") end
+  transportIntent = "stopped"
+  refreshStateLEDs()
   title()
 end
 local function shuttle(target, source)
@@ -185,6 +187,8 @@ local function shuttle(target, source)
   if not resolveApp() then return end
   key("k")
   speed, shuttleSource = target, target == 0 and nil or source
+  transportIntent = target == 0 and "stopped" or "shuttle"
+  refreshStateLEDs()
   title()
   local direction = target > 0 and "l" or "j"
   for i = 1, math.abs(target) do
@@ -220,6 +224,11 @@ local function wheel(value)
   if trimHeld then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
+    -- An external nudge may pause/shift playback; avoid stale PLAY LED.
+    if transportIntent ~= "stopped" then
+      transportIntent = "unknown"
+      refreshStateLEDs()
+    end
     key(direction > 0 and "right" or "left")
   else
     -- One physical wheel pulse changes one shuttle gear. A rapid string of
@@ -252,12 +261,27 @@ local function action(name)
   if name == "cycle" then
     stop()
     mode = mode == "JOG" and "SHUTTLE" or "JOG"
+    refreshStateLEDs()
     title()
   elseif name == "begin" then key("left",{"cmd"})
-  elseif name == "rew" then stop(); key("j")
-  elseif name == "ff" then stop(); key("l")
+  elseif name == "rew" then
+    stop(); key("j")
+    transportIntent = "shuttle"
+  elseif name == "ff" then
+    stop(); key("l")
+    transportIntent = "shuttle"
   elseif name == "stop" then stop()
-  elseif name == "play" then stop(); key("space")
+  elseif name == "play" then
+    -- Do NOT send K first: PLAY is a true Space toggle. A second PLAY
+    -- pauses/stops rather than sending K then immediately restarting.
+    local wasRunning = (transportIntent == "playing"
+      or transportIntent == "shuttle" or speed ~= 0)
+    cancelShuttle()
+    speed, shuttleSource, faderArmed, faderActive = 0, nil, false, false
+    key("space")
+    transportIntent = wasRunning and "stopped" or "playing"
+    refreshStateLEDs()
+    title()
   elseif name == "undo" then key("z",{"cmd"})
   elseif name == "trackPrev" then key("up")
   elseif name == "trackNext" then key("down")
@@ -352,9 +376,12 @@ local function finishLearn()
   for _,item in ipairs(steps) do assert(draft.buttons[item[1]], "missing "..item[1]) end
   hs.settings.set(KEY,draft) -- commit only after ALL 28 steps
   cfg = draft
+  resetLEDs()
+  transportIntent = "stopped"
   learning, draft, pending, step = false,nil,nil,0
   faderArmed, faderActive, trimHeld = false,false,false
   mode, speed = "JOG",0
+  refreshStateLEDs()
   title()
   toast("NK: TELJES 28/28 kalibracio KESZ (Scene 1)!",6)
 end
@@ -446,6 +473,9 @@ local function midiCallback(_,_,command,_,meta)
     learn(command,meta)
     return
   end
+  -- Echo physical CC to its own LED, independent of the learned action.
+  -- When another app has focus, acknowledge the key but do not edit Resolve.
+  inputLED(command,meta,signal,value)
   if not enabled or not cfg then return end
   if signal == cfg.buttons.editSelect and buttonRelease(command,value) then
     trimHeld = false
@@ -495,6 +525,10 @@ local function attach()
   if not device then title(); return end
   deviceName = found
   device:callback(midiCallback)
+  if cfg and ledEnabled then
+    resetLEDs()
+    refreshStateLEDs()
+  end
   if not cfg then
     hs.timer.doAfter(0.7,function() if device and not cfg and not learning then beginLearn() end end)
   end
@@ -507,6 +541,10 @@ menu:setMenu(function()
     {title=cfg and "Kalibracio: 28/28 OK" or "Kalibracio: TELJES BETANITAS SZUKSEGES",disabled=true},
     {title=learning and "Betanitas: "..step.."/28 | utolso MIDI: "..lastMidi or
       "JOG: "..mode.." | utolso MIDI: "..lastMidi,disabled=true},
+    {title="LED (Scene 1 External): "..(ledEnabled and "BE" or "KI")
+      .." | MIDI kimenet: "..ledOutputStatus,disabled=true},
+    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",fn=toggleLEDFeedback,
+      disabled=not cfg or not device},
     {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
     {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
