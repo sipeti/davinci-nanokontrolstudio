@@ -8,27 +8,27 @@ This document describes the **current implemented mapping**, not potential futur
 
 | Scene | Incoming MIDI channel reported by Hammerspoon | Available actions |
 | --- | ---: | --- |
-| 1 | 0 | Full Scene 1 editing mapping, JOG, Slider 1 SHUTTLE, shared transport |
-| 2 | 1 | Shared transport and navigation only |
-| 3 | 2 | Shared transport and navigation only |
-| 4 | 3 | Shared transport and navigation only |
-| 5 | 4 | Shared transport and navigation only |
+| 1 | 0 | Scene 1 editing + JOG/SHUTTLE + Slider 1 + transport |
+| 2 | 1 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
+| 3 | 2 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
+| 4 | 3 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
+| 5 | 4 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 
 The five Korg scene configurations share the **same transport CC numbers** but use successive MIDI channels. SCENE switching is performed on the controller itself. The Lua controller does not need a MIDI scene-change event to restore the common transport LEDs.
 
-The Scene 1 wheel is **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127. The other scenes in the tested configuration use a **Continuous / CC86** wheel; they are **not** yet mapped to Scene 1 JOG/SHUTTLE. No gain, mute, fader or knob functionality has been implemented for Scene 2–5.
+**All five scenes use one JOG/SHUTTLE decoder** when their wheels send **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127 on their respective MIDI channels. Scenes 2–5 in the earlier Korg setup used **Continuous / CC86**; this signal is **deliberately ignored** until the hardware is reconfigured and written. A one-time `[NK JOG]` Console warning identifies old CC86 scenes. The 28-step calibration is still Scene 1-only, and other scene wheels reuse its learned CC82 mapping. Other scenes' gain, mute, marker trim, faders and knobs remain unassigned.
 
-**MIDI channel gotcha:** Scene 1 configured as MIDI channel 1 appears as incoming `channel=0` in Hammerspoon. Scene 2 uses incoming `channel=1`. On this hardware, LED **output** `sendCommand(channel=0)` lights Scene 1; the script also sends the five shared transport/mode LEDs to output `channel=1` as a Scene 2 route candidate. The Hammerspoon API describes output `channel=0` as all-channel, but the previous hardware probe only verified it against **Scene 1**, not Scene 2. The second route requires real-device confirmation.
+**MIDI channels:** Korg Scenes 1–5 must retain their corresponding Global MIDI Channels **1–5** (incoming Hammerspoon callback channels **0–4**). Each Jog Wheel's MIDI Channel should be **Global**. LED output 0 lights Scene 1 and output 1 lights Scene 2 (both verified on the actual device); shared status CCs also go to outputs **2–4** for Scenes 3–5, pending physical testing.
 
 ## JOG, SHUTTLE and slider
 
-| Physical control | Scene 1 CC | Current action |
+| Physical control | CC | Current action |
 | --- | --- | --- |
-| Main JOG wheel | 82 | In JOG mode: one frame right/left per MIDI pulse |
-| Main JOG wheel, CYCLE = SHUTTLE | 82 | One pulse = one signed speed step, limited to −4…+4 |
-| Hold MARKER SET + JOG | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
-| Slider/Fader 1 (leftmost **slider**) | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
-| CYCLE | 54 | Toggle JOG / SHUTTLE; stop transport while changing modes |
+| Main JOG wheel, **Scenes 1–5** | **82** | In JOG mode: one frame right/left per MIDI pulse |
+| Main JOG wheel, **Scenes 1–5**, CYCLE = SHUTTLE | **82** | One pulse = one **shared** signed speed step, limited to −4…+4 |
+| Hold MARKER SET + JOG, **Scene 1 only** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
+| Slider/Fader 1, **Scene 1 only** | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
+| CYCLE, **Scenes 1–5** | 54 | Toggle the shared JOG/SHUTTLE mode; stop while changing modes |
 
 SHUTTLE wheel changes are batched over **45 ms** to combine closely spaced MIDI pulses. The shared signed gear is used by the wheel, the FF/REW transport buttons, and normalizing playback with PLAY. Slider 1 has its own physical pickup/center arming rule.
 
@@ -125,14 +125,14 @@ In KORG KONTROL Editor, enable **LED Mode = External** and **Write Scene Data** 
 | CYCLE / CC54 | SHUTTLE mode selected |
 | Other configured buttons | While physically pressed; off on release |
 
-The status LEDs are refreshed every **0.5 seconds**, including after a hardware-only SCENE change, on output channels **0 and 1** for the five shared CCs only. Scene 1-only editing buttons continue to use the original channel 0. **Scene 2 must have LED Mode = External and Communication → Write Scene Data** for its LEDs to respond to external messages. This is a per-scene Korg setting, not something the Lua runtime can toggle.
+The five shared status LEDs are refreshed every **0.5 seconds**, including after a hardware-only SCENE change, on output channels **0–4** for the shared CCs only. Scene 1-only editing buttons continue to use output 0. **Every scene needs LED Mode = External and Communication → Write Scene Data** to illuminate its transport LEDs. Scene 1 and Scene 2 were confirmed on hardware; Scene 3–5 LED outputs require a physical test. The Lua cannot alter the Korg's scene firmware settings.
 
-When the transport state is unknown (for example, just after a configuration reload) the four transport LEDs are left off rather than claiming Resolve is stopped. The **LED feedback ON/OFF** item in the Hammerspoon NK menu can blank all 44 known Scene 1 button LEDs **and** the five shared Scene 2 status LEDs.
+When the transport state is unknown (e.g. after a configuration reload) the transport LEDs remain off rather than claiming Resolve is stopped. The **LED feedback ON/OFF** item in the Hammerspoon NK menu blanks all 44 known Scene 1 button LEDs **and** the five shared transport/mode LEDs for each of Scenes 2–5.
 
-If Scene 2 stays dark with External mode configured, keep Scene 2 selected and run `require("nanokontrol_resolve21").ledProbe()` in Hammerspoon Console. The two 1.5-second MUTE 1 trials compare output channels **1 then 0** without controlling Resolve. The result determines whether a different output channel, Scene 2 hardware configuration, or CC mapping needs attention.
+For Scene 2 LED troubleshooting, `require("nanokontrol_resolve21").ledProbe()` compares output channels 1 and 0 on MUTE 1 without controlling Resolve. Output channels for Scene 3–5 still need physical confirmation.
 
 ## Updating or relearning
 
 The 28-step Scene 1 wizard stores its bindings only on successful completion; these are preserved across `install.command` upgrades. Do **not** relearn merely because the Lua file or these documents change.
 
-If a CC mapping was deliberately changed in KORG KONTROL Editor, **Write Scene Data**, then run the complete relearn. No half-learned mapping is saved. See the [README setup section](../README.md#run-the-28-step-setup).
+If you only change Scene 2–5 wheels from CC86 Continuous to **CC82 Sign Magnitude**, **Write Scene Data separately for each changed scene** but **do not rerun Scene 1 learn**. Only if you change the CC of a Scene 1 learned control should you rerun the complete 28-step learn. No incomplete mapping is saved. See the [README setup section](../README.md#run-the-28-step-setup).
