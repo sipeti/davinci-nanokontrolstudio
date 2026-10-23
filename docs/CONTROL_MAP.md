@@ -18,7 +18,7 @@ The five Korg scene configurations share the **same transport CC numbers** but u
 
 The Scene 1 wheel is **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127. The other scenes in the tested configuration use a **Continuous / CC86** wheel; they are **not** yet mapped to Scene 1 JOG/SHUTTLE. No gain, mute, fader or knob functionality has been implemented for Scene 2–5.
 
-**MIDI channel gotcha:** Scene 1 configured as MIDI channel 1 appears as incoming `channel=0` in Hammerspoon. For LED **output**, the tested device requires `sendCommand(channel=0)` (the all-channel send option). Sending output with `channel=1` was accepted by the API but did not light the hardware LED.
+**MIDI channel gotcha:** Scene 1 configured as MIDI channel 1 appears as incoming `channel=0` in Hammerspoon. Scene 2 uses incoming `channel=1`. On this hardware, LED **output** `sendCommand(channel=0)` lights Scene 1; the script also sends the five shared transport/mode LEDs to output `channel=1` as a Scene 2 route candidate. The Hammerspoon API describes output `channel=0` as all-channel, but the previous hardware probe only verified it against **Scene 1**, not Scene 2. The second route requires real-device confirmation.
 
 ## JOG, SHUTTLE and slider
 
@@ -125,7 +125,11 @@ In KORG KONTROL Editor, enable **LED Mode = External** and **Write Scene Data** 
 | CYCLE / CC54 | SHUTTLE mode selected |
 | Other configured buttons | While physically pressed; off on release |
 
-The status LEDs are refreshed every **0.5 seconds**, including after a hardware-only SCENE change. When the state is unknown (for example, just after a configuration reload) the four transport LEDs are left off rather than claiming Resolve is stopped. The **LED feedback ON/OFF** item in the Hammerspoon NK menu can blank all 44 known Scene 1 button LEDs.
+The status LEDs are refreshed every **0.5 seconds**, including after a hardware-only SCENE change, on output channels **0 and 1** for the five shared CCs only. Scene 1-only editing buttons continue to use the original channel 0. **Scene 2 must have LED Mode = External and Communication → Write Scene Data** for its LEDs to respond to external messages. This is a per-scene Korg setting, not something the Lua runtime can toggle.
+
+When the transport state is unknown (for example, just after a configuration reload) the four transport LEDs are left off rather than claiming Resolve is stopped. The **LED feedback ON/OFF** item in the Hammerspoon NK menu can blank all 44 known Scene 1 button LEDs **and** the five shared Scene 2 status LEDs.
+
+If Scene 2 stays dark with External mode configured, keep Scene 2 selected and run `require("nanokontrol_resolve21").ledProbe()` in Hammerspoon Console. The two 1.5-second MUTE 1 trials compare output channels **1 then 0** without controlling Resolve. The result determines whether a different output channel, Scene 2 hardware configuration, or CC mapping needs attention.
 
 ## Updating or relearning
 
