@@ -55,6 +55,7 @@ class Controller:
         self.writes = 0
         self.halted = False
         self.reported = set()
+        self.other_scene_active = False
         if write and not approved_copy(expected_project, confirmation,
                                        automation_confirmed):
             raise ValueError("a backed-up exact test project, consent and no-automation confirmation are mandatory")
@@ -129,10 +130,17 @@ class Controller:
         if channel != 1:
             self.engine.reset()
             self.last_event = None
-            print("SCENE_CHANGED=RESET; WRITE=0", flush=True)
+            if self.write:
+                return self._halt("non-Scene-2 MIDI channel %d CC%d detected" %
+                                  (channel, cc))
+            if not self.other_scene_active:
+                print("OTHER_SCENE_INPUT=RESET; channel=%d CC%d; WRITES=0" %
+                      (channel, cc), flush=True)
+            self.other_scene_active = True
             return "RESET"
         if not 13 <= cc <= 20:
             return "IGNORED"
+        self.other_scene_active = False
         track = cc - 12
         now = self.now()
         if self.last_event is not None and now - self.last_event > IDLE_RESET_SECONDS:
@@ -185,6 +193,52 @@ class Controller:
         return decision.state
 
 
+class MidiPoll:
+    """Bounded, fail-closed event accumulator between Resolve API polls.
+
+    Capture first and last MIDI positions per Scene 2 knob to preserve
+    a pickup crossing, but never infer motion from discarded intermediate
+    samples. Any event from a different MIDI channel invalidates the whole
+    batch; an active write test HALTS instead of trying to pick up again.
+    A torrent of foreign-channel events cannot exhaust the queue.
+    """
+    MAX_ROTARY_EVENTS = 80
+
+    def __init__(self):
+        self.events = {}
+        self.foreign = None
+        self.foreign_count = 0
+        self.rotary_count = 0
+
+    def add(self, line):
+        event = parse_event(line)
+        if event is None:
+            return
+        ch, cc, _ = event
+        if ch != 1:
+            self.foreign = event
+            self.foreign_count += 1
+            self.events.clear()
+        elif 13 <= cc <= 20 and self.foreign is None:
+            self.rotary_count += 1
+            samples = self.events.setdefault(cc, [])
+            if not samples or samples[-1] != event:
+                if len(samples) < 2:
+                    samples.append(event)
+                else:
+                    samples[-1] = event
+
+    def take(self):
+        foreign, count = self.foreign, self.rotary_count
+        # Do not apply ANY CC from a poll which also contained a
+        # conflicting scene's MIDI, even if CC13..20 was present.
+        events = [] if foreign is not None else [
+            event for pair in self.events.values() for event in pair
+        ]
+        self.__init__()
+        return foreign, count, events
+
+
 def monitor(controller, seconds, event_file=EVENT_FILE):
     if not event_file.is_file():
         print("SCENE2_8ROTARY=BLOCKED; start the passive MIDI logger; WRITES=0")
@@ -196,50 +250,44 @@ def monitor(controller, seconds, event_file=EVENT_FILE):
         stream.seek(0, 2)
         deadline = time.monotonic() + seconds
         next_poll = time.monotonic()
-        pending = []
+        pending = MidiPoll()
         while time.monotonic() < deadline:
-            # If the logger restarts and truncates the CSV, stop instead
-            # of silently reading old offsets or mixing different sessions.
+            # A logger restart may truncate the CSV while the old file is
+            # still open. Do not merge old/new sessions.
             try:
                 if event_file.stat().st_size < stream.tell():
                     controller.engine.reset()
-                    print("SCENE2_8ROTARY=BLOCKED; MIDI logger restarted", flush=True)
+                    print("SCENE2_8ROTARY=BLOCKED; MIDI logger restarted",
+                          flush=True)
                     return 1
-                pending.extend(stream.readlines())
+                for line in stream.readlines():
+                    pending.add(line)
             except OSError:
-                print("SCENE2_8ROTARY=BLOCKED; MIDI logger file missing", flush=True)
-                return 1
-            if len(pending) > 80:
-                controller.engine.reset()
-                print("SCENE2_8ROTARY=BLOCKED; MIDI backlog; no blind writes",
+                print("SCENE2_8ROTARY=BLOCKED; MIDI logger file missing",
                       flush=True)
                 return 1
-            if not pending or time.monotonic() < next_poll:
+            if pending.rotary_count > pending.MAX_ROTARY_EVENTS:
+                controller.engine.reset()
+                print("SCENE2_8ROTARY=BLOCKED; excessive Scene2 MIDI rate; no blind writes",
+                      flush=True)
+                return 1
+            if (not pending.events and pending.foreign is None) or (
+                    time.monotonic() < next_poll):
                 time.sleep(0.04)
                 continue
             next_poll = time.monotonic() + POLL_SECONDS
-            lines, pending = pending, []
-            # Collapse bursts to latest value per strip. One fresh Resolve
-            # snapshot per strip per poll; rapid movement fails closed if
-            # a safe pickup or gain step cannot be established.
-            events = {}
-            foreign = False
-            for line in lines:
-                event = parse_event(line)
-                if event is None:
-                    continue
-                ch, cc, value = event
-                if ch != 1:
-                    foreign = True
-                elif 13 <= cc <= 20:
-                    events[cc] = event
-            if foreign:
-                controller.handle(0, 0, 0)
-                events.clear()
-            for event in events.values():
+            foreign, _, events = pending.take()
+            if foreign is not None:
+                result = controller.handle(*foreign)
+                if result == "HALTED":
+                    print("SCENE2_8ROTARY=STOPPED; VERIFIED_WRITES=%d" %
+                          controller.writes, flush=True)
+                    return 1
+                continue
+            for event in events:
                 result = controller.handle(*event)
                 if result == "HALTED":
-                    print("SCENE2_8ROTARY=STOPPED; WRITES=%d" %
+                    print("SCENE2_8ROTARY=STOPPED; VERIFIED_WRITES=%d" %
                           controller.writes, flush=True)
                     return 1 if controller.writes < controller.max_writes else 0
     print("SCENE2_8ROTARY=COMPLETE; mode=%s; VERIFIED_WRITES=%d" %
