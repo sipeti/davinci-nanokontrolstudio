@@ -115,7 +115,7 @@ cc(2,0);cc(2,127)
 assert(menus.title=="NK JOG")
 assert(saved and saved.setupVersion==2 and saved.faderShuttle=="cc:0:2")
 assert(saved.wheel=="cc:0:82")
-assert(saved.buttons.splitAll=="cc:1:54")
+assert(saved.buttons.splitAll=="cc:0:54")
 assert(#outputs==0,"controller must NEVER send LED output CC")
 -- The physical fader can't start transport until it has been centered.
 keys={}
