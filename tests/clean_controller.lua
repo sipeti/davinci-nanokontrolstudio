@@ -241,7 +241,7 @@ runPending()
 assert(keyCount("k")==1 and keyCount("l")==1,
   "one jog tick must trigger one forward shuttle gear")
 assert(menus.title=="NK SHUTTLE +1")
-checkTransportLEDs(true,false,false,true,"SHUTTLE +1")
+checkTransportLEDs(true,false,false,false,"SHUTTLE +1: normal 1x PLAY, no FF")
 cc(82,65)
 runPending()
 assert(keyCount("k")==2,"one reverse tick at +1 must STOP shuttle")
@@ -271,13 +271,44 @@ assert(keyCount("k")==1 and keyCount("l")==0,
 assert(menus.title=="NK SHUTTLE")
 checkTransportLEDs(false,true,false,false,"SHUTTLE STOP")
 
+-- Absolute signed shuttle gears (0 is STOP): one physical pulse moves
+-- one gear. +1 means normal 1x L, +2 is L twice and FF illuminates.
+-- Crossing zero must stop before reverse. No overshoot when changing sign.
+keys={}
+cc(82,1);runPending()
+assert(menus.title=="NK SHUTTLE +1"
+  and keyCount("k")==1 and keyCount("l")==1,
+  "0 -> +1 should generate one K + one L")
+checkTransportLEDs(true,false,false,false,"wheel 0 -> +1")
+cc(82,1);runPending()
+assert(menus.title=="NK SHUTTLE +2"
+  and keyCount("k")==2 and keyCount("l")==3,
+  "+1 -> +2 should issue K and two L (2x)")
+checkTransportLEDs(true,false,false,true,"wheel +1 -> +2: FF ON")
+cc(82,65);runPending()
+assert(menus.title=="NK SHUTTLE +1" and keyCount("l")==4,
+  "+2 -> +1 should return to one L (1x)")
+checkTransportLEDs(true,false,false,false,"wheel +2 -> +1: FF OFF")
+cc(82,65);runPending()
+assert(menus.title=="NK SHUTTLE" and keyCount("k")==4,
+  "+1 -> 0 should stop, not reverse")
+checkTransportLEDs(false,true,false,false,"wheel +1 -> 0 STOP")
+cc(82,65);runPending()
+assert(menus.title=="NK SHUTTLE -1" and keyCount("j")==1,
+  "0 -> -1 must start normal reverse (J once)")
+checkTransportLEDs(true,false,true,false,"wheel 0 -> -1: PLAY + REW")
+cc(82,1);runPending()
+assert(menus.title=="NK SHUTTLE" and keyCount("k")==6,
+  "-1 -> 0 must STOP, not play forward")
+checkTransportLEDs(false,true,false,false,"wheel -1 -> 0 STOP")
+
 -- Reproduce: a single SHUTTLE tick starts playback, then keyboard Space
 -- must pause it, without any manual STOP to resynchronize the PLAY LED.
 keys={}
 cc(82,1)
 runPending()
-assert(menus.title=="NK SHUTTLE +1" and latestLED(80)==127,
-  "One wheel tick must indicate moving transport")
+assert(menus.title=="NK SHUTTLE +1","One wheel tick must start +1")
+checkTransportLEDs(true,false,false,false,"single wheel tick starts PLAY, not FF")
 local keysBeforeSpace=#keys
 nowSeconds=1000.5 -- safely outside earlier synthetic Space guard
 assert(keyboardCallback(keyEvent(SPACE_KEYCODE))==false,
@@ -349,7 +380,10 @@ assert(#keys==0,"physical J must pass through unmodified")
 checkTransportLEDs(true,false,true,false,"physical keyboard J")
 nowSeconds=1011
 assert(keyboardCallback(keyEvent(TRANSPORT_KEYCODES.l))==false)
-checkTransportLEDs(true,false,false,true,"physical keyboard L")
+checkTransportLEDs(true,false,false,false,"physical keyboard L once 1x")
+nowSeconds=1011.5
+keyboardCallback(keyEvent(TRANSPORT_KEYCODES.l))
+checkTransportLEDs(true,false,false,true,"physical keyboard L twice 2x")
 nowSeconds=1012
 keyboardCallback(keyEvent(TRANSPORT_KEYCODES.k))
 checkTransportLEDs(false,true,false,false,"physical keyboard K")
@@ -372,7 +406,7 @@ assert(keyCount("j")==1,"Korg REW must inject J once")
 checkTransportLEDs(true,false,true,false,"Korg REW no double count")
 cc(59,127);cc(59,0)
 assert(keyCount("l")==1,"Korg FF must inject L once")
-checkTransportLEDs(true,false,false,true,"Korg FF no double count")
+checkTransportLEDs(true,false,false,false,"Korg FF single L no double count")
 cc(63,127);cc(63,0)
 checkTransportLEDs(false,true,false,false,"Korg STOP no double count")
 
@@ -474,7 +508,7 @@ assert(keyCount("j")==1,"Scene3 REW must keep fixed J shortcut")
 checkTransportLEDs(true,false,true,false,"Scene3 REW")
 cc(59,127,3);cc(59,0,3)
 assert(keyCount("l")==1,"Scene4 FF must keep fixed L shortcut")
-checkTransportLEDs(true,false,false,true,"Scene4 FF")
+checkTransportLEDs(true,false,false,false,"Scene4 FF button sends one L = 1x")
 cc(62,127,4);cc(62,0,4)
 assert(keyCount("left")==1,"Scene5 Return to Zero should keep Cmd+Left")
 cc(60,127,2);cc(60,0,2)
@@ -550,3 +584,4 @@ print("SHUTTLE_ONE_TICK_PLAY_LED_AND_SPACE=PASS")
 print("FADER_REW_FF_LED_SYNC=PASS")
 print("TRANSPORT_4_PERSISTENT_LEDS=PASS")
 print("PHYSICAL_JKL_AND_SYNTHETIC_GUARD=PASS")
+print("SHUTTLE_SIGNED_GEAR_ZERO_AND_FF_THRESHOLD=PASS")
