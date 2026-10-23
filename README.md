@@ -98,6 +98,23 @@ Az NK menüben csatlakozás/státusz, teljes betanítás, megszakítás, vezérl
 
 A `channel=0` Hammerspoonban az **1-es fizikai MIDI-csatorna**, a `controller=cc:0:86` a Continuous JOG. A `delta` csak az adott vezérlő **előző** értékéhez képesti különbség (pozitív = növekedett, negatív = csökkent). A Sign Magnitude JOG a `cc:0:82` vezérlőn küld 1–64 / 65–127 értékeket. A naplózás kizárólag a betanító alatt aktív: normál vágás közben nincs MIDI-spam. A Hammerspoon Console egy valódi ablak, nem kell hozzá külön menüpontot készíteni.
 
+### Ha External módban egyetlen LED sem világít
+
+1. Ellenőrizd a KORG KONTROL Editorban: **Scene 1 → LED Mode = External**; utána **Communication → Write Scene Data**. A Korg Editor bezárható. A Scene 1 aktív legyen.
+2. GitHub frissítés + telepítés + Hammerspoon Reload Config után nyisd meg a **Hammerspoon → Console** ablakot.
+3. Illeszd be **egyetlen parancsként** (nem kell újratanítás, új menü vagy Resolve):
+
+~~~lua
+require("nanokontrol_resolve21").ledProbe()
+~~~
+
+4. Figyeld a **MUTE 1 LED-et**: előbb 1,5 másodpercig az **1-es MIDI-csatornán** próbál világítani, majd rövid szünet után 1,5 másodpercig **0 = összes csatorna** küldéssel. A kód automatikusan elküldi a kikapcsoló üzeneteket is.
+5. Küldd el a Console \`[NK LED PROBE]\` sorait, és írd meg, hogy **első / második / egyik sem** próbán felvillant-e a LED.
+
+**Értelmezés:** ha az első felvillan, a fizikai MIDI output jó a helyes 1-es csatornán, és a rendes MIDI callback/LED mappingot kell vizsgálni. Ha csak a második, csatornaeltérést vagy a Korg csatornabeállítását kell felülvizsgálni. Ha a sendCommand \`pcall=false\` vagy \`result=false\`, a Hammerspoon kimeneti eszközének elérhetőségét vizsgáljuk. Ha \`result=true\`, de egyik LED sem világít, az **csak API-szintű elfogadás**, nem a LED hardverének visszaigazolása: a Korg Scene 1 valódi External/Write állapotát és a MIDI-output útvonalat kell ellenőrizni.
+
+A teszt nem küld Resolve billentyűket, nem nyúl a kalibrációhoz, és nem ír a Korg konfigurációjába.
+
 ### Visszaállítás
 
 ~~~sh
