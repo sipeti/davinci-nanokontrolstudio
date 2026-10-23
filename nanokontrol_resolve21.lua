@@ -655,4 +655,5 @@ local ledHeartbeat = hs.timer.doEvery(LED_HEARTBEAT_SECONDS,function()
 end)
 title()
 return {setup=beginLearn, ledProbe=ledProbe,
+  ledHeartbeat=ledHeartbeat, -- retain repeating timer across GC after require()
   isResolveFrontmost=function() return resolveApp() ~= nil end}
