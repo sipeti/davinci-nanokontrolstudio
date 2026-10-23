@@ -264,6 +264,23 @@ menuAction("LED visszajelzes BE/KI")
 assert(#outputs>=after+44 and latestLED(80)==0,
   "LED enable should refresh after a clean reset")
 
+-- Direct LED probe must use the SAME hs.midi device, never fire shortcuts,
+-- and compare physical channel 1 vs channel 0 (all-channel broadcast).
+local probeStart=#outputs
+local beforeProbeKeys=#keys
+assert(controller.ledProbe()==true,"LED probe must be available from Console")
+assert(outputs[probeStart+1].channel==1 and outputs[probeStart+1].cc==21
+  and outputs[probeStart+1].value==127,"Stage 1 MUTE1 LED ON / channel 1")
+runPending()
+assert(outputs[probeStart+2].channel==1 and outputs[probeStart+2].cc==21
+  and outputs[probeStart+2].value==0,"Stage 1 MUTE1 LED OFF")
+assert(outputs[probeStart+3].channel==0 and outputs[probeStart+3].cc==21
+  and outputs[probeStart+3].value==127,"Stage 2 all-channel ON")
+assert(outputs[probeStart+4].channel==0 and outputs[probeStart+4].cc==21
+  and outputs[probeStart+4].value==0,"Stage 2 all-channel OFF")
+assert(#keys==beforeProbeKeys,"LED probe must not edit Resolve")
+
+print("LED_CONSOLE_TWO_CHANNEL_PROBE=PASS")
 print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
 print("CLEAN_WIZARD_28=PASS")
