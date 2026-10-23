@@ -89,12 +89,15 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 
 | LED | Visszajelzés |
 | --- | --- |
-| PLAY | **Minden mozgó transzportkérésnél világít:** PLAY/Space, SHUTTLE ±1…±4 egyetlen JOG impulzusra is, FADER 1 mozgása, REW és FF. Kialszik STOP, SHUTTLE 0, FADER közép vagy Space által kért pause után |
-| CYCLE | SHUTTLE aktív → világít; JOG aktív → kialszik |
-| STOP, REW, FF, MUTE, SELECT, MARKER, SOLO, REC | **lenyomásra fel**, felengedésre le |
+| PLAY (CC80) | Világít minden mozgó lejátszásnál: PLAY/Space, REW/FF, SHUTTLE/JOG és FADER ±1…±4 |
+| STOP (CC63) | Megálláskor **folyamatosan világít**, felengedés után is; következő lejátszáskor kialszik |
+| REW (CC58) | Visszafelé mozgásnál **világít** a PLAY mellett, pl. J vagy SHUTTLE −1…−4 |
+| FF (CC59) | Előrefelé SHUTTLE/FF-nél **világít** a PLAY mellett, pl. L vagy SHUTTLE +1…+4 |
+| CYCLE (CC54) | SHUTTLE mód aktív → világít; JOG mód → kialszik |
+| MUTE, SELECT, MARKER, SOLO, REC és egyéb gombok | **Lenyomásra fel**, felengedésre le |
 | NK menü → LED visszajelzés KI | mind a **44 ismert Scene 1 gomb LED-je kikapcsolva** |
 
-**Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE-billentyű** használatát a Hammerspoon most figyeli, módosítók és billentyűismétlés nélkül, a billentyűt továbbengedi; ez az általunk nyilvántartott PLAY LED-állapotot is kapcsolja. A Korg saját szimulált Space-jét rövid védőablak kizárja a dupla számolásból. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
+**Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE/J/K/L billentyűket** a Hammerspoon figyeli, módosítók és billentyűismétlés nélkül, és továbbengedi a Resolve felé. A Korg saját szimulált J/K/L/Space eseményeit rövid védőablak kizárja a dupla számolásból. A transzport-led visszajelzés scene-váltás után fél másodpercen belül helyreállítódhat a PLAY/STOP/REW/FF/CYCLE újraküldésétől. A betöltéskor még ismeretlen állapot esetén **egyik transzport LED sem világít**, amíg nem láttunk parancsot. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
 
 **A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. A PLAY és CYCLE LED-állapot mind az öt scene között közös; a **nem transzport** gombok Resolve-funkciói Scene 1-re korlátozódnak.
 
