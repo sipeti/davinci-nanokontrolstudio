@@ -33,7 +33,7 @@ References: [21.1 TimelineItem API](https://wheheohu.github.io/bmd_doc/ResolveAP
    exec(open(os.path.expanduser("~/Projects/davinci-nanokontrolstudio/scripts/scene2_audio_readonly_probe.py"), encoding="utf-8").read())
    ```
 4. Look for `SCENE2_AUDIO_READONLY_PROBE=COMPLETE; WRITES=0`. Each track shows one of:
-   - `playhead_clip=unique AudioVolume_dB=<value> enabled=<bool>`: a supported readback exists for exactly one clip under the playhead.
+   - `playhead_clip=unique AudioVolume_dB=<value> enabled=<bool> item_id=available`: a supported gain readback and persistent clip identifier exist for exactly one clip under the playhead (the actual ID is never printed).
    - `NO UNIQUE TARGET`: the track is empty at the playhead, multiple clips overlap, or playhead-frame conversion could not be verified.
    - `AudioVolume readback incomplete`: Resolve did not return an authoritative gain value.
 5. The `MIXER_METHOD_NAMES` line lists **available method names**, not evidence of a safe mixer setter. The tool does **not** move faders or send any MIDI.
