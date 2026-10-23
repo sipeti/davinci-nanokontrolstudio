@@ -94,7 +94,7 @@ A KORG KONTROL Editor **Scene 1 → Common → LED Mode = External** beállítá
 | STOP, REW, FF, MUTE, SELECT, MARKER, SOLO, REC | **lenyomásra fel**, felengedésre le |
 | NK menü → LED visszajelzés KI | mind a **44 ismert Scene 1 gomb LED-je kikapcsolva** |
 
-**Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** Ha egérrel vagy a Resolve saját billentyűzetével módosítod, a PLAY LED nem feltétlenül a tényleges állapotot mutatja; ez *lokális parancs-visszajelzés*, nem valós idejű DAW feedback.
+**Az aktuális Resolve PLAY/PAUSE vagy kameraállapot NINCS API-ból lekérdezve.** A Resolve előtérben történő **fizikai SPACE-billentyű** használatát a Hammerspoon most figyeli, módosítók és billentyűismétlés nélkül, a billentyűt továbbengedi; ez az általunk nyilvántartott PLAY LED-állapotot is kapcsolja. A Korg saját szimulált Space-jét rövid védőablak kizárja a dupla számolásból. **Egérrel indított lejátszás, eltérő shortcut vagy már futó Resolve playback újratöltéskor továbbra sem detektálható** ebből; ez *megfigyelt parancsok alapján becsült helyi állapot*, nem valós idejű DAW feedback.
 
 **A készüléken kipróbált kimenet: `channel=0` (broadcast).** A Hammerspoon `channel=1` üzenete nem világította a MUTE 1 LED-et, a `channel=0` viszont igen. A PLAY és CYCLE LED-állapot mind az öt scene között közös; a **nem transzport** gombok Resolve-funkciói Scene 1-re korlátozódnak.
 
