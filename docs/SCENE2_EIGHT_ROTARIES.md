@@ -117,3 +117,63 @@ A normal PASS of the one-shot roundtrip is not a safety certification
 for this multi-knob session. Do not enable this on production projects.
 No new 28-step calibration, Korg Editor changes, controller reload,
 main merge or track-fader mapping is required.
+
+
+## Physical failure and next diagnostic (2026-10-24)
+
+The first real operator trials of this new eight-knob script **did not
+demonstrate pickup or any gain writes**. The passive and consented runs both
+printed repeated SCENE_CHANGED=RESET. The latter eventually stopped with
+MIDI backlog; there were no A1..A8 WRITE_READBACK=PASS lines.
+
+Root cause in the research script: the passive Hammerspoon MIDI logger
+deliberately records CCs from channels other than Scene 2. The early eight-
+rotary poller treated every such event as a scene change, cleared the whole
+poll including Scene 2 samples, and accumulated raw foreign-channel traffic
+toward the 80-event limit. The other-channel source itself is still unknown:
+real Scene 1 activity, wrong physical scene, or a duplicate/echo must be
+distinguished from the local capture before enabling gain writing.
+
+The update compacts channel traffic before the Resolve API poll. Other-scene
+traffic generates one diagnostic reset, not a flood of log lines. In
+**test-copy write mode, any other-channel event halts the entire session**,
+rather than rearming and possibly writing amid conflicting scene signals.
+Scene 2 streams are bounded to max 80 raw rotary events per poll; mixed
+scene batches are discarded. All eight rotaries still require independent
+fresh pickup. The general fail-closed safety boundaries have not been relaxed.
+
+Before trying any more writes, run a READ-ONLY local MIDI log channel summary
+in macOS Terminal (the logger's capture file must still be present):
+
+~~~sh
+python3 - <<'PY'
+from collections import Counter
+from pathlib import Path
+source = Path.home() / "Library/Caches/nk-scene2-live-midi.csv"
+c = Counter()
+with source.open("r", encoding="ascii", errors="replace") as stream:
+    for line in stream:
+        bits = line.strip().split(",")
+        if len(bits) != 3:
+            continue
+        try:
+            ch, cc, value = (int(x) for x in bits)
+        except ValueError:
+            continue
+        c[(ch, cc)] += 1
+print("MIDI_LOG_ROWS", sum(c.values()))
+for (ch, cc), amount in sorted(c.items()):
+    print("CHANNEL", ch, "CC", cc, "COUNT", amount)
+PY
+~~~
+
+This only reads a local event log. It does not print clip or project names,
+and never calls any Resolve API or MIDI output. If most events show channel 0,
+check that the Korg is physically in Scene 2 before a passive test; do not
+silently remap input channel 0 to gain, because Scene 1 uses channel 0 for
+transport and editing.
+
+**After diagnosis:** redo the read-only 8-rotary run first, confirm real
+Scene 2 channel=1 CC13..20 and successful independent pickup on more than
+one strip, then consider a new explicitly approved test-copy write. Do not
+reuse the stale /tmp version after GitHub changes; export the files again.
