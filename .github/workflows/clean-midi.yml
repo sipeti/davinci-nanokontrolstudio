@@ -4,7 +4,7 @@ on:
     branches: ["main"]
   pull_request:
     # Stacked research PRs must run CI against their actual target branches.
-    branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test", "research/scene2-soft-takeover-offline"]
+    branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test", "research/scene2-soft-takeover-offline", "research/scene2-midi-one-shot-roundtrip"]
 
 permissions:
   contents: read
@@ -32,3 +32,5 @@ jobs:
           lua5.4 tests/test_scene2_midi_readonly.lua
       - name: Consent-gated one-shot MIDI gain write/restore unit tests
         run: python3 -m unittest discover -s tests -p 'test_scene2_midi_one_shot_roundtrip.py'
+      - name: Eight rotary clip volume safety regression tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_clip_gain_8rotary.py'
