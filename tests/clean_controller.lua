@@ -1,5 +1,5 @@
 -- Hardware-free regression test for the one-shot 28-step MIDI wizard.
-local menus, queue, keys, outputs = {}, {}, {}, {}
+local menus, queue, keys, outputs, repeatingTimers = {}, {}, {}, {}, {}
 local saved, midiCallback = nil, nil
 local alerts, midiLogs = {}, {}
 local app = {
@@ -16,7 +16,12 @@ hs = {
   printf=function(fmt,...) midiLogs[#midiLogs+1]=string.format(fmt, ...) end,
   application={frontmostApplication=function() return app end},
   eventtap={keyStroke=function(mods,k) keys[#keys+1]={key=k, mods=mods} end},
-  timer={doAfter=function(delay,fn)
+  timer={doEvery=function(interval,fn)
+    local t={interval=interval,fn=fn,stopped=false}
+    function t:stop() self.stopped=true end
+    repeatingTimers[#repeatingTimers+1]=t
+    return t
+  end,doAfter=function(delay,fn)
     local t={delay=delay,fn=fn,stopped=false}
     function t:stop() self.stopped=true end
     queue[#queue+1]=t
@@ -44,10 +49,18 @@ hs = {
   },
 }
 local controller=assert(loadfile("nanokontrol_resolve21.lua"))()
-local function cc(id,v)
+local function cc(id,v,ch)
   assert(midiCallback)
+  ch=ch or 0
   midiCallback(nil,"nanoKONTROL Studio","controlChange",nil,
-    {channel=0,controllerNumber=id,controllerValue=v, data=string.format('B0 %02X %02X',id,v)})
+    {channel=ch,controllerNumber=id,controllerValue=v,
+    data=string.format('%02X %02X %02X',0xb0+ch,id,v)})
+end
+local function tickLED()
+  assert(#repeatingTimers==1,"exactly one bounded LED heartbeat timer expected")
+  assert(repeatingTimers[1].interval==0.5,"LED refresh should take 0.5 sec")
+  assert(not repeatingTimers[1].stopped)
+  repeatingTimers[1].fn()
 end
 local function runPending()
   local runs=0
@@ -267,6 +280,79 @@ menuAction("LED visszajelzes BE/KI")
 assert(#outputs>=after+44 and latestLED(80)==0,
   "LED enable should refresh after a clean reset")
 
+-- Scene selection is a hardware-only operation: NO MIDI event is guaranteed.
+-- A periodic, state-only CC resend must restore PLAY/CYCLE after returning
+-- to Scene 1 (or when entering Scene 2 External). No new key commands.
+keys={}
+cc(80,127,0);cc(80,0,0)
+assert(keyCount("space")==1,"Scene1 PLAY should start local playback")
+assert(latestLED(80)==127)
+local outBeforeHeartbeat=#outputs
+tickLED() -- simulate pressing SCENE away/back, which sends no MIDI message
+assert(#outputs==outBeforeHeartbeat+2,
+  "LED scene restore MUST resend PLAY/CYCLE even with unchanged state")
+assert(outputs[#outputs-1].cc==80 and outputs[#outputs-1].value==127
+  and outputs[#outputs-1].channel==0,
+  "PLAY must be relit after silent hardware scene switch")
+assert(outputs[#outputs].cc==54 and outputs[#outputs].channel==0,
+  "CYCLE must also get its shared mode state restored")
+assert(keyCount("space")==1 and keyCount("k")==0,
+  "LED sync MUST NOT change Resolve playback")
+
+-- The same PLAY/STOP/FF/REW strip works on Scenes 2 through 5, where
+-- only the MIDI INPUT channel changes (same physical CCs).
+cc(80,127,1);cc(80,0,1)
+assert(keyCount("space")==2 and latestLED(80)==0,
+  "Scene2 PLAY should pause the running Resolve with same physical CC")
+cc(80,127,4);cc(80,0,4)
+assert(keyCount("space")==3 and latestLED(80)==127,
+  "Scene5 PLAY should restart with unchanged transport binding")
+cc(63,127,1);cc(63,0,1)
+assert(keyCount("k")==1 and latestLED(80)==0,
+  "Scene2 STOP should stop Resolve and clear shared PLAY LED")
+keys={}
+cc(58,127,2);cc(58,0,2)
+assert(keyCount("j")==1,"Scene3 REW must keep fixed J shortcut")
+cc(59,127,3);cc(59,0,3)
+assert(keyCount("l")==1,"Scene4 FF must keep fixed L shortcut")
+cc(62,127,4);cc(62,0,4)
+assert(keyCount("left")==1,"Scene5 Return to Zero should keep Cmd+Left")
+cc(60,127,2);cc(60,0,2)
+assert(keyCount("up")==1,"Scene3 TRACK PREV should navigate")
+cc(61,127,3);cc(61,0,3)
+assert(keyCount("down")==1,"Scene4 TRACK NEXT should navigate")
+keys={}
+cc(54,127,1);cc(54,0,1)
+assert(latestLED(54)==127,"Scene2 CYCLE turns on shared SHUTTLE LED")
+tickLED()
+assert(latestLED(54)==127,"Silent switch back to Scene1 must relight CYCLE")
+cc(54,127,0);cc(54,0,0)
+assert(latestLED(54)==0,"Scene1 CYCLE goes back to JOG")
+-- Only transport is global: Scene2 MUTE acknowledges LED but MUST NOT
+-- invoke Scene1 CAM1 shortcut or any other editing side effect.
+keys={}
+cc(21,127,1);cc(21,0,1)
+assert(#keys==0 and latestLED(21)==0,
+  "Scene2 MUTE LED feedback is safe but its Resolve action is unmapped")
+cc(46,127,1);cc(46,0,1)
+assert(#keys==0,"Scene2 SELECT remains unmapped")
+local beforeInvalid=#outputs
+cc(80,127,5);cc(80,0,5)
+assert(#keys==0 and #outputs==beforeInvalid,
+  "Unknown MIDI channel outside the five scenes must be ignored")
+-- The heartbeat must do nothing while LEDs are disabled or calibrating.
+menuAction("LED visszajelzes BE/KI")
+local afterDisable=#outputs
+tickLED()
+assert(#outputs==afterDisable,"heartbeat MUST respect LED OFF")
+menuAction("LED visszajelzes BE/KI")
+menuAction("TELJES UJRABETANITAS")
+local duringLearn=#outputs
+tickLED()
+assert(#outputs==duringLearn,"heartbeat MUST skip 28-step learning")
+menuAction("MEGSZAKITASA")
+
+
 -- The physical 2026-10-23 test: only LED_PROBE channel=0 illuminated.
 -- Normal PLAY/CYCLE/MUTE feedback must therefore all use channel=0.
 for _,e in ipairs(outputs) do
@@ -297,3 +383,5 @@ print("FADER_1_STRICT_CC2=PASS")
 print("SHUTTLE_ONE_TICK_AND_BURST=PASS")
 print("JOG_SHUTTLE_STOP=PASS")
 print("EXTERNAL_LED_CHANNEL0_PLAY_TOGGLE=PASS")
+print("GLOBAL_TRANSPORT_SCENES_1_TO_5=PASS")
+print("SILENT_SCENE_SWITCH_LED_RESTORE=PASS")
