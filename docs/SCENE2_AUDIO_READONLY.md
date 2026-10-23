@@ -42,6 +42,22 @@ This probe intentionally refuses non-integer FPS, drop-frame timecodes and incom
 
 The script prints only track indices, numeric volumes and method names — **not project names, clip filenames, audio data or paths**. It makes no calls that start with `Set`, and contains no keyboard/mouse simulation or network requests.
 
+## First live Resolve test — PASS for readback, no writes
+
+The user ran this exact script in **Resolve's Py3 Console on macOS**. The probe completed with `WRITES=0` and reported:
+
+- **50 fps** and a verified non-drop-frame playhead position (no unsafe frame-rate conversion).
+- **A1, A4, A5, A6 and A7:** exactly one audio clip matched at the playhead, and `AudioVolume_dB`, `AudioVolumeEnabled=True` and `item_id=available` were all returned. Actual gain values and internal IDs are intentionally *not* recorded in the public repository.
+- **A2 and A3:** no clip matched at the current playhead; the script correctly returned `NO UNIQUE TARGET` rather than selecting a neighboring clip.
+- **A8:** no output because there were fewer than eight audio tracks in the active timeline.
+- `MIXER_METHOD_NAMES=none` for the probed Timeline object. **This is not proof that no control-surface or other mixer interface exists**; it is only evidence that this particular object did not expose matching getter/setter names.
+
+**Verified:** frame/timecode handling, single-clip selection, per-clip `AudioVolume` readback and availability of a per-item identifier, without a write.
+
+**Not yet verified:** that those reported dB values match the Inspector on a representative clip; that `SetProperties` writes/reads back/undoes correctly; that clip identity remains stable across timeline changes, overlapping audio, linked media or gain automation; and that the Fairlight **track fader** has a separate authoritative read/write interface.
+
+**Next smallest safe check:** with a **disposable timeline**, visually compare one reported A4 clip value to the Inspector's Audio Volume field. If the values disagree, do not enable gain writing. When values agree, test changing that Inspector value **manually** and rerun this read-only probe to prove that external edits are visible. No automated audio writes are authorized yet.
+
 ## Before activating any Scene 2 gain controls
 
 - Confirm `AudioVolume` readback against the Inspector in Resolve Studio **21.1.0.17**, including linked AV clips and clips with keyframes.
