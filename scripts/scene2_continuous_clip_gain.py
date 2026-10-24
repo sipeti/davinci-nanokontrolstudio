@@ -59,7 +59,8 @@ class ContinuousController(Controller):
     """
     def __init__(self, app, *, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False,
-                 max_writes=256, now=time.monotonic):
+                 max_writes=256, now=time.monotonic,
+                 stability_wait=time.sleep):
         super().__init__(
             app, write=write, expected_project=expected_project,
             confirmation=confirmation,
@@ -67,6 +68,25 @@ class ContinuousController(Controller):
             max_writes=max_writes, max_writes_limit=256, now=now,
         )
         self.pause_reason = None
+        self.stability_wait = stability_wait
+
+    def _write(self, track, before, identity, requested):
+        # Require the playhead, clip identity and dB to remain unchanged
+        # across a real 120ms observation interval, not only two API calls
+        # made back-to-back while Resolve might be playing/scrubbing.
+        self.stability_wait(0.12)
+        try:
+            fresh, fresh_identity, fresh_session = snapshot(self.app, track)
+        except api.ProbeBlocked:
+            return self._halt("playhead/clip unavailable in stability window")
+        if (fresh["key"] != before["key"] or
+                fresh_identity != identity or
+                fresh_session != self.session):
+            self.engine.reject(track)
+            return self._halt("playhead/clip/gain moved during stability window")
+        # Inherited setter separately snapshots and verifies again, and
+        # attempts rollback on errors; never bypass its original safety.
+        return super()._write(track, before, identity, requested)
 
     def rearm(self, reason):
         self.engine.reset()
