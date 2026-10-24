@@ -32,6 +32,9 @@ ACK_TIMEOUT = 0.75
 # Fairlight requires a short fader TOUCH hold after the MIDI position.
 # A working nanoKONTROL2 -> Fairlight translator uses 500 ms after motion.
 ONE_SHOT_TOUCH_HOLD_SECONDS = 0.5
+# Momentary MCU button tap uses host state, never hardware input LED echo.
+ONE_SHOT_BUTTON_HOLD_SECONDS = 0.08
+ONE_SHOT_BUTTONS = {"mute1": (21, 16), "solo1": (29, 8)}
 # Korg/Scene1 CC32 is deliberately skipped (MIDI bank-select LSB).
 # This eight-button pattern is in the verified existing Scene1 LED map;
 # it must still be confirmed physically on Scene2 before MCU output.
@@ -88,12 +91,17 @@ class Bridge:
     """Pure state machine; send(type, fields) and led(cc, state) are injected."""
 
     def __init__(self, send, led, *, write=False, clock=time.monotonic,
-                 fader1_one_shot=False):
+                 fader1_one_shot=False, one_shot_button=None):
+        if one_shot_button is not None and one_shot_button not in ONE_SHOT_BUTTONS:
+            raise ValueError("unsupported one-shot mixer button")
+        if fader1_one_shot and one_shot_button:
+            raise ValueError("one-shot fader and button trials are exclusive")
         self.send = send
         self.led = led
         self.write = write
         self.clock = clock
         self.fader1_one_shot = fader1_one_shot
+        self.one_shot_button = one_shot_button
         self.ack_received = 0
         self.ack_mismatch = 0
         self.host_after_command = 0
@@ -103,7 +111,13 @@ class Bridge:
         self.engaged = [False] * 8
         self.pending = [None] * 8
         self.known_buttons = {}
+        self.button_host_time = {}
         self.pressed = {}
+        self.one_button_pressed = False
+        self.one_button_release_at = None
+        self.one_button_initial = None
+        self.one_button_expected = None
+        self.one_button_observed = False
         self.sent = 0
         self.blocked = 0
         self.touch_active = False
@@ -125,13 +139,30 @@ class Bridge:
             self.touch_release_at = None
         return True
 
+    def release_one_button(self, *, force=False):
+        """Release an MCU one-shot mixer key exactly once; no second press."""
+        if not self.one_button_pressed:
+            return False
+        if (not force and self.one_button_release_at is not None
+                and self.clock() < self.one_button_release_at):
+            return False
+        _, note = ONE_SHOT_BUTTONS[self.one_shot_button]
+        try:
+            self.send("note_off", channel=0, note=note, velocity=0)
+        finally:
+            self.one_button_pressed = False
+            self.one_button_release_at = None
+        return True
+
     def rearm(self):
-        # A focus/scene reset must not leave an MCU fader logically touched.
+        # Focus/scene reset must not leave the MCU fader touched or a key down.
         self.release_touch(force=True)
+        self.release_one_button(force=True)
         self.physical = [None] * 8
         self.engaged = [False] * 8
         self.pending = [None] * 8
         self.known_buttons = {}
+        self.button_host_time = {}
         self.pressed = {}
         self.host_faders = [None] * 8
         self.host_fader_time = [None] * 8
@@ -179,6 +210,11 @@ class Bridge:
             on = kind == "note_on" and velocity > 0
             cc = SOLO_CC[note - 8] if note < 16 else (note - 16 + 21)
             self.known_buttons[cc] = on
+            self.button_host_time[cc] = self.clock()
+            if self.one_shot_button and self.sent == 1:
+                selected_cc, _ = ONE_SHOT_BUTTONS[self.one_shot_button]
+                if cc == selected_cc and on == self.one_button_expected:
+                    self.one_button_observed = True
             self.led(cc, 127 if on else 0)
 
     def physical_event(self, ch, cc, value):
@@ -187,6 +223,39 @@ class Bridge:
             return "SCENE_REARM"
         if type(value) is not int or not 0 <= value <= 127:
             return "INVALID"
+        if self.one_shot_button:
+            chosen_cc, note = ONE_SHOT_BUTTONS[self.one_shot_button]
+            if cc != chosen_cc:
+                return "ONE_SHOT_BUTTON_ONLY"
+            if self.sent >= 1:
+                return "ONE_SHOT_ALREADY_SENT"
+            if value != 127:
+                return "ONE_SHOT_WAIT_PRESS"
+            last = self.button_host_time.get(chosen_cc)
+            if last is None or self.clock() - last > 10.0:
+                self.blocked += 1
+                return "BUTTON_HOST_STATE_STALE"
+            before = self.known_buttons.get(chosen_cc)
+            if before is None:
+                self.blocked += 1
+                return "BUTTON_WAIT_FOR_FAIRLIGHT_LED"
+            self.one_button_initial = before
+            self.one_button_expected = not before
+            if self.write:
+                # Exactly one host-known toggle. The physical release
+                # cannot send another MIDI command; timer releases the
+                # momentary MCU key once even if Korg sends extra CCs.
+                self.one_button_pressed = True
+                try:
+                    self.send("note_on", channel=0, note=note, velocity=127)
+                    self.sent += 1
+                    self.one_button_release_at = (
+                        self.clock() + ONE_SHOT_BUTTON_HOLD_SECONDS)
+                except BaseException:
+                    self.release_one_button(force=True)
+                    raise
+                return "MCU_BUTTON_ONE_SHOT_SENT"
+            return "MCU_BUTTON_ONE_SHOT_PREVIEW"
         # Explicit physical acceptance: all other Scene2 sliders and buttons
         # are blocked, even if the operator accidentally presses them.
         if self.fader1_one_shot and cc != 2:
@@ -295,20 +364,25 @@ def main():
     parser.add_argument("--seconds", type=int, default=60, help="0 = until Ctrl+C")
     parser.add_argument("--enable-output", action="store_true")
     parser.add_argument("--one-shot-fader1-test", action="store_true",
-                        help="single A1 fader MIDI message, never buttons/other faders")
+                        help="single A1 fader adjustment, no other strips/buttons")
+    parser.add_argument("--one-shot-button", choices=tuple(ONE_SHOT_BUTTONS),
+                        help="one A1 MUTE or SOLO press/release, not fader")
     parser.add_argument("--consent")
     args = parser.parse_args()
     if args.seconds < 0 or args.seconds > 3600:
         parser.error("--seconds must be 0..3600")
     if args.enable_output and args.consent != CONSENT:
         parser.error("Explicit disposable-project consent required for MIDI writes")
-    if args.enable_output and not args.one_shot_fader1_test:
-        parser.error("MIDI writes require --one-shot-fader1-test; "
-                     "unbounded mixer output is disabled in Draft")
-    if args.one_shot_fader1_test and not args.enable_output:
-        parser.error("--one-shot-fader1-test requires --enable-output")
-    if args.one_shot_fader1_test and (args.seconds == 0 or args.seconds > 60):
-        parser.error("Single-fader hardware trial must finish within 60 seconds")
+    if args.one_shot_fader1_test and args.one_shot_button:
+        parser.error("Choose fader1 OR one button, not both")
+    any_trial = args.one_shot_fader1_test or bool(args.one_shot_button)
+    if args.enable_output and not any_trial:
+        parser.error("MIDI writes require --one-shot-fader1-test OR "
+                     "--one-shot-button; unbounded output disabled in Draft")
+    if any_trial and not args.enable_output:
+        parser.error("Any one-shot trial requires --enable-output")
+    if any_trial and (args.seconds == 0 or args.seconds > 60):
+        parser.error("One-shot hardware trial must finish within 60 seconds")
     try:
         import mido
     except ImportError:
@@ -345,9 +419,11 @@ def main():
             feedback.write("%d,L,%d,%d\n" % (int(time.time()*1000), cc, value))
             feedback.flush()
         bridge = Bridge(emit, led, write=args.enable_output,
-                        fader1_one_shot=args.one_shot_fader1_test)
+                        fader1_one_shot=args.one_shot_fader1_test,
+                        one_shot_button=args.one_shot_button)
         started = time.monotonic()
         one_shot_sent_at = None
+        one_button_sent_at = None
         last_h = None
         last_heartbeat_out = 0
         ready = False
@@ -359,6 +435,12 @@ def main():
         source_resets = Counter()
         print("MCU=START; mode=%s; 8 strip MCU; source Hammerspoon Scene2" %
               ("DISPOSABLE_WRITE" if args.enable_output else "READ_ONLY"), flush=True)
+        if args.one_shot_button:
+            cc, note = ONE_SHOT_BUTTONS[args.one_shot_button]
+            print("MCU_BUTTON_ONE_SHOT_ARMED=%s; physical CC%d -> "
+                  "MCU note%d; one 80ms press/release only; "
+                  "all other controls BLOCKED; fresh Fairlight LED needed" %
+                  (args.one_shot_button, cc, note), flush=True)
         if args.one_shot_fader1_test:
             print("MCU_ONE_SHOT_ARMED=one A1 adjustment ONLY: "
                   "note_on(104,127) + pitchbend(ch0) + 500ms held touch "
@@ -447,9 +529,28 @@ def main():
                             if display:
                                 print("MCU %s CH=%d CC=%d value=%d" %
                                       (result,ch,cc,value), flush=True)
-                # Scheduled RELEASE is sent even with no new Korg movement.
-                # On early loop termination, the finalizer forces release.
+                # Scheduled RELEASEs are independent of further Korg events.
+                # Finalizer releases on Ctrl+C, focus loss and exceptions.
                 bridge.release_touch()
+                bridge.release_one_button()
+                if args.one_shot_button and bridge.sent > 0:
+                    if one_button_sent_at is None:
+                        one_button_sent_at = now
+                        print("MCU_BUTTON_ONE_SHOT_SENT=%s; before=%s; "
+                              "expected_after=%s" %
+                              (args.one_shot_button,
+                               bridge.one_button_initial,
+                               bridge.one_button_expected), flush=True)
+                    if not bridge.one_button_pressed and bridge.one_button_observed:
+                        print("MCU_BUTTON_ONE_SHOT=HOST_STATE_CHANGED_PASS; "
+                              "host note changed; inspect LED and Fairlight UI",
+                              flush=True)
+                        break
+                    if now - one_button_sent_at > 1.5:
+                        print("MCU_BUTTON_ONE_SHOT=NO_MATCHING_HOST_FEEDBACK; "
+                              "may have changed without echoed note; inspect "
+                              "Fairlight UI before any retry", flush=True)
+                        break
                 if args.one_shot_fader1_test and bridge.sent > 0:
                     if one_shot_sent_at is None:
                         one_shot_sent_at = now
@@ -496,6 +597,13 @@ def main():
                 print("MCU_ONE_SHOT=TOUCH_RELEASE_FAILED; restart Resolve "
                       "before further MIDI writes; error=%s" % exc,
                       flush=True)
+            try:
+                if bridge.release_one_button(force=True):
+                    print("MCU_BUTTON_ONE_SHOT=FORCED_KEY_RELEASE", flush=True)
+            except Exception as exc:
+                print("MCU_BUTTON_ONE_SHOT=KEY_RELEASE_FAILED; restart Resolve "
+                      "before further MIDI writes; error=%s" % exc,
+                      flush=True)
             feedback.write("%d,H,0,0\n" % int(time.time()*1000))
             feedback.flush()
         print("MCU=COMPLETE; fader_adjustments=%d; blocked_events=%d; "
@@ -509,6 +617,15 @@ def main():
                    bridge.one_shot_target * 127 / 16383,
                    "unknown" if current is None else "%.1f" %
                    (current * 127 / 16383)), flush=True)
+        if bridge.one_shot_button and bridge.sent == 1:
+            selected_cc, _ = ONE_SHOT_BUTTONS[bridge.one_shot_button]
+            print("MCU_BUTTON_ONE_SHOT_RESULT=%s; before:%s; expected:%s; "
+                  "last_host:%s; fresh_host_confirmed:%s" %
+                  (bridge.one_shot_button,
+                   bridge.one_button_initial,
+                   bridge.one_button_expected,
+                   bridge.known_buttons.get(selected_cc),
+                   bridge.one_button_observed), flush=True)
         print("MCU_DIAG_HOST_RX=" +
               ",".join("%s:%d" % (k,rx_counts[k])
                        for k in sorted(rx_counts)), flush=True)
