@@ -142,7 +142,10 @@ class Bridge:
             if not self.engaged[strip]:
                 crossed = old is not None and min(old, goal) <= host <= max(old, goal)
                 close = abs(goal - host) <= FADER_PICKUP_TOLERANCE
-                if old is not None and (crossed or close):
+                # A duplicate or stale CC must NEVER arm a mixer fader.
+                # Physical movement is mandatory after authoritative host
+                # state becomes known (even when positions happen to match).
+                if old is not None and old != goal and (crossed or close):
                     self.engaged[strip] = True
                     return "FADER_PICKUP_PASS"
                 return "FADER_PICKUP_PENDING"
