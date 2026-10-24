@@ -191,6 +191,64 @@ class LiveMixerTests(unittest.TestCase):
         ])
         self.assertEqual(b.keys,{})
 
+    def test_mcu_proprietary_startup_handshake_has_exact_sequence(self):
+        self.assertEqual(live.MCU_SESSION_HEADER,(0,0,102,20))
+        self.assertEqual(live.MCU_SESSION_QUERY[:5],(0,0,102,20,1))
+        self.assertEqual(live.MCU_SESSION_CONFIRM[:5],(0,0,102,20,3))
+        self.assertEqual(len(live.MCU_SESSION_QUERY),16)
+        self.assertEqual(len(live.MCU_SESSION_CONFIRM),12)
+        self.assertTrue(all(0<=x<=127 for x in live.MCU_SESSION_QUERY))
+        self.assertEqual(
+            live.mcu_connection_reply_for(msg("sysex",
+                   data=live.MCU_EXPECTED_HOST_REPLY)),
+            live.MCU_SESSION_CONFIRM)
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=live.MCU_EXPECTED_HOST_REPLY)),
+            "mcu_valid_connection_reply")
+
+    def test_mcu_connection_rejects_foreign_serial_wrong_challenge(self):
+        data=list(live.MCU_EXPECTED_HOST_REPLY)
+        data[6]^=1
+        self.assertIsNone(live.mcu_connection_reply_for(
+            msg("sysex",data=tuple(data))))
+        data=list(live.MCU_EXPECTED_HOST_REPLY)
+        data[-1]^=1
+        self.assertIsNone(live.mcu_connection_reply_for(
+            msg("sysex",data=tuple(data))))
+        self.assertIsNone(live.mcu_connection_reply_for(
+            msg("sysex",data=live.MCU_SESSION_QUERY)))
+        self.assertIsNone(live.mcu_connection_reply_for(
+            msg("sysex",data=(0,0,102,20,2))))
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=tuple(data))),
+            "mcu_other_connection_reply")
+
+    def test_mcu_session_does_not_guess_gain_or_invent_leds(self):
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_WAIT_HOST")
+        self.b.host(msg("sysex",data=live.MCU_SESSION_QUERY))
+        self.b.host(msg("sysex",data=live.MCU_EXPECTED_HOST_REPLY))
+        self.b.host(msg("sysex",data=live.MCU_SESSION_CONFIRM))
+        self.assertEqual(self.b.host_state.host_faders,[None]*8)
+        self.assertEqual(self.b.host_state.known_buttons,{})
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_WAIT_HOST")
+        self.assertEqual(self.b.sent,0)
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.leds,[])
+
+    def test_sysex_diagnostics_do_not_echo_track_names(self):
+        text=b"PRIVATE_AUDIO_TRACK_123"
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=(0,0,102,20,0x12,*text))),
+            "mcu_command_12")
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=(126,0,6,1))),
+            "universal_identity_request")
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=(0,0,102,20,0))),
+            "mcu_device_query")
+        self.assertEqual(live.sysex_message_kind(
+            msg("sysex",data=(2,3,4))),"other")
+
     def test_exact_fairlight_identity_request_has_bounded_mcu_reply_payload(self):
         request=msg("sysex",data=(126,0,6,1))
         reply=live.mcu_identity_reply_for(request)
