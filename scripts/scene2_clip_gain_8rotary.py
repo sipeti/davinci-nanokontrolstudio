@@ -56,6 +56,7 @@ class Controller:
         self.halted = False
         self.reported = set()
         self.other_scene_active = False
+        self.high_rate_reported = False
         if write and not approved_copy(expected_project, confirmation,
                                        automation_confirmed):
             raise ValueError("a backed-up exact test project, consent and no-automation confirmation are mandatory")
@@ -208,7 +209,11 @@ class MidiPoll:
         self.events = {}
         self.foreign = None
         self.foreign_count = 0
+        self.raw_rotary_count = 0
+        # Only *changed* physical CC positions count towards the safety
+        # movement limit. Korg may repeat the same CC value at high rates.
         self.rotary_count = 0
+        self.last_value = {}
 
     def add(self, line):
         event = parse_event(line)
@@ -220,13 +225,16 @@ class MidiPoll:
             self.foreign_count += 1
             self.events.clear()
         elif 13 <= cc <= 20 and self.foreign is None:
+            self.raw_rotary_count += 1
+            if self.last_value.get(cc) == event:
+                return  # duplicate packet cannot cause a physical CC step
+            self.last_value[cc] = event
             self.rotary_count += 1
             samples = self.events.setdefault(cc, [])
-            if not samples or samples[-1] != event:
-                if len(samples) < 2:
-                    samples.append(event)
-                else:
-                    samples[-1] = event
+            if len(samples) < 2:
+                samples.append(event)
+            else:
+                samples[-1] = event
 
     def take(self):
         foreign, count = self.foreign, self.rotary_count
@@ -237,6 +245,38 @@ class MidiPoll:
         ]
         self.__init__()
         return foreign, count, events
+
+
+def process_poll(controller, pending):
+    """One bounded MIDI batch. No Resolve setter outside Controller._write.
+
+    Read-only probes must *not* fail simply due to fast/duplicate MIDI input.
+    The buffered representation remains first+last only, so extreme bursts
+    may miss the pickup point: slow down rather than infer a hidden crossing.
+    Writable test-copy sessions keep a strict changed-CC rate guard.
+    """
+    if pending.rotary_count > pending.MAX_ROTARY_EVENTS:
+        if controller.write:
+            print("MIDI_RATE=BLOCKED; raw=%d; changed=%d; limit=%d; "
+                  "VERIFIED_WRITES=%d" %
+                  (pending.raw_rotary_count, pending.rotary_count,
+                   pending.MAX_ROTARY_EVENTS, controller.writes), flush=True)
+            controller._halt("excessive Scene 2 knob movement")
+            return "HALTED"
+        if not controller.high_rate_reported:
+            print("MIDI_BURST=COALESCED; raw=%d; changed=%d; "
+                  "READ_ONLY; WRITES=0; slow down near pickup" %
+                  (pending.raw_rotary_count, pending.rotary_count), flush=True)
+            controller.high_rate_reported = True
+    foreign, _, events = pending.take()
+    if foreign is not None:
+        if controller.handle(*foreign) == "HALTED":
+            return "HALTED"
+        return "CONTINUE"
+    for event in events:
+        if controller.handle(*event) == "HALTED":
+            return "HALTED"
+    return "CONTINUE"
 
 
 def monitor(controller, seconds, event_file=EVENT_FILE):
@@ -266,30 +306,18 @@ def monitor(controller, seconds, event_file=EVENT_FILE):
                 print("SCENE2_8ROTARY=BLOCKED; MIDI logger file missing",
                       flush=True)
                 return 1
-            if pending.rotary_count > pending.MAX_ROTARY_EVENTS:
-                controller.engine.reset()
-                print("SCENE2_8ROTARY=BLOCKED; excessive Scene2 MIDI rate; no blind writes",
-                      flush=True)
-                return 1
+            # The rate guard belongs to the write decision, not to raw
+            # CSV ingestion: duplicates are common and read-only probes
+            # should remain observable even under very dense MIDI input.
             if (not pending.events and pending.foreign is None) or (
                     time.monotonic() < next_poll):
                 time.sleep(0.04)
                 continue
             next_poll = time.monotonic() + POLL_SECONDS
-            foreign, _, events = pending.take()
-            if foreign is not None:
-                result = controller.handle(*foreign)
-                if result == "HALTED":
-                    print("SCENE2_8ROTARY=STOPPED; VERIFIED_WRITES=%d" %
-                          controller.writes, flush=True)
-                    return 1
-                continue
-            for event in events:
-                result = controller.handle(*event)
-                if result == "HALTED":
-                    print("SCENE2_8ROTARY=STOPPED; VERIFIED_WRITES=%d" %
-                          controller.writes, flush=True)
-                    return 1 if controller.writes < controller.max_writes else 0
+            if process_poll(controller, pending) == "HALTED":
+                print("SCENE2_8ROTARY=STOPPED; VERIFIED_WRITES=%d" %
+                      controller.writes, flush=True)
+                return 1 if controller.writes < controller.max_writes else 0
     print("SCENE2_8ROTARY=COMPLETE; mode=%s; VERIFIED_WRITES=%d" %
           ("TEST_COPY" if controller.write else "READ_ONLY", controller.writes),
           flush=True)
