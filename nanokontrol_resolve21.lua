@@ -113,9 +113,17 @@ if hs.configdir then
   local bridgePath = hs.configdir .. "/scene2_clip_gain_bridge.lua"
   local ok, factory = pcall(dofile, bridgePath)
   if ok and type(factory) == "function" then
-    scene2Bridge = factory(hs, function()
+    local initialized, instance = pcall(factory, hs, function()
       return enabled and cfg ~= nil and not learning and resolveApp() ~= nil
     end)
+    if initialized and type(instance) == "table"
+      and type(instance.publish) == "function"
+      and type(instance.start) == "function"
+      and type(instance.stop) == "function" then
+      scene2Bridge = instance
+    else
+      hs.printf("[NK SCENE2] Optional input bridge unavailable; Scene 1 unaffected")
+    end
   end
 end
 
