@@ -278,6 +278,67 @@ line, burying useful observations; it now prints that status once per CC
 and summarizes the totals. Because Korg SCENE selection is silent, the
 current scene can only be known after its first physical CC input.
 
+### Cold-start snapshot failure after Resolve/Hammerspoon restart (25 October 2026)
+
+The user confirmed that **after a restart the Korg Scene2 MUTE/SOLO
+LEDs do not initially reproduce the already-on Fairlight states**.
+They illuminate correctly only after the underlying Fairlight state is
+toggled OFF and ON, which triggers new host MCU note feedback.
+Hammerspoon evidence (01:25 reload; 01:26 `INPUT BRIDGE ENABLED`)
+shows the controller was explicitly re-enabled but actual
+`[NK SCENE2 LED RX]` messages only started at 01:27 during on-screen
+or physical MUTE/SOLO changes. Thus **LED TX is physically working**;
+the root missing piece is *startup state synchronization*, not a
+Korg output channel or setup wizard issue. The main physical Scene1
+mappings and 28/28 hardware calibration are not implicated.
+
+A 60sec integrated run with `--reply-mcu-identity` showed an actual
+**universal MIDI request/reply: 1/1** but **no** host `pitchwheel`.
+24 MUTE/SOLO note events and 73 SysEx packets arrived, and NONE of
+the host's fader positions were sent. The universal identity reply did
+**not** fix startup. This exact failure MUST NOT be misrepresented
+as an MCU fader or LED PASS.
+
+The original Logic Control/Mackie MCU protocol describes a separate
+proprietary **Host Connection Query (device to host) -> Reply (host to
+device) -> Confirmation (device to host)**, distinct from Universal
+MIDI Identity. See:
+- Logic Control MIDI Implementation (Apple Logic 7 manual, appendix B,
+  "Host Connection and Initialization")
+- NicoG60 TouchMCU, `doc/mackie_control_protocol.md` (cmd0x00..0x04).
+
+The Draft now supports one explicit `--init-mcu-session` for a
+bounded, disposable-project bench only. This sends one *device-side*
+`F0 00 00 66 14 01 ... F7` Host Connection Query on IAC to
+Resolve, including deterministic 7-byte temporary serial and 4-byte
+challenge. Only an **exact, mathematically verified** host Reply
+`0x02` to that serial/challenge gets a Confirmation `0x03`. No
+blind reply, no auto bank switching, no fabricated fader position,
+and no changes to the already-working MUTE/SOLO or LED pipeline.
+The existing output/consent gate is required. Whether Resolve 21
+responds to this older MCU handshake at all is **UNPROVEN**.
+
+For the next ONE startup diagnostic, leave existing working Hammerspoon
+and Korg configuration untouched and use the same 60sec live bench
+with `--init-mcu-session` **instead of** the disproven
+`--reply-mcu-identity`. This prints `MCU_LIVE_SESSION` and
+`MCU_LIVE_SYSEX_TYPES` (only MIDI command classes, never track
+names) as well as actual `MCU_LIVE_HOST_FADERS` and
+`MCU_LIVE_HOST_LED_EVENTS`. Until actual host `pitchwheel`
+arrives, every physical fader remains protected by soft pickup and
+cannot change the mix. Even if handshake succeeds, the LED state
+can be considered synchronized ONLY if Resolve actually transmits
+fresh current MUTE/SOLO notes; do not restore guesswork or stale
+cross-project LED cache.
+
+If this startup query does not yield host note/pitch state, we
+should stop brute-force identity trials: the correct next
+investigation is the MIDI port connection lifetime (IAC exists before
+our process so Resolve might have emitted its startup snapshot before
+our listener opened) or an explicit bank/session refresh verified
+not to change mapping. Avoid trying an unsafely ordered BANK
+LEFT/RIGHT sequence, which can change strip mapping at a bank edge.
+
 ### MCU startup identity response (opt-in, no gain write)
 
 The October 25 integrated run **PHYSICALLY PASSED Korg MUTE/SOLO LEDs**,
