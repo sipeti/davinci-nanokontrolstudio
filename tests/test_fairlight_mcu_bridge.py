@@ -42,7 +42,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.physical_event(1,2,63),"FADER_WAIT_ACK")
         self.assertEqual(len(self.sent),1)
         self.host_fader(1,62)
-        self.assertEqual(self.bridge.physical_event(1,2,63),"MCU_FADER_SENT")
+        # The CC63 physical event was deliberately dropped while waiting
+        # for host ACK. A *new* physical change is required after ACK.
+        self.assertEqual(self.bridge.physical_event(1,2,64),"MCU_FADER_SENT")
         self.assertEqual(len(self.sent),2)
 
     def test_each_of_eight_tracks_uses_separate_mcu_pitch_channel(self):
