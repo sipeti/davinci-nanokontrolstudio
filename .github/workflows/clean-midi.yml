@@ -46,6 +46,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_scene2_continuous_clip_gain.py'
       - name: Fairlight MCU 8-fader and mute/solo protocol safety
         run: python3 -m unittest discover -s tests -p 'test_fairlight_mcu_bridge.py'
+      - name: Finite Scene2 MCU continuous mixer safety tests
+        run: python3 -m unittest discover -s tests -p 'test_fairlight_mcu_continuous.py'
       - name: Scene 2 Fairlight host-authoritative LED feedback
         run: |
           luac5.4 -p scene2_clip_gain_bridge.lua tests/test_scene2_mcu_feedback.lua nanokontrol_resolve21.lua
