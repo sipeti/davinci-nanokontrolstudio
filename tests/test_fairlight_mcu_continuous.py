@@ -191,6 +191,28 @@ class LiveMixerTests(unittest.TestCase):
         ])
         self.assertEqual(b.keys,{})
 
+    def test_handshake_only_hard_blocks_physical_mixer_output(self):
+        self.assertFalse(live.physical_mixer_write_authorized(True, True))
+        self.assertFalse(live.physical_mixer_write_authorized(False, True))
+        self.assertFalse(live.physical_mixer_write_authorized(False, False))
+        self.assertTrue(live.physical_mixer_write_authorized(True, False))
+        sent=[]
+        b=live.LiveMixer(
+            lambda kind, **kw:sent.append((kind,kw)),
+            lambda cc,value:None,
+            write=live.physical_mixer_write_authorized(True, True),
+            clock=lambda:self.now)
+        b.host(msg("pitchwheel", channel=0,
+                   pitch=mcu.physical_to_mcu(60)-8192))
+        b.host(msg("note_on",channel=0,note=16,velocity=0))
+        b.physical_event(1,2,60)
+        self.assertEqual(b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(b.physical_event(1,2,62),"FADER_LIVE_PREVIEW")
+        self.assertEqual(b.physical_event(1,21,127),"BUTTON_LIVE_PREVIEW")
+        b.tick()
+        b.release_all()
+        self.assertEqual(sent,[])
+
     def test_mcu_proprietary_startup_handshake_has_exact_sequence(self):
         self.assertEqual(live.MCU_SESSION_HEADER,(0,0,102,20))
         self.assertEqual(live.MCU_SESSION_QUERY[:5],(0,0,102,20,1))
