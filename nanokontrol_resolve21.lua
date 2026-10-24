@@ -185,11 +185,16 @@ local function sendLED(cc, on, force, outputChannel)
 end
 -- Only a genuine Fairlight->MCU feedback note may drive Scene2 mixer
 -- MUTE/SOLO LEDs; no hardware press echo, no guessed mixer state.
--- The Korg Scene2 output channel=1 is separately testable on hardware.
+-- Korg output channel=0 (broadcast) is the previously physically
+-- verified External LED route. Output channel=1 returned API success but
+-- did not light the hardware. Broadcast MUST be guarded by a recent
+-- physical Scene2 CC: do not overwrite Scene1 LEDs during other scenes.
 if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
   scene2Bridge:setLedSender(function(cc, on)
-    if enabled and cfg and ledEnabled and device then
-      return sendLED(cc, on, true, 1)
+    if enabled and cfg and ledEnabled and device
+      and scene2Bridge.active and scene2Bridge.ready
+      and scene2Bridge.lastScene == 1 then
+      return sendLED(cc, on, true, 0)
     end
     return false
   end)
