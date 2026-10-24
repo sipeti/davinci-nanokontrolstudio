@@ -1,15 +1,18 @@
--- Optional Scene 2 *input-only* event bridge for existing nanoKONTROL owner.
--- Loaded by nanokontrol_resolve21.lua when placed next to init.lua.
--- No extra hs.midi.new/callback; NO Resolve setters and NO MIDI output.
--- Off by default; enabled explicitly via the existing NK JOG menu.
--- Python consumer: scripts/scene2_continuous_clip_gain.py.
+-- Optional Scene2 event bridge for existing nanoKONTROL MIDI owner.
+-- 1 physical Korg hs.midi callback. No Resolve setters, no second listener.
+-- Emits clip CC13..20 (C) and candidate MCU faders/buttons (M).
+-- Only Fairlight->IAC host feedback can set Scene2 mixer LED states.
+-- OFF by default in NK JOG menu. Python consumers are separate processes.
 return function(host, isReady)
   assert(type(host) == "table" and type(isReady) == "function")
   local bridge = {
     active = false, events = 0, lastScene = nil, lastCC = {},
     file = nil, timer = nil, ready = false,
+    ledSender = nil, ledKnown = {}, lastFeedbackHeartbeat = 0,
     path = (os.getenv("HOME") or "") ..
       "/Library/Caches/nk-scene2-controller-events.csv",
+    feedbackPath = (os.getenv("HOME") or "") ..
+      "/Library/Caches/nk-fairlight-mcu-feedback.csv",
   }
 
   local function epochMilliseconds()
@@ -29,6 +32,64 @@ return function(host, isReady)
     return true
   end
 
+  -- MIDI feedback is authoritative. No state is inferred from a physical
+  -- MUTE/SOLO press, nor from physical MIDI echo. The existing controller
+  -- calls setLedSender with its scoped Scene2 MIDI output route.
+  function bridge:setLedSender(sender)
+    assert(type(sender) == "function")
+    self.ledSender = sender
+  end
+
+  function bridge:clearFeedback()
+    if self.ledSender then
+      for cc in pairs(self.ledKnown) do self.ledSender(cc, false) end
+    end
+    self.ledKnown = {}
+    self.lastFeedbackHeartbeat = 0
+  end
+
+  function bridge:pollFeedback()
+    if not self.active or not self.ledSender then return end
+    local now = epochMilliseconds()
+    local f = io.open(self.feedbackPath, "r")
+    if not f then
+      if now - self.lastFeedbackHeartbeat > 1800 then self:clearFeedback() end
+      return
+    end
+    local size = f:seek("end") or 0
+    -- Read only a bounded tail. No unbounded log growth or file owner races.
+    local pos = math.max(0, size - 4096)
+    f:seek("set", pos)
+    if pos > 0 then f:read("*l") end
+    local count = 0
+    for line in f:lines() do
+      count = count + 1
+      if count > 150 then break end
+      local stamp, kind, cc, value =
+        line:match("^(%d+),([HL]),(%d+),(%d+)$")
+      stamp, cc, value = tonumber(stamp), tonumber(cc), tonumber(value)
+      if stamp and stamp <= now and now - stamp <= 1800 then
+        if kind == "H" and cc == 0 and value == 0 then
+          self:clearFeedback()
+        elseif kind == "H" and cc == 0 and value == 1 then
+          self.lastFeedbackHeartbeat = stamp
+        elseif kind == "L" and cc and value
+          and ((21 <= cc and cc <= 28)
+            or (cc >= 29 and cc <= 31)
+            or (cc >= 33 and cc <= 37))
+          and (value == 0 or value == 127)
+          and now - self.lastFeedbackHeartbeat <= 1800 then
+          if self.ledKnown[cc] ~= value then
+            self.ledSender(cc, value == 127)
+            self.ledKnown[cc] = value
+          end
+        end
+      end
+    end
+    f:close()
+    if now - self.lastFeedbackHeartbeat > 1800 then self:clearFeedback() end
+  end
+
   function bridge:heartbeat()
     if not self.active then return end
     local ready = isReady() == true
@@ -38,6 +99,11 @@ return function(host, isReady)
     end
     self.ready = ready
     write("H", 0, 0, ready and 1 or 0)
+    if not ready then
+      self:clearFeedback()
+    else
+      self:pollFeedback()
+    end
   end
 
   function bridge:start()
@@ -57,11 +123,13 @@ return function(host, isReady)
     self.lastScene = nil
     self.lastCC = {}
     self.events = 0
-    self.file:write("# ts_ms,kind,channel,cc,value; H=heartbeat C=Scene2 CC R=reset\n")
+    self.ledKnown = {}
+    self.lastFeedbackHeartbeat = 0
+    self.file:write("# ts_ms,kind,channel,cc,value; H=heartbeat C=clip M=mixer R=reset\n")
     self.file:flush()
     self:heartbeat()
     self.timer = host.timer.doEvery(0.5, function() self:heartbeat() end)
-    host.printf("[NK SCENE2] INPUT BRIDGE ENABLED; CH1 CC13..20; file=%s; no Resolve writes",
+    host.printf("[NK SCENE2] INPUT BRIDGE ENABLED; CH1 clip CC13..20 + candidate mixer CCs; file=%s; no Resolve writes",
       self.path)
     return true
   end
@@ -71,6 +139,7 @@ return function(host, isReady)
     self.active = false
     if self.timer then self.timer:stop(); self.timer = nil end
     if self.file then self.file:flush(); self.file:close(); self.file = nil end
+    self:clearFeedback()
     host.printf("[NK SCENE2] INPUT BRIDGE STOP; captured=%d; no Resolve writes",
       self.events)
   end
@@ -96,14 +165,22 @@ return function(host, isReady)
       end
       return
     end
-    if not (13 <= cc and cc <= 20) then return end
+    local kind = nil
+    if cc >= 13 and cc <= 20 then
+      kind = "C" -- proven clip gain rotary mapping
+    elseif (cc >= 2 and cc <= 9)
+      or (cc >= 21 and cc <= 31)
+      or (cc >= 33 and cc <= 37) then
+      kind = "M" -- physical Scene2 mixer CC candidate: confirm on hardware
+    end
+    if not kind then return end
     if self.lastScene ~= 1 then
       self.lastCC = {}
       self.lastScene = 1
     end
     if self.lastCC[cc] == value then return end
     self.lastCC[cc] = value
-    if write("C", ch, cc, value) then
+    if write(kind, ch, cc, value) then
       self.events = self.events + 1
     end
   end
