@@ -175,6 +175,61 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(len(p.events[16]),2)
 
 
+    def test_duplicate_packets_do_not_count_as_physical_movement(self):
+        p = driver.MidiPoll()
+        for _ in range(2000):
+            p.add("1,16,90")
+        self.assertEqual(p.raw_rotary_count, 2000)
+        self.assertEqual(p.rotary_count, 1)
+        self.assertEqual(p.events[16], [(1,16,90)])
+        c = self.controller(write=True)
+        with contextlib.redirect_stdout(self.output):
+            self.assertEqual(driver.process_poll(c, p), "CONTINUE")
+        self.assertFalse(c.halted)
+        self.assertEqual(c.writes, 0)
+        self.assertFalse(self.timeline.track_items[4].calls)
+
+    def test_fast_real_world_readonly_burst_never_aborts(self):
+        p = driver.MidiPoll()
+        for value in range(120):
+            p.add("1,16,%d" % value)
+        self.assertEqual(p.rotary_count, 120)
+        c = self.controller(write=False)
+        with contextlib.redirect_stdout(self.output):
+            self.assertEqual(driver.process_poll(c, p), "CONTINUE")
+        self.assertFalse(c.halted)
+        self.assertEqual(c.writes, 0)
+        self.assertIn("MIDI_BURST=COALESCED", self.output.getvalue())
+        # Despite an earlier overly-fast sample, the next slow CC input
+        # can still complete pickup and produce a simulated (not real) gain.
+        self.assertEqual(self.feed(c, 1, 16, 97), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 96), "SIMULATED")
+        self.assertEqual(self.timeline.track_items[4].calls, [])
+        self.assertEqual(self.output.getvalue().count("MIDI_BURST=COALESCED"), 1)
+
+    def test_write_mode_many_changed_ccs_still_halts_without_writing(self):
+        p = driver.MidiPoll()
+        for value in range(120):
+            p.add("1,16,%d" % value)
+        c = self.controller(write=True)
+        with contextlib.redirect_stdout(self.output):
+            self.assertEqual(driver.process_poll(c, p), "HALTED")
+        self.assertTrue(c.halted)
+        self.assertEqual(c.writes, 0)
+        self.assertEqual(self.timeline.track_items[4].calls, [])
+        self.assertIn("MIDI_RATE=BLOCKED", self.output.getvalue())
+
+    def test_readonly_dense_burst_diagnostic_is_once_per_session(self):
+        c = self.controller(write=False)
+        for _ in range(3):
+            p = driver.MidiPoll()
+            for value in range(100):
+                p.add("1,16,%d" % value)
+            with contextlib.redirect_stdout(self.output):
+                self.assertEqual(driver.process_poll(c,p),"CONTINUE")
+        self.assertEqual(self.output.getvalue().count("MIDI_BURST=COALESCED"), 1)
+        self.assertEqual(self.timeline.track_items[4].calls, [])
+
     def test_idle_gap_rearms_without_writing(self):
         c = self.controller(write=True)
         self.pickup_a4(c)
