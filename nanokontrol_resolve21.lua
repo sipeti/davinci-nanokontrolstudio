@@ -653,6 +653,21 @@ local function midiCallback(_,_,command,_,meta)
     learn(command,meta)
     return
   end
+  -- A Korg scene switch itself is silent. The first incoming MIDI CC
+  -- from another scene must revoke a previously armed Scene1 *absolute*
+  -- shuttle fader and stale held trim without stopping shared transport.
+  -- Returning to Scene1 requires the fader to pass through neutral again.
+  if command == "controlChange" then
+    local _, incomingScene = sceneCC(signal)
+    local scene1 = sceneInputChannel()
+    if incomingScene and scene1 and incomingScene ~= scene1 then
+      if faderArmed or faderActive then
+        hs.printf("[NK FADER] other scene input; rearm at Scene 1 neutral before shuttle fader use")
+      end
+      faderArmed, faderActive = false, false
+      trimHeld = false
+    end
+  end
   -- Echo physical CC to its own LED, independent of the learned action.
   -- When another app has focus, acknowledge the key but do not edit Resolve.
   inputLED(command,meta,signal,value)
