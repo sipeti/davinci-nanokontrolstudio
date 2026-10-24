@@ -273,6 +273,12 @@ def main():
             feedback.write("%d,L,%d,%d\n" %
                            (int(time.time() * 1000), cc, value))
             feedback.flush()
+            host_led_events[cc] += 1
+            if host_led_last.get(cc) != value:
+                host_led_last[cc] = value
+                print("MCU_LIVE_HOST_LED=cc:%d state:%s; "
+                      "host-authoritative; feedback file updated" %
+                      (cc, "ON" if value == 127 else "OFF"), flush=True)
 
         mixer = LiveMixer(send, led, write=args.enable_output,
                           allow_strip8=args.enable_strip8_bus1)
@@ -281,6 +287,10 @@ def main():
         last_feedback_h = float("-inf")
         ready = False
         counters = Counter()
+        host_rx = Counter()
+        host_fader_channels = Counter()
+        host_led_events = Counter()
+        host_led_last = {}
         printed = set()
         print("MCU_LIVE=START; mode=%s; duration=%ds; "
               "strip8=%s; no auto-start" %
@@ -301,6 +311,10 @@ def main():
                         stat.st_size < events.tell()):
                     raise RuntimeError("Hammerspoon input logger replaced")
                 for msg in receive.iter_pending():
+                    host_rx[msg.type] += 1
+                    if (msg.type == "pitchwheel" and
+                            0 <= msg.channel < 8):
+                        host_fader_channels[msg.channel + 1] += 1
                     mixer.host(msg)
                 for _ in range(MAX_MESSAGES_PER_POLL):
                     line = events.readline()
@@ -322,8 +336,7 @@ def main():
                         result = mixer.physical_event(ch, cc, value)
                         counters[result] += 1
                         marker = (cc, result)
-                        if (result in ("FADER_PICKUP_PASS", "BUTTON_LIVE_SENT",
-                                      "BUS1_STRIP8_LOCKED") or
+                        if (result in ("FADER_PICKUP_PASS", "BUTTON_LIVE_SENT") or
                                 (marker not in printed and
                                  result not in ("FADER_RATE_COALESCED",
                                                 "BUTTON_RELEASED",
@@ -361,6 +374,21 @@ def main():
             print("MCU_LIVE_STATUSES=" +
                   ",".join("%s:%d" % (k, counters[k])
                            for k in sorted(counters)), flush=True)
+            print("MCU_LIVE_HOST_RX=" +
+                  ",".join("%s:%d" % (k,host_rx[k])
+                           for k in sorted(host_rx)), flush=True)
+            print("MCU_LIVE_HOST_FADERS=" +
+                  ",".join("strip%d:%d" % (k,host_fader_channels[k])
+                           for k in sorted(host_fader_channels)), flush=True)
+            print("MCU_LIVE_HOST_LED_EVENTS=" +
+                  ",".join("cc%d:%d" % (k,host_led_events[k])
+                           for k in sorted(host_led_events)), flush=True)
+            if not host_led_events:
+                print("MCU_LIVE_LED=NO_FAIRLIGHT_NOTE_FEEDBACK; "
+                      "no trustworthy Korg LED state received", flush=True)
+            if not host_fader_channels:
+                print("MCU_LIVE_FADER=NO_HOST_FADER_POSITIONS; "
+                      "soft-pickup must stay blocked", flush=True)
         return return_code
 
 
