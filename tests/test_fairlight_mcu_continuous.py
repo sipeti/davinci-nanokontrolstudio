@@ -191,6 +191,48 @@ class LiveMixerTests(unittest.TestCase):
         ])
         self.assertEqual(b.keys,{})
 
+    def test_exact_fairlight_identity_request_has_bounded_mcu_reply_payload(self):
+        request=msg("sysex",data=(126,0,6,1))
+        reply=live.mcu_identity_reply_for(request)
+        self.assertEqual(reply,live.MCU_ID_REPLY)
+        self.assertEqual(reply[:4],(126,0,6,2))
+        self.assertEqual(reply[4:7],(0,0,102))
+        self.assertEqual(reply[7:9],(20,0))
+        self.assertEqual(len(reply),15)
+        self.assertTrue(all(isinstance(x,int) and 0<=x<=127 for x in reply))
+        self.assertEqual(live.MAX_IDENTITY_REPLIES,3)
+
+    def test_foreign_non_identity_sysex_is_not_answered(self):
+        for message in [
+            msg("sysex",data=(126,127,6,1)),
+            msg("sysex",data=(126,0,6,2)),
+            msg("sysex",data=(0,0,102,20,0)),
+            msg("sysex",data=()),
+            msg("note_on",channel=0,note=0,velocity=0),
+        ]:
+            self.assertIsNone(live.mcu_identity_reply_for(message))
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.b.sent,0)
+
+    def test_identity_reply_is_not_host_fader_authority_or_physical_write(self):
+        identity=live.mcu_identity_reply_for(
+            msg("sysex",data=(126,0,6,1)))
+        self.assertIsNotNone(identity)
+        self.b.host(msg("sysex",data=identity))
+        self.assertEqual(self.b.host_state.host_faders,[None]*8)
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_WAIT_HOST")
+        self.assertEqual(self.b.sent,0)
+        self.assertEqual(self.calls,[])
+
+    def test_real_host_fader_after_identity_must_still_cross_pickup(self):
+        self.b.host(msg("sysex",data=live.MCU_ID_REPLY))
+        self.assertEqual(self.b.physical_event(1,2,63),"FADER_WAIT_HOST")
+        self.fader_host(0,60)
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.sent_faders,1)
+
     def test_production_has_no_implicit_unbounded_midi_authorization(self):
         self.assertEqual(live.MAX_SECONDS,180)
         self.assertLessEqual(live.MAX_MESSAGES,1500)
