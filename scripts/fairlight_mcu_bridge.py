@@ -93,6 +93,7 @@ class Bridge:
         self.fader1_one_shot = fader1_one_shot
         self.ack_received = 0
         self.ack_mismatch = 0
+        self.host_after_command = 0
         self.host_faders = [None] * 8
         self.host_fader_time = [None] * 8
         self.physical = [None] * 8
@@ -125,6 +126,7 @@ class Bridge:
             value = pitch + 8192
             expected = self.pending[channel]
             if expected is not None:
+                self.host_after_command += 1
                 if abs(expected[0] - value) <= ACK_TOLERANCE:
                     self.ack_received += 1
                     self.pending[channel] = None
@@ -211,6 +213,20 @@ class Bridge:
             # position, explicit physical pickup, and limited movement.
             self.pending[strip] = goal, self.clock()
             if self.write:
+                if self.fader1_one_shot:
+                    # Real MCU touch-sensitive faders tell Resolve that a
+                    # human is holding this strip. Fairlight MIDI translators
+                    # report that pitchbend alone may not move the mixer;
+                    # note 104 touch + pitchbend + release does.
+                    # Three MIDI packets, precisely ONE position adjustment.
+                    # Always try to release even when a send fails.
+                    try:
+                        self.send("note_on", channel=0, note=104, velocity=127)
+                        self.send("pitchwheel", channel=0, pitch=goal - 8192)
+                        self.sent += 1
+                    finally:
+                        self.send("note_on", channel=0, note=104, velocity=0)
+                    return "MCU_FADER_TOUCH_SENT"
                 self.send("pitchwheel", channel=strip, pitch=goal - 8192)
                 self.sent += 1
                 return "MCU_FADER_SENT"
@@ -309,9 +325,16 @@ def main():
         source_resets = Counter()
         print("MCU=START; mode=%s; 8 strip MCU; source Hammerspoon Scene2" %
               ("DISPOSABLE_WRITE" if args.enable_output else "READ_ONLY"), flush=True)
-        print("MCU_DIAG=ACTIVE; first move Fairlight UI fader and MUTE/SOLO "
-              "while this process runs; then move Korg Scene2 fader/button; "
-              "READ_ONLY never transmits", flush=True)
+        if args.one_shot_fader1_test:
+            print("MCU_ONE_SHOT_ARMED=one A1 adjustment ONLY: "
+                  "note_on(104,127) + pitchbend(ch0) + note_on(104,0); "
+                  "no other mixer strips/buttons, no retries; "
+                  "Verify STOPPED playback, NO AUTOMATION and disposable project",
+                  flush=True)
+        else:
+            print("MCU_DIAG=ACTIVE; first move Fairlight UI fader and MUTE/SOLO "
+                  "while this process runs; then move Korg Scene2 fader/button; "
+                  "READ_ONLY never transmits", flush=True)
         try:
             while args.seconds == 0 or time.monotonic()-started < args.seconds:
                 now = time.monotonic()
@@ -394,16 +417,22 @@ def main():
                         one_shot_sent_at = now
                     if bridge.ack_received > 0:
                         print("MCU_ONE_SHOT=HOST_ACK_PASS; "
-                              "one A1 fader message sent, acknowledged",
-                              flush=True)
+                              "one A1 touch+position+release sent, "
+                              "position echoed by Fairlight", flush=True)
                         break
                     if bridge.ack_mismatch > 0:
                         print("MCU_ONE_SHOT=HOST_ACK_MISMATCH; STOP",
                               flush=True)
                         break
                     if now-one_shot_sent_at > 1.5:
-                        print("MCU_ONE_SHOT=NO_HOST_ACK; STOP; "
-                              "inspect Fairlight fader visually", flush=True)
+                        if bridge.host_after_command == 0:
+                            print("MCU_ONE_SHOT=NO_POST_SEND_FADER_FEEDBACK; "
+                                  "STOP; MCU does not necessarily echo "
+                                  "hardware fader movements; inspect mixer "
+                                  "A1 visually", flush=True)
+                        else:
+                            print("MCU_ONE_SHOT=NO_MATCHING_HOST_ACK; "
+                                  "STOP; inspect mixer A1 visually", flush=True)
                         break
                 if last_h is None and now-started > 3:
                     print("MCU=HALT; no Hammerspoon heartbeat",flush=True)
@@ -417,8 +446,10 @@ def main():
         finally:
             feedback.write("%d,H,0,0\n" % int(time.time()*1000))
             feedback.flush()
-        print("MCU=COMPLETE; output_messages=%d; blocked_events=%d" %
-              (bridge.sent, bridge.blocked), flush=True)
+        print("MCU=COMPLETE; fader_adjustments=%d; blocked_events=%d; "
+              "post_send_pitchwheel_rx=%d" %
+              (bridge.sent, bridge.blocked, bridge.host_after_command),
+              flush=True)
         print("MCU_DIAG_HOST_RX=" +
               ",".join("%s:%d" % (k,rx_counts[k])
                        for k in sorted(rx_counts)), flush=True)
