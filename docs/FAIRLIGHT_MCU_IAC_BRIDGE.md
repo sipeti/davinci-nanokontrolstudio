@@ -278,6 +278,51 @@ line, burying useful observations; it now prints that status once per CC
 and summarizes the totals. Because Korg SCENE selection is silent, the
 current scene can only be known after its first physical CC input.
 
+### MCU startup identity response (opt-in, no gain write)
+
+The October 25 integrated run **PHYSICALLY PASSED Korg MUTE/SOLO LEDs**,
+but faders remain blocked: actual host MIDI input contained
+`note_on:25,sysex:69,pitchwheel:0`. In an earlier raw Fairlight-to-IAC
+capture, repeated SysEx payload was exactly `(126,0,6,1)`, the MIDI
+Universal Identity Request (`F0 7E 00 06 01 F7`). The current
+software-only Mackie bridge did not answer it. An MCU device may need
+to identify itself before the host sends the initial motor fader
+positions; this is a **hypothesis, not yet a validated Resolve-21
+behavior**. Do NOT bypass soft pickup or supply invented gain values.
+
+To isolate that hypothesis in the *existing single integrated bench*,
+the continuous script now has an **explicit opt-in**
+`--reply-mcu-identity`. It is only accepted with
+`--enable-output` and the exact disposable-project consent already
+required for mixer testing. It matches ONLY the previously captured
+identity request payload `7E 00 06 01` (device ID 00), and replies
+with the standard MCU manufacturer/family identity payload a maximum
+of **three times**, spaced at least 1 second apart. Other SysEx is
+ignored. The reply is neither a fader motion nor authoritative position.
+No other MIDI initialization, bank change, motor move or gain write
+is synthesized. READ_ONLY with no flag continues to transmit ZERO MIDI.
+No autostart or update to the Korg Scene1 settings.
+
+For a test copy of `hajoagyu_261022 testing` with playback stopped,
+MIDI control configured for MCU, and the Hammerspoon Scene2 bridge
+explicitly ON **after the most recent `hs.reload()`**, add one flag to
+the already functioning 60s continuous command:
+
+```sh
+  --reply-mcu-identity
+```
+
+Observe `MCU_LIVE_IDENTITY=requests:N,replies:M,mode:enabled`
+and `MCU_LIVE_HOST_FADERS=strip1:N,...` at finish. If identity reply
+elicits valid MCU `pitchwheel` feedback, physical Korg fader must
+still cross that actual feedback value before any mixer MIDI write.
+If no pitchwheel is received, **STOP automatic fader enablement**;
+this experiment did not establish bootstrapping. Moving the *Fairlight
+on-screen* fader while the process runs can seed an actual position
+(as demonstrated in prior one-shot acceptance), but that is a manual
+workaround rather than a clean MCU boot protocol. Do not claim
+continuous fader setup is complete in either case until observed.
+
 **Host initial faders:** the same continuous bench showed
 `FADER_WAIT_HOST` on faders 1..7 and no observed physical pickup.
 The script refuses to guess mixer gain positions; it will not move a
