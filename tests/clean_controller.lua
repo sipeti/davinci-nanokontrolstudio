@@ -837,6 +837,45 @@ assert(outputs[probeStart+4].channel==0 and outputs[probeStart+4].cc==21
   and outputs[probeStart+4].value==0,"Stage 2 all-channel OFF")
 assert(#keys==beforeProbeKeys,"LED probe must not edit Resolve")
 
+-- From Draft #12: observed Scene2 input must invalidate the Scene1
+-- absolute shuttle fader pickup, not let a parked fader control transport.
+cc(63,127,0)
+keys={}
+cc(2,64,0)
+cc(2,127,0)
+runPending()
+assert(keyCount("k")==1 and keyCount("l")==4,
+  "Scene1 fader should still control shuttle when centered first")
+selectHardwareScene(2)
+keys={}
+cc(13,88,1) -- Scene2 rotary 1 reveals scene change
+assert(#keys==0,"Scene2 rotary must never issue transport shortcuts")
+cc(82,1,1)
+assert(keyCount("right")==1,
+  "Scene2 JOG must work despite Scene1 fader previously being active")
+selectHardwareScene(1)
+keys={}
+cc(82,65,0)
+assert(keyCount("left")==1,
+  "returning to Scene1 must not keep stale faderActive lock")
+keys={}
+cc(2,127,0); runPending()
+assert(#keys==0,"non-neutral parked fader must not steal shuttle")
+cc(2,64,0)
+assert(#keys==0,"centering only rearms, must not issue transport shortcut")
+cc(2,0,0); runPending()
+assert(keyCount("k")==1 and keyCount("j")==4,
+  "rearmed Scene1 fader must recover reverse shuttle")
+cc(63,127,0)
+cc(55,127,0)
+keys={}
+cc(14,91,1)
+cc(82,1,0)
+assert(keyCount("right")==1 and keyCount(".")==0,
+  "held Scene1 trim must not survive observed Scene2 CC")
+print("SCENE1_FADER_REARM_AFTER_SCENE_SWITCH=PASS")
+print("SCENE1_TRIM_STALE_STATE_RESET=PASS")
+
 print("LED_CONSOLE_TWO_CHANNEL_PROBE=PASS")
 print("RAW_MIDI_CONSOLE_ZERO_BASED=PASS")
 print("JOG_CC82_DIRECTION_DIAGNOSTIC=PASS")
