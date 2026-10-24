@@ -87,7 +87,15 @@ return function(host, isReady)
       end
     end
     f:close()
-    if now - self.lastFeedbackHeartbeat > 1800 then self:clearFeedback() end
+    if now - self.lastFeedbackHeartbeat > 1800 then
+      self:clearFeedback()
+    elseif self.lastScene == 1 then
+      -- Reassert only Fairlight-authoritative LEDs for the active Korg Scene2.
+      -- The Korg blanks LEDs on silent Scene switches without a host update.
+      for cc, value in pairs(self.ledKnown) do
+        self.ledSender(cc, value == 127)
+      end
+    end
   end
 
   function bridge:heartbeat()
