@@ -192,8 +192,10 @@ end
 if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
   scene2Bridge:setLedSender(function(cc, on)
     if enabled and cfg and ledEnabled and device
-      and scene2Bridge.active and scene2Bridge.ready
-      and scene2Bridge.lastScene == 1 then
+      and scene2Bridge.lastScene == 1
+      and ((scene2Bridge.active and scene2Bridge.ready) or not on) then
+      -- Preserve OFF on focus loss and bridge shutdown; never leave
+      -- a previous Fairlight MUTE/SOLO LED latched on the Korg.
       return sendLED(cc, on, true, 0)
     end
     return false
