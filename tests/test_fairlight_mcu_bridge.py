@@ -156,6 +156,71 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.known_buttons,{})
         self.assertEqual(self.bridge.host_faders,[None]*8)
 
+    def test_fader1_one_shot_rejects_other_faders_and_buttons(self):
+        sent=[]
+        clock=[200.0]
+        b=mcu.Bridge(
+            lambda kind,**kw:sent.append((kind,kw)),
+            lambda cc,value:None,
+            write=True, clock=lambda:clock[0], fader1_one_shot=True)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        self.assertEqual(b.physical_event(1,3,61), "ONE_SHOT_FADER1_ONLY")
+        self.assertEqual(b.physical_event(1,21,127), "ONE_SHOT_FADER1_ONLY")
+        self.assertEqual(b.physical_event(1,29,127), "ONE_SHOT_FADER1_ONLY")
+        self.assertEqual(b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(b.physical_event(1,2,62),"MCU_FADER_SENT")
+        self.assertEqual(sent, [("pitchwheel",{"channel":0,
+                                  "pitch":mcu.physical_to_mcu(62)-8192})])
+        self.assertEqual(b.physical_event(1,2,63), "ONE_SHOT_ALREADY_SENT")
+        self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_FADER1_ONLY")
+        self.assertEqual(len(sent), 1)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(62)-8192))
+        self.assertEqual(b.ack_received,1)
+        self.assertEqual(b.ack_mismatch,0)
+
+    def test_fader1_one_shot_needs_recent_real_host_position(self):
+        sent=[]
+        clock=[200.0]
+        b=mcu.Bridge(
+            lambda kind,**kw:sent.append((kind,kw)),
+            lambda cc,value:None,
+            write=True,clock=lambda:clock[0],fader1_one_shot=True)
+        self.assertEqual(b.physical_event(1,2,60),
+                         "FADER_HOST_FEEDBACK_STALE_REARM")
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        clock[0]+=10.1
+        self.assertEqual(b.physical_event(1,2,60),
+                         "FADER_HOST_FEEDBACK_STALE_REARM")
+        self.assertEqual(sent,[])
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        self.assertEqual(b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(b.physical_event(1,2,66),"ONE_SHOT_STEP_REARM")
+        self.assertEqual(sent,[])
+
+    def test_fader1_one_shot_ack_mismatch_is_never_success(self):
+        sent=[]
+        b=mcu.Bridge(lambda kind,**kw:sent.append((kind,kw)),
+                     lambda cc,value:None, write=True,
+                     fader1_one_shot=True)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        b.physical_event(1,2,60)
+        b.physical_event(1,2,61)
+        b.physical_event(1,2,62)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(110)-8192))
+        self.assertEqual(b.ack_mismatch,1)
+        self.assertEqual(b.ack_received,0)
+        self.assertFalse(b.engaged[0])
+        self.assertEqual(b.physical_event(1,2,65),"ONE_SHOT_ALREADY_SENT")
+        self.assertEqual(len(sent),1)
+
     def test_host_diagnostics_classify_only_valid_mcu_fader_and_notes(self):
         self.assertEqual(
             mcu.classify_host_event(host("pitchwheel", channel=0,
