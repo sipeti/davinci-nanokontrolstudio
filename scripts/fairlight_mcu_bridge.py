@@ -13,6 +13,7 @@ Physical Scene2 map CC2..9, CC21..28, CC29..31/33..37 is a CANDIDATE pending
 a physical Assignable-mode capture; verify before enabling output.
 """
 import argparse
+from collections import Counter
 import math
 import pathlib
 import sys
@@ -55,6 +56,29 @@ def physical_to_mcu(value):
     if type(value) is not int or not 0 <= value <= 127:
         raise ValueError("Korg physical fader must be 0..127")
     return round(value * 16383 / 127)
+
+
+def classify_host_event(message):
+    """Observability only; never interpret unexpected MIDI as fader state.
+
+    This helper does NOT establish protocol authority. The original
+    Bridge.host() remains the only MCU fader/button validator.
+    """
+    kind = getattr(message, "type", "")
+    channel = getattr(message, "channel", None)
+    if kind == "pitchwheel" and type(channel) is int and 0 <= channel < 8:
+        pitch = getattr(message, "pitch", None)
+        if type(pitch) is int and -8192 <= pitch <= 8191:
+            return ("FADER", channel, pitch)
+    if kind in ("note_on", "note_off") and channel == 0:
+        note = getattr(message, "note", None)
+        velocity = getattr(message, "velocity", None)
+        if type(note) is int and 8 <= note <= 23 and (
+                type(velocity) is int and 0 <= velocity <= 127):
+            return ("MIXER_NOTE", note, velocity if kind == "note_on" else 0)
+    if kind == "sysex":
+        return ("SYSEX", 0, 0)
+    return None
 
 
 class Bridge:
@@ -237,8 +261,17 @@ def main():
         last_h = None
         last_heartbeat_out = 0
         ready = False
+        rx_counts = Counter()
+        physical_counts = Counter()
+        host_fader_seen = set()
+        host_button_seen = set()
+        printed_statuses = set()
+        source_resets = Counter()
         print("MCU=START; mode=%s; 8 strip MCU; source Hammerspoon Scene2" %
               ("DISPOSABLE_WRITE" if args.enable_output else "READ_ONLY"), flush=True)
+        print("MCU_DIAG=ACTIVE; first move Fairlight UI fader and MUTE/SOLO "
+              "while this process runs; then move Korg Scene2 fader/button; "
+              "READ_ONLY never transmits", flush=True)
         try:
             while args.seconds == 0 or time.monotonic()-started < args.seconds:
                 now = time.monotonic()
@@ -252,6 +285,21 @@ def main():
                     print("MCU=HALT; input bridge replaced", flush=True)
                     return 1
                 for message in from_resolve.iter_pending():
+                    rx_counts[message.type] += 1
+                    info = classify_host_event(message)
+                    if info and info[0] == "FADER" and info[1] not in host_fader_seen:
+                        host_fader_seen.add(info[1])
+                        print("MCU_RX_FADER=PASS; channel=%d; pitch=%d; "
+                              "received while bridge running" %
+                              (info[1], info[2]), flush=True)
+                    elif info and info[0] == "MIXER_NOTE" and (
+                            info[1] not in host_button_seen):
+                        host_button_seen.add(info[1])
+                        print("MCU_RX_BUTTON=PASS; note=%d; velocity=%d" %
+                              (info[1], info[2]), flush=True)
+                    elif info and info[0] == "SYSEX" and rx_counts["sysex"] == 1:
+                        print("MCU_RX_SYSEX=OBSERVED; no fader authority implied",
+                              flush=True)
                     bridge.host(message)
                 lines = [events.readline() for _ in range(MAX_MESSAGES_PER_POLL)]
                 lines = [line for line in lines if line]
@@ -266,18 +314,39 @@ def main():
                     if kind == "H":
                         last_h = now
                         if not value:
+                            if ready:
+                                source_resets["focus"] += 1
+                                print("MCU_SOURCE=FOCUS_LOST; host fader pickup "
+                                      "cleared; switch back to Resolve and move "
+                                      "UI fader again", flush=True)
                             ready = False
                             bridge.rearm()
                         else:
+                            if not ready:
+                                print("MCU_SOURCE=RESOLVE_READY; wait for fresh "
+                                      "on-screen Fairlight fader feedback",
+                                      flush=True)
                             ready = True
                     elif kind == "R":
+                        source_resets["scene"] += 1
+                        print("MCU_SOURCE=SCENE_CHANGED; physical channel=%d; "
+                              "host fader pickup cleared" % ch, flush=True)
                         ready = False
                         bridge.rearm()
                     elif kind == "M" and ready:
                         result = bridge.physical_event(ch,cc,value)
+                        physical_counts[result] += 1
                         if result not in ("IGNORED", "BUTTON_DUPLICATE", "FADER_NO_CHANGE"):
                             count += 1
-                            if count <= 80 or count % 200 == 0:
+                            # Show each distinct fader state once per strip,
+                            # and EACH button transition. Old first-80 limit
+                            # concealed real MUTE/SOLO activity under CC flood.
+                            display_key = (cc, result)
+                            display = (result.startswith("BUTTON_") or
+                                       result.startswith("MCU_BUTTON_") or
+                                       display_key not in printed_statuses)
+                            printed_statuses.add(display_key)
+                            if display:
                                 print("MCU %s CH=%d CC=%d value=%d" %
                                       (result,ch,cc,value), flush=True)
                 if last_h is None and now-started > 3:
@@ -293,7 +362,19 @@ def main():
             feedback.write("%d,H,0,0\n" % int(time.time()*1000))
             feedback.flush()
         print("MCU=COMPLETE; output_messages=%d; blocked_events=%d" %
-              (bridge.sent, bridge.blocked),flush=True)
+              (bridge.sent, bridge.blocked), flush=True)
+        print("MCU_DIAG_HOST_RX=" +
+              ",".join("%s:%d" % (k,rx_counts[k])
+                       for k in sorted(rx_counts)), flush=True)
+        print("MCU_DIAG_PHYSICAL=" +
+              ",".join("%s:%d" % (k,physical_counts[k])
+                       for k in sorted(physical_counts)), flush=True)
+        print("MCU_DIAG_RESETS=focus:%d,scene:%d; "
+              "CURRENT_HOST_FADERS=%s; CURRENT_KNOWN_BUTTONS=%s" %
+              (source_resets["focus"], source_resets["scene"],
+               [None if x is None else round(x/16383*127, 1)
+                for x in bridge.host_faders],
+               sorted(bridge.known_buttons)), flush=True)
     return 0
 
 
