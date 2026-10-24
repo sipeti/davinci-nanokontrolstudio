@@ -156,6 +156,35 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.known_buttons,{})
         self.assertEqual(self.bridge.host_faders,[None]*8)
 
+    def test_host_diagnostics_classify_only_valid_mcu_fader_and_notes(self):
+        self.assertEqual(
+            mcu.classify_host_event(host("pitchwheel", channel=0,
+                                         pitch=-7904)),
+            ("FADER", 0, -7904))
+        self.assertEqual(
+            mcu.classify_host_event(host("note_on", channel=0,
+                                         note=16, velocity=127)),
+            ("MIXER_NOTE", 16, 127))
+        self.assertEqual(
+            mcu.classify_host_event(host("note_off", channel=0,
+                                         note=8, velocity=44)),
+            ("MIXER_NOTE", 8, 0))
+        self.assertEqual(
+            mcu.classify_host_event(host("sysex", data=(126, 0, 6, 1))),
+            ("SYSEX", 0, 0))
+        for message in (
+            host("control_change", channel=0, control=12, value=14),
+            host("control_change", channel=0, control=44, value=5),
+            host("pitchwheel", channel=8, pitch=0),
+            host("pitchwheel", channel=0, pitch=9000),
+            host("note_on", channel=0, note=0, velocity=0),
+            host("note_on", channel=1, note=16, velocity=127),
+            host("note_on", channel=0, note=16, velocity=200),
+        ):
+            self.assertIsNone(mcu.classify_host_event(message))
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.leds, [])
+    
     def test_event_parsing_never_replays_stale_or_foreign_data(self):
         now=1800000000000
         self.assertEqual(mcu.parse_event("%d,M,1,21,127"%(now-100),now),
