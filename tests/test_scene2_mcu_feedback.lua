@@ -50,7 +50,8 @@ local host = {
   printf=function() end,
 }
 local factory = assert(loadfile("scene2_clip_gain_bridge.lua"))()
-local bridge = factory(host, function() return true end)
+local resolveReady = true
+local bridge = factory(host, function() return resolveReady end)
 bridge:setLedSender(function(cc,on)
   calls[#calls+1] = {cc=cc,on=on}
   return true
@@ -102,22 +103,29 @@ assert(#calls > reassertBefore,
 local afterReassert = #calls
 bridge:publish("controlChange",
   {channel=0,controllerNumber=21,controllerValue=127})
+assert(#calls > afterReassert and latest(29)==false,
+  "leaving Scene2 must blank the last host-authoritative mixer LEDs")
+local afterSwitch = #calls
 now=now+.5
 timers[1].fn()
-assert(#calls == afterReassert,
+assert(#calls == afterSwitch,
   "other scenes must not receive periodic Scene2 reassertions")
 bridge:publish("controlChange",
   {channel=1,controllerNumber=21,controllerValue=127})
 now=now+.5
 timers[1].fn()
-assert(#calls > afterReassert,
-  "returning to Scene2 must restore host state after silent LED blank")
+assert(#calls > afterSwitch and latest(29)==true,
+  "return to Scene2 must restore latest host state without inventing button presses")
 
+resolveReady = false
 feedback = ("%d,H,0,0\n"):format(t())
 now=now+.5
 timers[1].fn()
 assert(latest(29)==false,
-  "bridge stopped/paused feedback must darken known mixer LEDs")
+  "focus loss must send LED OFF BEFORE physical Scene2 ownership is cleared")
+assert(bridge.lastScene == nil,
+  "focus loss must rearm Scene2 without leaving stale physical scene ownership")
+resolveReady = true
 feedback = ("%d,H,0,1\n%d,L,37,127\n"):format(t(),t())
 now=now+.5
 timers[1].fn()
