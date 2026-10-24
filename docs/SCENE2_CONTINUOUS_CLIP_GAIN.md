@@ -108,11 +108,68 @@ A failure attempts restoration and HALTS; inspect the clip manually.
 Never assume a successful write was restored. NO production writes,
 startup services, launches or main merges are approved by this Draft.
 
-## Mixer/fader/mute/solo roadmap: independent research gate
+## Fairlight native MIDI mixer: verified protocol, separate workstream
 
-Resolve 21 public scripting catalogs expose audio-track enable/lock,
-but do not provide a proven read/write API for true Fairlight mixer
-fader gain or SOLO. Evaluate supported control-surface protocols such
-as HUI/Mackie and verify state readback before any physical-fader,
-MUTE/SOLO or status-LED mapping. Do not infer mixer state from MIDI
-button presses or call track enable a mixer MUTE.
+**Architecture verified by published documentation, NOT yet locally
+tested** on this operator's current Resolve/Korg installation (2026-10-24).
+
+- The DaVinci Resolve 21 manual documents **Use MIDI Audio Console** under
+  Preferences > System > Control Panels, with **HUI or MCU**, MIDI Input
+  and MIDI Output selections. These protocols support actual Fairlight
+  mixer **track faders, MUTE, SOLO, PAN** and transport.
+  https://docs.imaster.org/davinci-resolve-21-manual/part-2-setup-and-workflows/ch.-4-system-and-user-preferences
+  https://docs.imaster.org/davinci-resolve-21-manual/part-13-fairlight/ch.-177-mixing-in-the-fairlight-page
+- The Korg nanoKONTROL Studio owner's manual specifies its hardware
+  **Pro Tools/HUI** mode: hold **SCENE + REW** while switching it on.
+  Korg Assignable mode uses **SCENE + CYCLE** at power on. The mode is
+  persistent and GLOBAL to the controller, not a per-scene mapping.
+  https://www.korg.com/us/support/download/product/0/552/
+  https://support.korg.co.uk/en-US/using-the-nanokontrol-studio-with-logic-in-assignable-mode-405741
+- A Korg user independently reported working faders, mute, solo and
+  LED feedback with Fairlight and Korg in Pro Tools/HUI mode:
+  https://forum.blackmagicdesign.com/viewtopic.php?p=1074485&t=192108
+  This community report is not a guarantee for this installation.
+
+Therefore do NOT claim direct HUI can coexist with current Scene1 JOG
+and Scene2 clip gain while the Korg remains in Assignable mode.
+Do NOT set Resolve's MIDI Audio Console input/output to the physical
+Korg while the current Hammerspoon handler is active: shared input
+and bidirectional LED feedback could conflict.
+
+**Low-risk hardware proof option (operator action, no automatic change):**
+1. Record the existing Resolve Control Panels settings and back up
+   Korg KONTROL Editor/global assignments.
+2. Quit Hammerspoon COMPLETELY (not just pause its MIDI menu),
+   stop any Python gain worker, use a disposable Resolve test project.
+3. Switch off Korg. Hold SCENE+REW while powering on to enter HUI.
+4. In Resolve Preferences > System > Control Panels, enable Use MIDI
+   Audio Console, select HUI and nanoKONTROL Studio MIDI IN/OUT.
+   Restart Resolve if the surface does not initialize.
+5. On the FAIRLIGHT page of the test copy, try one real TRACK mixer
+   fader and MUTE/SOLO, then change the corresponding mixer UI state
+   and check the Korg LED follows the software (authoritative feedback).
+6. To return: disable the MIDI Audio Console setting; switch Korg
+   back to Assignable (power on with SCENE+CYCLE), then start Hammerspoon.
+   Check Scene1 JOG/SHUTTLE and the stored 28/28 setup again.
+
+**Preferred eventual hybrid** (only after direct HUI proof):
+Keep the physical Korg in its existing Assignable mode and preserve ONE
+Hammerspoon hardware MIDI callback. Scene1 keys/transport stay with the
+working Hammerspoon controller, Scene2 rotary CC13..20 remain clip-volume
+API targets. Scene2 linear faders/mute/solo would be translated to an
+MCU/HUI **virtual MIDI port** (macOS IAC Driver) selected as Fairlight's
+MIDI Audio Console input/output. The translator MUST also accept Fairlight
+feedback for authoritative mute/solo LEDs and mixer state; HUI may
+require active handshake/keepalive, and 7-bit physical controls need
+careful pickup/14-bit protocol handling. An IAC MIDI bus alone does not
+implement HUI/MCU semantics. This is RESEARCH, not a working bridge.
+
+**Do not** substitute SetTrackEnable for mixer MUTE, set LEDs solely
+from physical presses, or merge/install this capability until direct
+hardware verification and independent bidirectional offline tests pass.
+
+Known current live Hammerspoon entrypoint from operator:
+~/.hammerspoon/init.lua contains only require("nanokontrol_resolve21"),
+and its active module is ~/.hammerspoon/nanokontrol_resolve21.lua.
+The existing backup files are retained. DO NOT overwrite the active
+controller yet or create another hs.midi listener.
