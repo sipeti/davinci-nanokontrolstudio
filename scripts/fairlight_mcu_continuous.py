@@ -27,6 +27,32 @@ HOST_INITIAL_AGE = 10.0
 HEARTBEAT_TIMEOUT = 2.0
 MIDI_LOCK = pathlib.Path.home() / "Library/Caches/nk-fairlight-live.lock"
 
+# MIDI universal identity request previously CAPTURED from Resolve:
+# F0 7E 00 06 01 F7. Earlier bridge ignored the recurring request (~1/s).
+# Respond with a standard, narrowly scoped Universal Identity Reply for
+# the Mackie Control emulator (manufacturer 00 00 66, family 14 00).
+# Identity reply does NOT read/move a fader or imply host fader authority.
+# This remains strictly optional and requires the disposable-project
+# MIDI-output consent; verify whether Resolve sends pitchwheel afterward.
+MCU_ID_REQUEST = (0x7E, 0x00, 0x06, 0x01)
+MCU_ID_REPLY = (
+    0x7E, 0x00, 0x06, 0x02,       # universal identity response
+    0x00, 0x00, 0x66,             # Mackie manufacturer id
+    0x14, 0x00,                   # Mackie Control family
+    0x00, 0x00,                   # member
+    0x01, 0x00, 0x00, 0x00,       # revision 1.0.0.0
+)
+MAX_IDENTITY_REPLIES = 3
+MIN_IDENTITY_REPLY_PERIOD = 1.0
+
+
+def mcu_identity_reply_for(message):
+    """Return fixed MCU identity payload ONLY for exact observed request."""
+    if (getattr(message, "type", None) == "sysex"
+            and tuple(getattr(message, "data", ())) == MCU_ID_REQUEST):
+        return MCU_ID_REPLY
+    return None
+
 
 class LiveMixer:
     """A bounded Fairlight MCU state machine with soft pickup and MIDI key-up."""
@@ -223,6 +249,8 @@ def main():
     p.add_argument("--output-port", required=True)
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--enable-output", action="store_true")
+    p.add_argument("--reply-mcu-identity", action="store_true",
+                   help="experimental MCU identity reply; never changes fader positions")
     p.add_argument("--enable-strip8-bus1", action="store_true",
                    help="EXPLICIT option: strip8 follows CURRENT Fairlight bank; not fixed master")
     p.add_argument("--consent")
@@ -231,6 +259,8 @@ def main():
         p.error("bench session must last 1..180 seconds")
     if args.enable_output and args.consent != CONSENT:
         p.error("backed-up disposable Fairlight test project consent required")
+    if args.reply_mcu_identity and not args.enable_output:
+        p.error("MCU identity replies need --enable-output and disposable consent")
     if args.enable_strip8_bus1 and not args.enable_output:
         p.error("strip8 is blocked unless explicit output trial is enabled")
     if args.input_port == args.output_port:
@@ -289,6 +319,9 @@ def main():
         counters = Counter()
         host_rx = Counter()
         host_fader_channels = Counter()
+        id_requests = 0
+        id_replies = 0
+        last_id_reply = float("-inf")
         host_led_events = Counter()
         host_led_last = {}
         printed = set()
@@ -312,9 +345,27 @@ def main():
                     raise RuntimeError("Hammerspoon input logger replaced")
                 for msg in receive.iter_pending():
                     host_rx[msg.type] += 1
+                    identity = mcu_identity_reply_for(msg)
+                    if identity is not None:
+                        id_requests += 1
+                        if (args.reply_mcu_identity and
+                                id_replies < MAX_IDENTITY_REPLIES and
+                                now - last_id_reply >= MIN_IDENTITY_REPLY_PERIOD):
+                            # This is a device identity declaration, NOT a
+                            # mixer control or a permission to skip pickup.
+                            output.send(mido.Message("sysex", data=identity))
+                            id_replies += 1
+                            last_id_reply = now
+                            print("MCU_LIVE_IDENTITY_REPLY=sent:%d/%d; "
+                                  "host faders still require actual pitchwheel" %
+                                  (id_replies,MAX_IDENTITY_REPLIES),flush=True)
                     if (msg.type == "pitchwheel" and
                             0 <= msg.channel < 8):
                         host_fader_channels[msg.channel + 1] += 1
+                        if host_fader_channels[msg.channel + 1] == 1:
+                            print("MCU_LIVE_HOST_FADER_SEEDED=strip:%d; "
+                                  "actual MCU pitchwheel received" %
+                                  (msg.channel + 1), flush=True)
                     mixer.host(msg)
                 for _ in range(MAX_MESSAGES_PER_POLL):
                     line = events.readline()
@@ -377,6 +428,10 @@ def main():
             print("MCU_LIVE_HOST_RX=" +
                   ",".join("%s:%d" % (k,host_rx[k])
                            for k in sorted(host_rx)), flush=True)
+            print("MCU_LIVE_IDENTITY=requests:%d,replies:%d,mode:%s" %
+                  (id_requests,id_replies,
+                   "enabled" if args.reply_mcu_identity else "disabled"),
+                  flush=True)
             print("MCU_LIVE_HOST_FADERS=" +
                   ",".join("strip%d:%d" % (k,host_fader_channels[k])
                            for k in sorted(host_fader_channels)), flush=True)
