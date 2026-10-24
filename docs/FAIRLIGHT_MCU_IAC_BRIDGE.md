@@ -242,6 +242,79 @@ the physical Scene2 LED; the script intentionally emits a false heartbeat
 on exit and clears it. **Persistent host-authoritative LED state requires
 a later continuously running bridge**, not a one-shot test.
 
+## Scene2 continuous mixer: one finite bench session (Draft only)
+
+**Already physically proved, and NOT requiring further isolated measurements:**
+Korg Scene2 physical fader1 -> Fairlight A1 moves visibly; Korg Scene2
+MUTE1 CC21 / SOLO1 CC29 -> Fairlight actual note16/note8 state transitions
+with host feedback acknowledgments. The operator also observed the physical
+Korg MUTE1 LED flash once during the built-in LED probe, while one-shot
+MUTE/SOLO trials did not leave it lit.
+
+**Why LED could not stay lit:** one-shot Python exits immediately after an
+ACK and writes feedback heartbeat H=0, so Hammerspoon clears its LED cache.
+In the original Scene2 Lua callback the host-authoritative MIDI LED route
+was channel=1 even though earlier hardware tests proved the Korg broadcast
+output channel=0 works. The Draft Lua fix uses output channel0 ONLY after
+a physical Scene2 CC establishes scene identity, and reasserts the last
+Fairlight-authoritative LED statuses every 500ms while feedback heartbeat
+is present. It clears LEDs on loss/stop. Because Korg SCENE selection emits
+no MIDI, the current scene cannot be inferred until its first CC input.
+
+The separate opt-in script
+\`scripts/fairlight_mcu_continuous.py\` is a bounded (max 180-second)
+single-owner **bench** controller using the same existing Hammerspoon
+event CSV and both IAC ports. Normal launch is READ_ONLY; MIDI writes
+require \`--enable-output\` plus the pre-existing disposable project consent.
+There is **no production autostart, no merge to main, and no permanently
+enabled global Korg/Resolve hook**. It is tested in CI but **has not yet
+received physical continuous-mode acceptance**.
+
+In the current screenshot the Fairlight mixer shows **7 audio tracks and
+Bus 1 at strip 8**. The 8th hardware strip MAY work as Bus1 for this
+specific MCU bank; it is **not a persistent/pinned master mapping**.
+DaVinci supports moving the MCU bank to other channels and masters.
+Therefore CC9 fader8, CC28 MUTE8, and CC37 SOLO8 are BLOCKED by default.
+The deliberate \`--enable-strip8-bus1\` option unlocks strip8 **only for
+the currently open, manually confirmed mapping**, not across projects.
+
+Test project only, transport stopped, audio outputs safe, automation write
+disabled, original Hammerspoon Scene2 bridge ON, and the new Lua route
+deployed with a guard/backups. Use ONE live MIDI process; do not run any
+one-shot or separate read-only Python bridge at the same time.
+
+~~~
+/tmp/nk-mcu-venv/bin/python3 \
+  /tmp/nk-scene2-mcu/scripts/fairlight_mcu_continuous.py \
+  --input-port "IAC Driver NK FL From Resolve" \
+  --output-port "IAC Driver NK FL To Resolve" \
+  --seconds 90 \
+  --enable-output \
+  --consent "I CONFIRMED A BACKED-UP DISPOSABLE FAIRLIGHT PROJECT"
+~~~
+
+The script sends:
+- Soft-pickup physical Scene2 CC2..8 -> MCU 14-bit pitchbend strips1..7,
+  with touch note104..110, coalesced at ~30Hz and released 500ms after
+  motion; no blind fader jumps without initial real host position.
+- Physical Scene2 MUTE CC21..27 -> MCU notes16..22; physical SOLO CC29,
+  30,31,33..36 -> MCU notes8..14. Each press emits ONE momentary key
+  down and scheduled key up (80ms), while host MIDI note feedback alone
+  decides LED state. No physical-button LED echo or guessed state.
+- On focus loss, scene change, MIDI failure, SIGINT, host heartbeat loss,
+  or 90s auto-stop, best-effort MCU releases and H=0 LED clearing.
+
+The 8th strip is deliberately unused during the first integrated bench.
+Do not infer that Bus1 will always be hardware channel8 in other projects.
+A separate MCU hardware Master Fader is a ninth pitch channel/note112
+and is NOT emulated by this 8-fader Korg mapping.
+
+**Next gate is a single integrated live bench acceptance**, not another
+round of one-button calibration: confirm A1 fader works continuously,
+MUTE1/SOLO1 both switch Fairlight, and their hardware LEDs reflect host
+state for as long as the bridge is running. Do not claim pass before
+the operator sees it; leave Draft until then.
+
 ## Source refs
 
 - Blackmagic Resolve 21 manual: third-party HUI/MCU consoles:
