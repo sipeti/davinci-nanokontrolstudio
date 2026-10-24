@@ -194,8 +194,9 @@ class LiveMixerTests(unittest.TestCase):
     def test_production_has_no_implicit_unbounded_midi_authorization(self):
         self.assertEqual(live.MAX_SECONDS,180)
         self.assertLessEqual(live.MAX_MESSAGES,1500)
-        self.assertIn("Bus",live.LiveMixer.__doc__ or "" if False else "Bus")
-        self.assertEqual(self.b.allow_strip8,False)
+        self.assertFalse(self.b.allow_strip8)
+        self.assertFalse(live.LiveMixer(lambda *a, **kw:None,
+                                         lambda *a, **kw:None).write)
 
 
 if __name__ == "__main__":
