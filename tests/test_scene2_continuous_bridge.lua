@@ -57,7 +57,7 @@ midi(1,16,97)
 midi(1,16,97) -- duplicate must not fill the log
 midi(1,16,98)
 midi(1,17,46)
-midi(1,21,127) -- MUTE: ignored, never a clip gain action
+midi(1,21,127) -- MUTE candidate: published only as M, never clip gain
 midi(0,16,65) -- Scene 1: one RESET, no gain
 midi(0,16,66) -- do not spam repeated resets
 midi(1,16,98) -- scene switch cleared last value
@@ -71,7 +71,7 @@ bridge:stop()
 assert(not bridge.active)
 assert(heartbeat.stopped)
 assert(closeCount == 1 and openCount == 1)
-assert(bridge.events == 5, "5 accepted rotary position changes, got "
+assert(bridge.events == 6, "5 rotary changes + 1 mixer candidate, got "
   .. tostring(bridge.events))
 assert(bridge:start(), "explicit restart should be possible")
 assert(openCount == 2)
@@ -86,6 +86,7 @@ assert(out:find(",C,1,16,98",1,true))
 assert(out:find(",C,1,17,46",1,true))
 assert(out:find(",R,0,16,65",1,true))
 assert(not out:find(",C,1,21,127",1,true))
+assert(out:find(",M,1,21,127",1,true))
 local resetCount=0
 for _ in out:gmatch(",R,0,16,") do resetCount=resetCount+1 end
 assert(resetCount == 1)

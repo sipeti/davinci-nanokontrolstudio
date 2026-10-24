@@ -183,6 +183,30 @@ local function sendLED(cc, on, force, outputChannel)
   ledOutputStatus = "API OK / Scenes 1-2 verified; 3-5 unverified"
   return true
 end
+-- Only Fairlight's genuine MCU note feedback drives Scene2 mixer LEDs,
+-- never the physical button input. Prior physical Korg probe lit MUTE1
+-- on one of the two tested output routes but did not isolate which.
+-- Send the SAME idempotent CC state through both possible Korg channels,
+-- ONLY while physical Scene2 is active. Source Scene1 editing remains
+-- unchanged; no unverified transport or calibration commands.
+local scene2LedReported = {}
+if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
+  scene2Bridge:setLedSender(function(cc, on)
+    if enabled and cfg and ledEnabled and device
+      and scene2Bridge.lastScene == 1
+      and ((scene2Bridge.active and scene2Bridge.ready) or not on) then
+      local broadcast = sendLED(cc, on, true, 0)
+      local scene2 = sendLED(cc, on, true, 1)
+      if scene2LedReported[cc] ~= on then
+        scene2LedReported[cc] = on
+        hs.printf("[NK SCENE2 LED TX] host_cc=%d state=%s ch0=%s ch1=%s",
+          cc, tostring(on), tostring(broadcast), tostring(scene2))
+      end
+      return broadcast or scene2
+    end
+    return false
+  end)
+end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
@@ -221,8 +245,12 @@ local function refreshStateLEDs(force)
 end
 local function inputLED(command, meta, signal, value)
   if not cfg or not ledEnabled or command ~= "controlChange" then return end
-  local cc = sceneCC(signal)
+  local cc, channel = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
+  if scene2Bridge and scene2Bridge.active and channel == 1
+    and ((cc >= 21 and cc <= 31) or (cc >= 33 and cc <= 37)) then
+    return -- Scene2 mixer LEDs always use Fairlight's response, not input echo
+  end
   if value ~= 0 and value ~= 127 then return end
   -- Transport LEDs are persistent shared state, never momentary echoes.
   -- A release must NOT turn STOP/REW/FF off again.
@@ -637,6 +665,21 @@ local function midiCallback(_,_,command,_,meta)
     logLearnMidi(command,meta,signal,value)
     learn(command,meta)
     return
+  end
+  -- A Korg scene switch itself is silent. The first incoming MIDI CC
+  -- from another scene must revoke a previously armed Scene1 *absolute*
+  -- shuttle fader and stale held trim without stopping shared transport.
+  -- Returning to Scene1 requires the fader to pass through neutral again.
+  if command == "controlChange" then
+    local _, incomingScene = sceneCC(signal)
+    local scene1 = sceneInputChannel()
+    if incomingScene and scene1 and incomingScene ~= scene1 then
+      if faderArmed or faderActive then
+        hs.printf("[NK FADER] other scene input; rearm at Scene 1 neutral before shuttle fader use")
+      end
+      faderArmed, faderActive = false, false
+      trimHeld = false
+    end
   end
   -- Echo physical CC to its own LED, independent of the learned action.
   -- When another app has focus, acknowledge the key but do not edit Resolve.
