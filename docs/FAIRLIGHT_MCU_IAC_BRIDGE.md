@@ -177,6 +177,71 @@ There is NO continuous production deployment and NO main merge.
 The fader reports are absolute 7-bit physical CC scaled to MCU 14-bit;
 this is a non-motor Korg and requires soft pickup, unlike a motorized MCU.
 
+## Physical hardware acceptance (24 October 2026)
+
+**A1 FADER PHYSICALLY MOVED**: the operator observed the Fairlight A1 mixer
+fader visibly respond to a *single* Korg Scene2 Slider1 movement through
+Hammerspoon -> Python -> IAC MCU -> Resolve. MCU TOUCH note104, channel0
+pitchwheel, and RELEASE were emitted once on backed-up disposable
+`hajoagyu_261022 testing`. MIDI host feedback returned a *nonmatching*
+value; this is NOT an authoritative acknowledgment, but visual motion is
+authoritative evidence that the control path works. Do not repeat the A1
+one-shot just to get a matching MIDI echo.
+
+The later 500ms touch-hold Python revision was installed into the operator's
+temporary test location (`FAIRLIGHT_TOUCH_500MS=READY`), but has NOT yet been
+physically tested; do not claim validation for that timing.
+
+**MUTE/SOLO READ_ONLY PASS**: host MCU note16 (MUTE1) and note8 (SOLO1)
+feedback; physical Scene2 CC21/CC29 input; and Python
+`MCU_BUTTON_PREVIEW` were independently observed. The actual physical
+MUTE/SOLO output command is NOT yet proven.
+
+### Next finite test: one MCU A1 MUTE or SOLO button
+
+Draft supports `--one-shot-button mute1` or `--one-shot-button solo1`
+**instead of** the fader test. Both are mutually exclusive, and the
+default stays READ_ONLY. Write mode requires explicit consent, a
+saved/disposable project, and a finite <=60s session. Only the explicitly
+selected Scene2 physical key may cause MIDI output: MUTE1 = CC21/note16,
+SOLO1 = CC29/note8. The program refuses all faders and other buttons.
+Before sending, it requires an actual Fairlight LED note for the selected
+button received less than 10s ago. One valid key press sends note_on (127),
+then one note_off (0) after 80ms; the release also runs during cleanup.
+No repeats even if the Korg reports more input. Only a changed note from
+Fairlight verifies the new mixer state.
+
+For the first MUTE1 trial, with Korg Assignable/Scene2 and Hammerspoon's
+Scene2 bridge already ON, open the operator's backed-up test project,
+stop playback and disable automation write. Run:
+
+~~~sh
+/tmp/nk-mcu-venv/bin/python3 \
+  /tmp/nk-scene2-mcu/scripts/fairlight_mcu_bridge.py \
+  --input-port "IAC Driver NK FL From Resolve" \
+  --output-port "IAC Driver NK FL To Resolve" \
+  --seconds 45 \
+  --one-shot-button mute1 \
+  --enable-output \
+  --consent "I CONFIRMED A BACKED-UP DISPOSABLE FAIRLIGHT PROJECT"
+~~~
+
+Then *without switching focus back to Terminal*, use the **Fairlight
+UI** A1 MUTE control to toggle ON then OFF (so the mixer ends unmuted and
+a fresh note16 feedback is established); immediately press the physical
+**Korg Scene2 MUTE1** once. Let the script stop. Visually check whether
+A1 MUTE engaged; the MCU host may fail to echo the button even if it acted.
+Use the UI to restore the previous mute status after the test. Do not
+restart the one-shot on unexpected state/track changes. A separate SOLO1
+trial changes only the CLI flag to `--one-shot-button solo1`, requires
+a fresh note8 from clicking the on-screen A1 SOLO first, and should only
+be attempted after MUTE1 acceptance.
+
+During a finite one-shot process the LED return can briefly illuminate
+the physical Scene2 LED; the script intentionally emits a false heartbeat
+on exit and clears it. **Persistent host-authoritative LED state requires
+a later continuously running bridge**, not a one-shot test.
+
 ## Source refs
 
 - Blackmagic Resolve 21 manual: third-party HUI/MCU consoles:
