@@ -6,24 +6,26 @@ local logs, lines = {}, {}
 local openCount, closeCount = 0, 0
 local heartbeat
 local ready = true
-local file = {}
-function file:write(line)
-  assert(closeCount == 0)
-  lines[#lines + 1] = line
-  return self
-end
-function file:flush()
-  assert(closeCount == 0)
-  return self
-end
-function file:close()
-  closeCount = closeCount + 1
-  return true
-end
 io.open = function(path, mode)
   assert(path:find("/Library/Caches/nk-scene2-controller-events.csv", 1, true))
   assert(mode == "w")
   openCount = openCount + 1
+  local file = {closed = false}
+  function file:write(line)
+    assert(not self.closed)
+    lines[#lines + 1] = line
+    return self
+  end
+  function file:flush()
+    assert(not self.closed)
+    return self
+  end
+  function file:close()
+    assert(not self.closed)
+    self.closed = true
+    closeCount = closeCount + 1
+    return true
+  end
   return file
 end
 local hs = {
