@@ -177,3 +177,44 @@ transport and editing.
 Scene 2 channel=1 CC13..20 and successful independent pickup on more than
 one strip, then consider a new explicitly approved test-copy write. Do not
 reuse the stale /tmp version after GitHub changes; export the files again.
+
+
+## 2026-10-24 second real dry-run: overactive raw MIDI guard
+
+The operator refreshed the research branch and ran the multi-rotary controller
+in read-only mode. The script printed:
+- A1 PICKUP_PENDING; DB=0.000; NEAR_CC=70; WRITES=0
+- SCENE2_8ROTARY=BLOCKED; excessive Scene2 MIDI rate; no blind writes
+
+This is not a channel-routing failure. At least one valid ch1/CC13
+(Scene 2 knob 1) reached the Resolve A1 clip. The failure was caused by
+the prototype's 80-event-per-Resolve-poll raw MIDI cap. It incorrectly
+treated **every MIDI packet**, even an identical repeated CC value, as a
+distinct physical movement, and applied that bound even in read-only mode.
+Actual transient rate and the number of duplicates in this specific run
+are not known from the terminal output alone.
+
+Fix on Draft PR #13:
+- Raw CC packet count and **distinct physical CC-value changes** are
+  counted separately. A run of repeated identical values is compacted
+  and cannot trip the physical-movement limit.
+- The original first+last per knob event accumulator remains bounded:
+  at most two buffered CC samples per rotary for each poll.
+- In **READ_ONLY** mode, a burst of >80 distinct CC-value changes only
+  prints one MIDI_BURST=COALESCED diagnostic; it never aborts or writes.
+  Some very rapid sweeps may miss the pickup point after coalescing,
+  so make a slower small movement near NEAR_CC if pickup stays pending.
+- In **WRITE TEST COPY** mode, >80 distinct CC changes in one poll still
+  HALTS the entire writing session before processing that burst, with
+  no blind gain writes. All prior per-clip readback and stale-context
+  safety checks remain.
+- Unit tests exercise 2,000 duplicate CC packets in a write-enabled
+  test with no setters, 120 distinct CC steps in read-only mode without
+  abortion, and 120 distinct CC steps in write mode causing HALT without
+  setters.
+
+**Next hardware acceptance:** refresh the local /tmp copy of the
+8-rotary script and start a new passive Hammerspoon capture (the logger
+uses a fresh CSV). First run READ_ONLY for two knobs on tracks with one
+clip at the stopped playhead. Do not run the write-test-copy command until
+PICKUP and SIMULATED_GAIN succeed for both rotaries without conflicts.
