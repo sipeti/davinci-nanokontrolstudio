@@ -29,6 +29,9 @@ FADER_PICKUP_TOLERANCE = 270   # ~2 of 127 Korg CC positions
 FADER_STEP_LIMIT = 1400        # ~10 physical CC positions
 ACK_TOLERANCE = 140
 ACK_TIMEOUT = 0.75
+# Fairlight requires a short fader TOUCH hold after the MIDI position.
+# A working nanoKONTROL2 -> Fairlight translator uses 500 ms after motion.
+ONE_SHOT_TOUCH_HOLD_SECONDS = 0.5
 # Korg/Scene1 CC32 is deliberately skipped (MIDI bank-select LSB).
 # This eight-button pattern is in the verified existing Scene1 LED map;
 # it must still be confirmed physically on Scene2 before MCU output.
@@ -103,8 +106,28 @@ class Bridge:
         self.pressed = {}
         self.sent = 0
         self.blocked = 0
+        self.touch_active = False
+        self.touch_release_at = None
+        self.one_shot_host_before = None
+        self.one_shot_target = None
+
+    def release_touch(self, *, force=False):
+        """Release the A1 MCU touch only once, on time or on shutdown/fault."""
+        if not self.touch_active:
+            return False
+        if (not force and self.touch_release_at is not None
+                and self.clock() < self.touch_release_at):
+            return False
+        try:
+            self.send("note_on", channel=0, note=104, velocity=0)
+        finally:
+            self.touch_active = False
+            self.touch_release_at = None
+        return True
 
     def rearm(self):
+        # A focus/scene reset must not leave an MCU fader logically touched.
+        self.release_touch(force=True)
         self.physical = [None] * 8
         self.engaged = [False] * 8
         self.pending = [None] * 8
@@ -133,7 +156,12 @@ class Bridge:
                 else:
                     self.ack_mismatch += 1
                     self.engaged[channel] = False
-                    self.pending[channel] = None
+                    # Intermediate host feedback (or a queued earlier
+                    # update) is NOT authoritative rejection of the
+                    # one-shot command. Keep listening through touch hold.
+                    # No further send is possible: self.sent stays 1.
+                    if not self.fader1_one_shot:
+                        self.pending[channel] = None
             elif (self.engaged[channel] and self.host_faders[channel] is not None
                   and abs(value - self.host_faders[channel]) > FADER_PICKUP_TOLERANCE):
                 self.engaged[channel] = False
@@ -214,18 +242,24 @@ class Bridge:
             self.pending[strip] = goal, self.clock()
             if self.write:
                 if self.fader1_one_shot:
-                    # Real MCU touch-sensitive faders tell Resolve that a
-                    # human is holding this strip. Fairlight MIDI translators
-                    # report that pitchbend alone may not move the mixer;
-                    # note 104 touch + pitchbend + release does.
-                    # Three MIDI packets, precisely ONE position adjustment.
-                    # Always try to release even when a send fails.
+                    # Real MCU touch-sensitive faders signal the start and
+                    # end of a gesture. Fairlight's proven Korg translators
+                    # hold TOUCH for ~500 ms following the last fader move.
+                    # Emit exactly ONE position, keep touch briefly held,
+                    # and send release from the bounded main loop; failures
+                    # force an immediate release in this exception path.
+                    self.one_shot_host_before = host
+                    self.one_shot_target = goal
                     try:
                         self.send("note_on", channel=0, note=104, velocity=127)
+                        self.touch_active = True
                         self.send("pitchwheel", channel=0, pitch=goal - 8192)
                         self.sent += 1
-                    finally:
-                        self.send("note_on", channel=0, note=104, velocity=0)
+                        self.touch_release_at = (
+                            self.clock() + ONE_SHOT_TOUCH_HOLD_SECONDS)
+                    except BaseException:
+                        self.release_touch(force=True)
+                        raise
                     return "MCU_FADER_TOUCH_SENT"
                 self.send("pitchwheel", channel=strip, pitch=goal - 8192)
                 self.sent += 1
@@ -327,7 +361,8 @@ def main():
               ("DISPOSABLE_WRITE" if args.enable_output else "READ_ONLY"), flush=True)
         if args.one_shot_fader1_test:
             print("MCU_ONE_SHOT_ARMED=one A1 adjustment ONLY: "
-                  "note_on(104,127) + pitchbend(ch0) + note_on(104,0); "
+                  "note_on(104,127) + pitchbend(ch0) + 500ms held touch "
+                  "+ note_on(104,0); "
                   "no other mixer strips/buttons, no retries; "
                   "Verify STOPPED playback, NO AUTOMATION and disposable project",
                   flush=True)
@@ -412,18 +447,26 @@ def main():
                             if display:
                                 print("MCU %s CH=%d CC=%d value=%d" %
                                       (result,ch,cc,value), flush=True)
+                # Scheduled RELEASE is sent even with no new Korg movement.
+                # On early loop termination, the finalizer forces release.
+                bridge.release_touch()
                 if args.one_shot_fader1_test and bridge.sent > 0:
                     if one_shot_sent_at is None:
                         one_shot_sent_at = now
-                    if bridge.ack_received > 0:
+                        print("MCU_ONE_SHOT_SEND=host_before:%.1f,goal:%.1f; "
+                              "touch held %.0fms" %
+                              (bridge.one_shot_host_before * 127 / 16383,
+                               bridge.one_shot_target * 127 / 16383,
+                               ONE_SHOT_TOUCH_HOLD_SECONDS * 1000),
+                              flush=True)
+                    if bridge.ack_received > 0 and not bridge.touch_active:
                         print("MCU_ONE_SHOT=HOST_ACK_PASS; "
-                              "one A1 touch+position+release sent, "
-                              "position echoed by Fairlight", flush=True)
-                        break
-                    if bridge.ack_mismatch > 0:
-                        print("MCU_ONE_SHOT=HOST_ACK_MISMATCH; STOP",
+                              "A1 target echoed, touch safely released",
                               flush=True)
                         break
+                    # Do not treat the FIRST nonmatching MCU feedback as
+                    # rejection; a delayed/queued intermediate position
+                    # might arrive before the eventual target position.
                     if now-one_shot_sent_at > 1.5:
                         if bridge.host_after_command == 0:
                             print("MCU_ONE_SHOT=NO_POST_SEND_FADER_FEEDBACK; "
@@ -444,12 +487,28 @@ def main():
         except KeyboardInterrupt:
             print("MCU=STOP; Ctrl+C; TX=%d" % bridge.sent,flush=True)
         finally:
+            # Guaranteed best-effort MCU TOUCH release when stopped by
+            # focus loss, Ctrl+C, source replacement or other exception.
+            try:
+                if bridge.release_touch(force=True):
+                    print("MCU_ONE_SHOT=FORCED_TOUCH_RELEASE", flush=True)
+            except Exception as exc:
+                print("MCU_ONE_SHOT=TOUCH_RELEASE_FAILED; restart Resolve "
+                      "before further MIDI writes; error=%s" % exc,
+                      flush=True)
             feedback.write("%d,H,0,0\n" % int(time.time()*1000))
             feedback.flush()
         print("MCU=COMPLETE; fader_adjustments=%d; blocked_events=%d; "
-              "post_send_pitchwheel_rx=%d" %
-              (bridge.sent, bridge.blocked, bridge.host_after_command),
-              flush=True)
+              "post_send_pitchwheel_rx=%d; nonmatching_host_updates=%d" %
+              (bridge.sent, bridge.blocked, bridge.host_after_command,
+               bridge.ack_mismatch), flush=True)
+        if bridge.one_shot_target is not None:
+            current = bridge.host_faders[0]
+            print("MCU_ONE_SHOT_POSITIONS=before:%.1f,target:%.1f,last_rx:%s" %
+                  (bridge.one_shot_host_before * 127 / 16383,
+                   bridge.one_shot_target * 127 / 16383,
+                   "unknown" if current is None else "%.1f" %
+                   (current * 127 / 16383)), flush=True)
         print("MCU_DIAG_HOST_RX=" +
               ",".join("%s:%d" % (k,rx_counts[k])
                        for k in sorted(rx_counts)), flush=True)
