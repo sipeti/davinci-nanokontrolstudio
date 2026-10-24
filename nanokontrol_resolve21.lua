@@ -183,6 +183,17 @@ local function sendLED(cc, on, force, outputChannel)
   ledOutputStatus = "API OK / Scenes 1-2 verified; 3-5 unverified"
   return true
 end
+-- Only a genuine Fairlight->MCU feedback note may drive Scene2 mixer
+-- MUTE/SOLO LEDs; no hardware press echo, no guessed mixer state.
+-- The Korg Scene2 output channel=1 is separately testable on hardware.
+if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
+  scene2Bridge:setLedSender(function(cc, on)
+    if enabled and cfg and ledEnabled and device then
+      return sendLED(cc, on, true, 1)
+    end
+    return false
+  end)
+end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
@@ -221,8 +232,12 @@ local function refreshStateLEDs(force)
 end
 local function inputLED(command, meta, signal, value)
   if not cfg or not ledEnabled or command ~= "controlChange" then return end
-  local cc = sceneCC(signal)
+  local cc, channel = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
+  if scene2Bridge and scene2Bridge.active and channel == 1
+    and ((cc >= 21 and cc <= 31) or (cc >= 33 and cc <= 37)) then
+    return -- Scene2 mixer LEDs always use Fairlight's response, not input echo
+  end
   if value ~= 0 and value ~= 127 then return end
   -- Transport LEDs are persistent shared state, never momentary echoes.
   -- A release must NOT turn STOP/REW/FF off again.
