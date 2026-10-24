@@ -138,6 +138,35 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 16, 98), "HALTED")
         self.assertFalse(self.timeline.track_items[4].calls)
 
+    def test_playhead_move_during_120ms_write_stability_gate_blocks_setter(self):
+        def move_playhead(_seconds):
+            self.timeline.tc = "01:00:05:01"
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=1,
+            expected_project="Audio QA backup",
+            confirmation=CONSENT, automation_confirmed=True,
+            now=lambda: self.now, stability_wait=move_playhead)
+        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(c.writes, 0)
+        self.assertFalse(self.timeline.track_items[4].calls)
+        self.assertIn("during stability window", self.output.getvalue())
+
+    def test_clip_gain_external_edit_during_stability_gate_blocks_setter(self):
+        def external_adjust(_seconds):
+            self.timeline.track_items[4].volume = 9.0
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=1,
+            expected_project="Audio QA backup",
+            confirmation=CONSENT, automation_confirmed=True,
+            now=lambda: self.now, stability_wait=external_adjust)
+        self.feed(c, 1, 16, 90)
+        self.feed(c, 1, 16, 98)
+        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(c.writes, 0)
+        self.assertFalse(self.timeline.track_items[4].calls)
+
     def test_heartbeat_and_event_timestamp_validation(self):
         now = 1800000000000
         valid = worker.parse_bridge_row("%d,C,1,16,97" % (now - 300), now)
