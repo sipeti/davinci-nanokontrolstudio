@@ -12,8 +12,11 @@ Korg nanoKONTROL Studio Assignable Scene 2 (input MIDI channel 1),
 rotaries CC13-20 -> one audio CLIP at stopped playhead on A1-A8.
 Per-strip physical pickup before any write. New clip, out-of-band
 gain, changed project/timeline/playhead, focus loss or scene switch must
-REARM. Idle gap >20s also rearms. One setter step <=1.2 dB, immediate
-fresh readback, restoration attempt and HALT on any setter/readback error.
+REARM. Idle gap >20s also rearms. One setter step <=1.2 dB, and the playhead, clip and current
+gain must remain stable over a real 120ms observation before the setter;
+then another fresh snapshot and immediate readback. A failed setter
+triggers restoration attempt and HALT (a failed pre-setter stability
+gate halts without attempting a write).
 No gain automation/keyframes. No fader or mixer manipulation.
 
 **Not Fairlight track mixer gain, mute, solo, nor authoritative LEDs.**
