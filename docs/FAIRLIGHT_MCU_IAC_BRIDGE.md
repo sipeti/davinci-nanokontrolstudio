@@ -253,13 +253,37 @@ MUTE/SOLO trials did not leave it lit.
 
 **Why LED could not stay lit:** one-shot Python exits immediately after an
 ACK and writes feedback heartbeat H=0, so Hammerspoon clears its LED cache.
-In the original Scene2 Lua callback the host-authoritative MIDI LED route
-was channel=1 even though earlier hardware tests proved the Korg broadcast
-output channel=0 works. The Draft Lua fix uses output channel0 ONLY after
-a physical Scene2 CC establishes scene identity, and reasserts the last
-Fairlight-authoritative LED statuses every 500ms while feedback heartbeat
-is present. It clears LEDs on loss/stop. Because Korg SCENE selection emits
-no MIDI, the current scene cannot be inferred until its first CC input.
+The original Scene2 Lua callback used only output MIDI channel 1; earlier
+physical Korg tests had confirmed that a broadcast (channel 0) can light
+the MUTE1 LED. The 2026-10-25 integrated 90s physical bench confirmed that
+MUTE/SOLO commands work but **neither hardware LED lit**. A subsequent
+read of the actual source revealed the live script logged outgoing buttons
+but **did not log any incoming host MIDI note/LED events**, so there was
+not yet enough evidence to tell missing Fairlight feedback from dropped
+Korg output. The current Draft sends the SAME host-authoritative CC state
+on both possible Korg output routes (0 and 1), gated by physical Scene2
+ownership, and logs one sparse `[NK SCENE2 LED TX]` per CC state change;
+it also logs `[NK SCENE2 LED RX]` when Fairlight note feedback was actually
+parsed. LEDs are reasserted every 500ms while the host heartbeat is live,
+cleared on stop/focus loss, and blanked on first Scene1/3/4/5 CC *before*
+revoking Scene2 ownership (cached Fairlight host state is retained for
+restoration when Scene2 comes back). This is an offline-tested fix, not yet
+a physical LED acceptance.
+
+The new continuous Python script also reports
+`MCU_LIVE_HOST_RX`, `MCU_LIVE_HOST_FADERS`, and
+`MCU_LIVE_HOST_LED_EVENTS` at shutdown. Previously each single MIDI
+movement of locked strip8 CC9 generated a full `BUS1_STRIP8_LOCKED`
+line, burying useful observations; it now prints that status once per CC
+and summarizes the totals. Because Korg SCENE selection is silent, the
+current scene can only be known after its first physical CC input.
+
+**Host initial faders:** the same continuous bench showed
+`FADER_WAIT_HOST` on faders 1..7 and no observed physical pickup.
+The script refuses to guess mixer gain positions; it will not move a
+fader until a real MCU pitchwheel position has been received for that
+strip. A Fairlight on-screen fader movement during the active run can
+seed this state. No automated initial-state MCU query has been verified.
 
 The separate opt-in script
 \`scripts/fairlight_mcu_continuous.py\` is a bounded (max 180-second)
