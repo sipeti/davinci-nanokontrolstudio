@@ -43,7 +43,7 @@ def snapshot(app, track):
 class Controller:
     def __init__(self, app, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False, max_writes=8,
-                 now=time.monotonic):
+                 now=time.monotonic, max_writes_limit=16):
         self.app = app
         self.write = write
         self.expected_project = expected_project
@@ -60,8 +60,11 @@ class Controller:
         if write and not approved_copy(expected_project, confirmation,
                                        automation_confirmed):
             raise ValueError("a backed-up exact test project, consent and no-automation confirmation are mandatory")
-        if type(max_writes) is not int or not 1 <= max_writes <= 16:
-            raise ValueError("max_writes must be in 1..16")
+        if (type(max_writes_limit) is not int or
+                max_writes_limit not in (16, 256)):
+            raise ValueError("max_writes_limit must be 16 or 256")
+        if type(max_writes) is not int or not 1 <= max_writes <= max_writes_limit:
+            raise ValueError("max_writes must be in 1..%d" % max_writes_limit)
 
     def _halt(self, reason):
         self.halted = True

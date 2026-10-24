@@ -103,6 +103,30 @@ local function resolveApp()
     or bundle:find("davinciresolve", 1, true) then return app end
   return nil
 end
+
+-- Optional Scene 2 clip-gain *input* bridge. One hs.midi callback retains
+-- ownership; the passive bridge never sends MIDI or calls the Resolve API.
+-- Opt-in through NK JOG menu, and only when the companion Lua file has
+-- been explicitly installed. Old Scene 1 setup/calibration is untouched.
+local scene2Bridge = nil
+if hs.configdir then
+  local bridgePath = hs.configdir .. "/scene2_clip_gain_bridge.lua"
+  local ok, factory = pcall(dofile, bridgePath)
+  if ok and type(factory) == "function" then
+    local initialized, instance = pcall(factory, hs, function()
+      return enabled and cfg ~= nil and not learning and resolveApp() ~= nil
+    end)
+    if initialized and type(instance) == "table"
+      and type(instance.publish) == "function"
+      and type(instance.start) == "function"
+      and type(instance.stop) == "function" then
+      scene2Bridge = instance
+    else
+      hs.printf("[NK SCENE2] Optional input bridge unavailable; Scene 1 unaffected")
+    end
+  end
+end
+
 local function key(k, mods)
   if syntheticKeyUntil[k] ~= nil and (not mods or #mods == 0) then
     -- The 10ms keyStroke can be observed by our event tap synchronously or
@@ -603,6 +627,11 @@ end
 local function midiCallback(_,_,command,_,meta)
   local signal,value = midiSignal(command,meta)
   if not signal then return end
+  if scene2Bridge and scene2Bridge.active then
+    -- Same existing callback, even when Scene 2 is selected. No second
+    -- listener, no copied Scene 1 action or Korg MIDI echo.
+    scene2Bridge:publish(command,meta)
+  end
   lastMidi = signal .. "=" .. tostring(value)
   if learning then
     logLearnMidi(command,meta,signal,value)
@@ -708,6 +737,14 @@ menu:setMenu(function()
       disabled=not cfg or not device},
     {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
     {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
+    {title="Scene 2 clip gain MIDI bridge: " ..
+      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or "NINCS TELEPITVE"),
+      fn=function()
+        if not scene2Bridge then return end
+        if scene2Bridge.active then scene2Bridge:stop()
+        else scene2Bridge:start() end
+      end,
+      disabled=not scene2Bridge or not device or not cfg or learning},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
