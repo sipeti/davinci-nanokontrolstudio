@@ -45,6 +45,68 @@ MCU_ID_REPLY = (
 MAX_IDENTITY_REPLIES = 3
 MIN_IDENTITY_REPLY_PERIOD = 1.0
 
+# MCU proprietary connection negotiation is DISTINCT from MIDI Universal
+# Identity Reply. A real Mackie/Logic Control surface announces itself with
+# host-connection Query 0x01, and may receive a challenge Response 0x02.
+# Verify reply before emitting Confirmation 0x03. Never assume this makes
+# any mixer fader value authoritative: only actual host pitchwheel does.
+MCU_SESSION_HEADER = (0x00, 0x00, 0x66, 0x14)
+MCU_SESSION_SERIAL = tuple(b"NKST001")  # stable 7-byte test-surface serial
+MCU_SESSION_CHALLENGE = (0x1D, 0x26, 0x37, 0x4B)
+MCU_SESSION_QUERY = (
+    MCU_SESSION_HEADER + (0x01,) + MCU_SESSION_SERIAL +
+    MCU_SESSION_CHALLENGE
+)
+MCU_SESSION_CONFIRM = MCU_SESSION_HEADER + (0x03,) + MCU_SESSION_SERIAL
+
+
+def mcu_connection_response(challenge):
+    """Logic Control / Mackie host challenge-response, four 7-bit bytes."""
+    if len(challenge) != 4 or any(
+            type(x) is not int or not 0 <= x <= 127 for x in challenge):
+        raise ValueError("MCU challenge must contain exactly four MIDI data bytes")
+    a, b, c, d = challenge
+    return (
+        (a + (b ^ 0x0A) - d) & 0x7F,
+        ((c >> 4) ^ (a + d)) & 0x7F,
+        ((d - (c << 2)) ^ (a | b)) & 0x7F,
+        (b - c + (0xF0 ^ (d << 4))) & 0x7F,
+    )
+
+
+MCU_EXPECTED_HOST_REPLY = (
+    MCU_SESSION_HEADER + (0x02,) + MCU_SESSION_SERIAL +
+    mcu_connection_response(MCU_SESSION_CHALLENGE)
+)
+
+
+def mcu_connection_reply_for(message):
+    """Recognize ONLY the exact host response to OUR bounded device query."""
+    if (getattr(message, "type", None) == "sysex" and
+            tuple(getattr(message, "data", ())) == MCU_EXPECTED_HOST_REPLY):
+        return MCU_SESSION_CONFIRM
+    return None
+
+
+def sysex_message_kind(message):
+    """Report MIDI SysEx *kind*, never log project/track-name payloads."""
+    if getattr(message, "type", None) != "sysex":
+        return None
+    payload = tuple(getattr(message, "data", ()))
+    if payload == MCU_ID_REQUEST:
+        return "universal_identity_request"
+    if payload == MCU_EXPECTED_HOST_REPLY:
+        return "mcu_valid_connection_reply"
+    if payload[:5] == MCU_SESSION_HEADER + (0x02,):
+        return "mcu_other_connection_reply"
+    if payload == MCU_SESSION_HEADER + (0x00,):
+        return "mcu_device_query"
+    if payload[:4] == MCU_SESSION_HEADER and len(payload) >= 5:
+        return "mcu_command_%02x" % payload[4]
+    if payload[:2] == (0x7E, 0x00):
+        return "universal_other"
+    return "other"
+
 
 def mcu_identity_reply_for(message):
     """Return fixed MCU identity payload ONLY for exact observed request."""
@@ -250,7 +312,9 @@ def main():
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--enable-output", action="store_true")
     p.add_argument("--reply-mcu-identity", action="store_true",
-                   help="experimental MCU identity reply; never changes fader positions")
+                   help="experimental MIDI Universal Identity Reply; alone did NOT seed host faders")
+    p.add_argument("--init-mcu-session", action="store_true",
+                   help="experimental MCU host connection handshake, no fader writes")
     p.add_argument("--enable-strip8-bus1", action="store_true",
                    help="EXPLICIT option: strip8 follows CURRENT Fairlight bank; not fixed master")
     p.add_argument("--consent")
@@ -261,6 +325,8 @@ def main():
         p.error("backed-up disposable Fairlight test project consent required")
     if args.reply_mcu_identity and not args.enable_output:
         p.error("MCU identity replies need --enable-output and disposable consent")
+    if args.init_mcu_session and not args.enable_output:
+        p.error("MCU session handshake needs --enable-output and disposable consent")
     if args.enable_strip8_bus1 and not args.enable_output:
         p.error("strip8 is blocked unless explicit output trial is enabled")
     if args.input_port == args.output_port:
@@ -322,6 +388,10 @@ def main():
         id_requests = 0
         id_replies = 0
         last_id_reply = float("-inf")
+        sysex_types = Counter()
+        session_query_sent = False
+        session_reply_seen = False
+        session_confirm_sent = False
         host_led_events = Counter()
         host_led_last = {}
         printed = set()
@@ -331,6 +401,14 @@ def main():
                args.seconds, "explicitly_enabled" if args.enable_strip8_bus1
                else "LOCKED"), flush=True)
         try:
+            if args.init_mcu_session:
+                # Initial virtual-controller power-on/connection query.
+                # This handshake alone MUST NEVER arm a physical fader.
+                output.send(mido.Message("sysex", data=MCU_SESSION_QUERY))
+                session_query_sent = True
+                print("MCU_LIVE_SESSION=QUERY_SENT; "
+                      "awaiting host challenge reply; no mixer write",
+                      flush=True)
             while time.monotonic() - started < args.seconds:
                 now = time.monotonic()
                 if now - last_feedback_h >= 0.5:
@@ -345,6 +423,17 @@ def main():
                     raise RuntimeError("Hammerspoon input logger replaced")
                 for msg in receive.iter_pending():
                     host_rx[msg.type] += 1
+                    if msg.type == "sysex":
+                        sysex_types[sysex_message_kind(msg)] += 1
+                        if args.init_mcu_session:
+                            confirm = mcu_connection_reply_for(msg)
+                            if confirm is not None and not session_confirm_sent:
+                                session_reply_seen = True
+                                output.send(mido.Message("sysex", data=confirm))
+                                session_confirm_sent = True
+                                print("MCU_LIVE_SESSION=CONFIRMED; "
+                                      "actual Fairlight fader state still needed",
+                                      flush=True)
                     identity = mcu_identity_reply_for(msg)
                     if identity is not None:
                         id_requests += 1
@@ -432,6 +521,14 @@ def main():
                   (id_requests,id_replies,
                    "enabled" if args.reply_mcu_identity else "disabled"),
                   flush=True)
+            print("MCU_LIVE_SESSION=query:%s,reply:%s,confirmed:%s,mode:%s" %
+                  (session_query_sent,session_reply_seen,
+                   session_confirm_sent,
+                   "enabled" if args.init_mcu_session else "disabled"),
+                  flush=True)
+            print("MCU_LIVE_SYSEX_TYPES=" +
+                  ",".join("%s:%d" % (key,sysex_types[key])
+                           for key in sorted(sysex_types)), flush=True)
             print("MCU_LIVE_HOST_FADERS=" +
                   ",".join("strip%d:%d" % (k,host_fader_channels[k])
                            for k in sorted(host_fader_channels)), flush=True)
