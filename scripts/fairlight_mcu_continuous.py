@@ -108,6 +108,11 @@ def sysex_message_kind(message):
     return "other"
 
 
+def physical_mixer_write_authorized(enable_output, handshake_only):
+    """The MIDI port can send a protocol handshake but NO mixer commands."""
+    return bool(enable_output and not handshake_only)
+
+
 def mcu_identity_reply_for(message):
     """Return fixed MCU identity payload ONLY for exact observed request."""
     if (getattr(message, "type", None) == "sysex"
@@ -386,7 +391,8 @@ def main():
 
         mixer = LiveMixer(
             send, led,
-            write=args.enable_output and not args.handshake_only,
+            write=physical_mixer_write_authorized(
+                args.enable_output, args.handshake_only),
             allow_strip8=args.enable_strip8_bus1)
         started = time.monotonic()
         last_h = None
