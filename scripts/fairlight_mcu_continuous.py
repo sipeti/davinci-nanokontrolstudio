@@ -121,6 +121,7 @@ class LiveMixer:
         self.engaged = [False] * 8
         self.physical = [None] * 8
         self.last_sent_position = [None] * 8
+        self.last_sent_at = [float("-inf")] * 8
         self.physical_down.clear()
 
     def physical_event(self, ch, cc, value):
@@ -205,8 +206,10 @@ class LiveMixer:
         if not self.write:
             return "BUTTON_LIVE_PREVIEW"
         try:
-            self._send("note_on", channel=0, note=note, velocity=127)
+            # Mark key held BEFORE sending, so even a partial send failure
+            # reaches the fail-safe key-up path.
             self.keys[note] = self.clock() + BUTTON_HOLD
+            self._send("note_on", channel=0, note=note, velocity=127)
             self.sent_buttons += 1
             return "BUTTON_LIVE_SENT"
         except BaseException:
@@ -336,6 +339,7 @@ def main():
                 time.sleep(.01)
         except KeyboardInterrupt:
             print("MCU_LIVE=STOP; Ctrl+C", flush=True)
+            return_code = 0
         except Exception as exc:
             print("MCU_LIVE=HALT; %s" % exc, flush=True)
             return_code = 1
