@@ -9,7 +9,7 @@ Default mode is OBSERVE ONLY, with zero MIDI output.
 MCU MIDI protocol (not clip gain): pitch bend ch0..7 = 8 mixer faders,
 note 0x08..0x0F = solo and 0x10..0x17 = mute. Position/status MUST first
 come from Fairlight; no MIDI write or invented Korg LED state without it.
-Physical Scene2 map CC2..9, CC21..28, CC29..36 is a CANDIDATE pending
+Physical Scene2 map CC2..9, CC21..28, CC29..31/33..37 is a CANDIDATE pending
 a physical Assignable-mode capture; verify before enabling output.
 """
 import argparse
@@ -28,6 +28,10 @@ FADER_PICKUP_TOLERANCE = 270   # ~2 of 127 Korg CC positions
 FADER_STEP_LIMIT = 1400        # ~10 physical CC positions
 ACK_TOLERANCE = 140
 ACK_TIMEOUT = 0.75
+# Korg/Scene1 CC32 is deliberately skipped (MIDI bank-select LSB).
+# This eight-button pattern is in the verified existing Scene1 LED map;
+# it must still be confirmed physically on Scene2 before MCU output.
+SOLO_CC = (29, 30, 31, 33, 34, 35, 36, 37)
 
 def parse_event(line, now_ms):
     parts = line.strip().split(",")
@@ -110,7 +114,7 @@ class Bridge:
             if not 0 <= velocity <= 127:
                 return
             on = kind == "note_on" and velocity > 0
-            cc = (note - 8 + 29) if note < 16 else (note - 16 + 21)
+            cc = SOLO_CC[note - 8] if note < 16 else (note - 16 + 21)
             self.known_buttons[cc] = on
             self.led(cc, 127 if on else 0)
 
@@ -157,7 +161,7 @@ class Bridge:
             self.pending[strip] = None
             self.engaged[strip] = False
             return "MCU_FADER_PREVIEW"
-        if 21 <= cc <= 28 or 29 <= cc <= 36:
+        if 21 <= cc <= 28 or cc in SOLO_CC:
             if value not in (0, 127):
                 return "BUTTON_IGNORED"
             if cc not in self.known_buttons:
@@ -167,7 +171,7 @@ class Bridge:
             if self.pressed.get(cc, False) == pressed:
                 return "BUTTON_DUPLICATE"
             self.pressed[cc] = pressed
-            note = (16 + cc - 21) if cc <= 28 else (8 + cc - 29)
+            note = (16 + cc - 21) if cc <= 28 else (8 + SOLO_CC.index(cc))
             if self.write:
                 self.send("note_on" if pressed else "note_off",
                           channel=0, note=note, velocity=127 if pressed else 0)
