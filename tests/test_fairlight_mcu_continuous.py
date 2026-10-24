@@ -228,9 +228,10 @@ class LiveMixerTests(unittest.TestCase):
         self.b.host(msg("sysex",data=live.MCU_ID_REPLY))
         self.assertEqual(self.b.physical_event(1,2,63),"FADER_WAIT_HOST")
         self.fader_host(0,60)
-        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
-        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
-        self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
+        # Physical 63 -> 60 crosses the real host position, so pickup
+        # legitimately arms NOW; without the real pitchwheel it could not.
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_LIVE_SENT")
         self.assertEqual(self.b.sent_faders,1)
 
     def test_production_has_no_implicit_unbounded_midi_authorization(self):
