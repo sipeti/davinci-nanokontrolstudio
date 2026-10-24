@@ -84,12 +84,17 @@ def classify_host_event(message):
 class Bridge:
     """Pure state machine; send(type, fields) and led(cc, state) are injected."""
 
-    def __init__(self, send, led, *, write=False, clock=time.monotonic):
+    def __init__(self, send, led, *, write=False, clock=time.monotonic,
+                 fader1_one_shot=False):
         self.send = send
         self.led = led
         self.write = write
         self.clock = clock
+        self.fader1_one_shot = fader1_one_shot
+        self.ack_received = 0
+        self.ack_mismatch = 0
         self.host_faders = [None] * 8
+        self.host_fader_time = [None] * 8
         self.physical = [None] * 8
         self.engaged = [False] * 8
         self.pending = [None] * 8
@@ -105,6 +110,7 @@ class Bridge:
         self.known_buttons = {}
         self.pressed = {}
         self.host_faders = [None] * 8
+        self.host_fader_time = [None] * 8
 
     def host(self, message):
         """Host-to-controller is the *only* authority for LED/fader state."""
@@ -120,14 +126,17 @@ class Bridge:
             expected = self.pending[channel]
             if expected is not None:
                 if abs(expected[0] - value) <= ACK_TOLERANCE:
+                    self.ack_received += 1
                     self.pending[channel] = None
                 else:
+                    self.ack_mismatch += 1
                     self.engaged[channel] = False
                     self.pending[channel] = None
             elif (self.engaged[channel] and self.host_faders[channel] is not None
                   and abs(value - self.host_faders[channel]) > FADER_PICKUP_TOLERANCE):
                 self.engaged[channel] = False
             self.host_faders[channel] = value
+            self.host_fader_time[channel] = self.clock()
         elif kind in ("note_on", "note_off"):
             channel = getattr(message, "channel", -1)
             note = getattr(message, "note", -1)
@@ -148,12 +157,25 @@ class Bridge:
             return "SCENE_REARM"
         if type(value) is not int or not 0 <= value <= 127:
             return "INVALID"
+        # Explicit physical acceptance: all other Scene2 sliders and buttons
+        # are blocked, even if the operator accidentally presses them.
+        if self.fader1_one_shot and cc != 2:
+            return "ONE_SHOT_FADER1_ONLY"
+        if self.fader1_one_shot and self.sent >= 1:
+            return "ONE_SHOT_ALREADY_SENT"
         if 2 <= cc <= 9:
             strip = cc - 2
             goal = physical_to_mcu(value)
             old = self.physical[strip]
             self.physical[strip] = goal
             host = self.host_faders[strip]
+            if self.fader1_one_shot:
+                last = self.host_fader_time[strip]
+                if last is None or self.clock() - last > 10.0:
+                    self.engaged[strip] = False
+                    self.host_faders[strip] = None
+                    self.host_fader_time[strip] = None
+                    return "FADER_HOST_FEEDBACK_STALE_REARM"
             if host is None:
                 self.blocked += 1
                 return "FADER_WAIT_FOR_FAIRLIGHT_POSITION"
@@ -178,6 +200,13 @@ class Bridge:
             if abs(goal - host) > FADER_STEP_LIMIT or abs(goal - old) > FADER_STEP_LIMIT:
                 self.engaged[strip] = False
                 return "FADER_JUMP_REARM"
+            # First physical acceptance is additionally limited to ~2 Korg
+            # steps from BOTH last host position and last physical position.
+            if self.fader1_one_shot and (
+                    abs(goal - host) > FADER_PICKUP_TOLERANCE or
+                    abs(goal - old) > FADER_PICKUP_TOLERANCE):
+                self.engaged[strip] = False
+                return "ONE_SHOT_STEP_REARM"
             # First outgoing fader value is only after authoritative host
             # position, explicit physical pickup, and limited movement.
             self.pending[strip] = goal, self.clock()
@@ -215,12 +244,21 @@ def main():
     parser.add_argument("--output-port", help="IAC port wired to Resolve MCU input")
     parser.add_argument("--seconds", type=int, default=60, help="0 = until Ctrl+C")
     parser.add_argument("--enable-output", action="store_true")
+    parser.add_argument("--one-shot-fader1-test", action="store_true",
+                        help="single A1 fader MIDI message, never buttons/other faders")
     parser.add_argument("--consent")
     args = parser.parse_args()
     if args.seconds < 0 or args.seconds > 3600:
         parser.error("--seconds must be 0..3600")
     if args.enable_output and args.consent != CONSENT:
         parser.error("Explicit disposable-project consent required for MIDI writes")
+    if args.enable_output and not args.one_shot_fader1_test:
+        parser.error("MIDI writes require --one-shot-fader1-test; "
+                     "unbounded mixer output is disabled in Draft")
+    if args.one_shot_fader1_test and not args.enable_output:
+        parser.error("--one-shot-fader1-test requires --enable-output")
+    if args.one_shot_fader1_test and (args.seconds == 0 or args.seconds > 60):
+        parser.error("Single-fader hardware trial must finish within 60 seconds")
     try:
         import mido
     except ImportError:
@@ -256,8 +294,10 @@ def main():
         def led(cc, value):
             feedback.write("%d,L,%d,%d\n" % (int(time.time()*1000), cc, value))
             feedback.flush()
-        bridge = Bridge(emit, led, write=args.enable_output)
+        bridge = Bridge(emit, led, write=args.enable_output,
+                        fader1_one_shot=args.one_shot_fader1_test)
         started = time.monotonic()
+        one_shot_sent_at = None
         last_h = None
         last_heartbeat_out = 0
         ready = False
@@ -349,6 +389,22 @@ def main():
                             if display:
                                 print("MCU %s CH=%d CC=%d value=%d" %
                                       (result,ch,cc,value), flush=True)
+                if args.one_shot_fader1_test and bridge.sent > 0:
+                    if one_shot_sent_at is None:
+                        one_shot_sent_at = now
+                    if bridge.ack_received > 0:
+                        print("MCU_ONE_SHOT=HOST_ACK_PASS; "
+                              "one A1 fader message sent, acknowledged",
+                              flush=True)
+                        break
+                    if bridge.ack_mismatch > 0:
+                        print("MCU_ONE_SHOT=HOST_ACK_MISMATCH; STOP",
+                              flush=True)
+                        break
+                    if now-one_shot_sent_at > 1.5:
+                        print("MCU_ONE_SHOT=NO_HOST_ACK; STOP; "
+                              "inspect Fairlight fader visually", flush=True)
+                        break
                 if last_h is None and now-started > 3:
                     print("MCU=HALT; no Hammerspoon heartbeat",flush=True)
                     return 1
