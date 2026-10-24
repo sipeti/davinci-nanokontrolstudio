@@ -80,8 +80,11 @@ return function(host, isReady)
           and (value == 0 or value == 127)
           and now - self.lastFeedbackHeartbeat <= 1800 then
           if self.ledKnown[cc] ~= value then
-            self.ledSender(cc, value == 127)
+            local delivered = self.ledSender(cc, value == 127)
             self.ledKnown[cc] = value
+            host.printf("[NK SCENE2 LED RX] Fairlight cc=%d state=%d "
+              .. "Korg_sent=%s physicalScene=%s",
+              cc, value, tostring(delivered), tostring(self.lastScene))
           end
         end
       end
@@ -101,14 +104,17 @@ return function(host, isReady)
   function bridge:heartbeat()
     if not self.active then return end
     local ready = isReady() == true
-    if self.ready and not ready then
-      self.lastCC = {}    -- require new knob pickup upon focus return
-      self.lastScene = nil
-    end
+    local lostFocus = self.ready and not ready
     self.ready = ready
     write("H", 0, 0, ready and 1 or 0)
     if not ready then
+      -- Turn off the last actual Fairlight host LEDs BEFORE revoking
+      -- physical Scene2 ownership. Otherwise OFF is skipped by sender.
       self:clearFeedback()
+      if lostFocus then
+        self.lastCC = {} -- require new pickup on focus return
+        self.lastScene = nil
+      end
     else
       self:pollFeedback()
     end
@@ -165,7 +171,15 @@ return function(host, isReady)
       return
     end
     if ch ~= 1 then
-      -- Scene1/3..5 must never be mistaken for Scene2 clip gain.
+      -- Korg does NOT signal SCENE changes until a physical CC arrives.
+      -- On first other-scene CC, blank Scene2's physical mixer LEDs,
+      -- but RETAIN the last Fairlight-authoritative state in case it
+      -- remains connected/gets refreshed before returning to Scene2.
+      if self.lastScene == 1 and self.ledSender then
+        for ledCC in pairs(self.ledKnown) do
+          self.ledSender(ledCC, false)
+        end
+      end
       if self.lastScene ~= ch then
         write("R", ch, cc, value)
         self.lastCC = {}
