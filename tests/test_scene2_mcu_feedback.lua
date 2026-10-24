@@ -91,6 +91,28 @@ now=now+.5
 timers[1].fn()
 assert(latest(21)==false and latest(29)==true,
   "changed Fairlight LED feedback must override previous authoritative state")
+-- A silent Korg Scene switch blanks physical LEDs. With host feedback
+-- unchanged, Scene2 must periodically reassert only known host states.
+feedback = ("%d,H,0,1\n%d,L,21,0\n%d,L,29,127\n"):format(t(),t(),t())
+local reassertBefore = #calls
+now=now+.5
+timers[1].fn()
+assert(#calls > reassertBefore,
+  "active Scene2 must periodically reassert known host mixer LEDs")
+local afterReassert = #calls
+bridge:publish("controlChange",
+  {channel=0,controllerNumber=21,controllerValue=127})
+now=now+.5
+timers[1].fn()
+assert(#calls == afterReassert,
+  "other scenes must not receive periodic Scene2 reassertions")
+bridge:publish("controlChange",
+  {channel=1,controllerNumber=21,controllerValue=127})
+now=now+.5
+timers[1].fn()
+assert(#calls > afterReassert,
+  "returning to Scene2 must restore host state after silent LED blank")
+
 feedback = ("%d,H,0,0\n"):format(t())
 now=now+.5
 timers[1].fn()
