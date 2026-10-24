@@ -34,3 +34,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_scene2_midi_one_shot_roundtrip.py'
       - name: Eight rotary clip volume safety regression tests
         run: python3 -m unittest discover -s tests -p 'test_scene2_clip_gain_8rotary.py'
+      - name: Timestamped Scene 1 and Scene 2 raw MIDI event regression
+        run: |
+          luac5.4 -p scripts/scene2_timestamped_midi_probe.lua tests/test_scene2_timestamped_midi_probe.lua
+          lua5.4 tests/test_scene2_timestamped_midi_probe.lua
