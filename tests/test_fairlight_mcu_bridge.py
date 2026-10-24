@@ -175,17 +175,24 @@ class BridgeTests(unittest.TestCase):
             ("note_on", {"channel":0,"note":104,"velocity":127}),
             ("pitchwheel",{"channel":0,
                            "pitch":mcu.physical_to_mcu(62)-8192}),
-            ("note_on", {"channel":0,"note":104,"velocity":0}),
         ])
+        self.assertTrue(b.touch_active)
+        self.assertFalse(b.release_touch(), "touch must remain held for 500ms")
+        clock[0]+=0.49
+        self.assertFalse(b.release_touch(), "not yet 500ms")
         self.assertEqual(b.physical_event(1,2,63), "ONE_SHOT_ALREADY_SENT")
         self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_FADER1_ONLY")
-        self.assertEqual(len(sent), 3)
-        self.assertEqual(b.sent, 1, "only 1 fader adjustment, despite 3 MIDI packets")
         b.host(host("pitchwheel",channel=0,
                     pitch=mcu.physical_to_mcu(62)-8192))
         self.assertEqual(b.ack_received,1)
         self.assertEqual(b.ack_mismatch,0)
         self.assertEqual(b.host_after_command,1)
+        clock[0]+=0.02
+        self.assertTrue(b.release_touch(), "release only after 500ms")
+        self.assertFalse(b.release_touch(), "release must not be duplicated")
+        self.assertEqual(sent[2], ("note_on",{"channel":0,"note":104,"velocity":0}))
+        self.assertEqual(len(sent), 3)
+        self.assertEqual(b.sent, 1, "one fader adjustment despite 3 MIDI packets")
 
     def test_fader1_one_shot_needs_recent_real_host_position(self):
         sent=[]
@@ -224,10 +231,38 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(b.ack_mismatch,1)
         self.assertEqual(b.ack_received,0)
         self.assertFalse(b.engaged[0])
+        self.assertIsNotNone(b.pending[0],
+                             "one-shot must observe subsequent host updates")
         self.assertEqual(b.physical_event(1,2,65),"ONE_SHOT_ALREADY_SENT")
-        self.assertEqual(len(sent),3)
+        self.assertEqual(len(sent),2)
+        # A later matching feedback can still validate the command, while
+        # the hard cap prevents any extra physical fader send.
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(62)-8192))
+        self.assertEqual(b.ack_received,1)
+        self.assertEqual(b.ack_mismatch,1)
+        self.assertEqual(b.sent,1)
+        self.assertTrue(b.release_touch(force=True))
         self.assertEqual(sent[2], ("note_on", {"channel":0,"note":104,
                                                "velocity":0}))
+
+    def test_touch_releases_on_focus_or_scene_rearm_without_resending(self):
+        sent=[]
+        b=mcu.Bridge(lambda kind,**kw:sent.append((kind,kw)),
+                     lambda cc,value:None,write=True,fader1_one_shot=True)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        b.physical_event(1,2,60)
+        b.physical_event(1,2,61)
+        b.physical_event(1,2,62)
+        self.assertTrue(b.touch_active)
+        b.rearm()
+        self.assertFalse(b.touch_active)
+        self.assertEqual(len(sent),3)
+        self.assertEqual(sent[2],("note_on",
+                                  {"channel":0,"note":104,"velocity":0}))
+        self.assertEqual(b.physical_event(1,2,63),"ONE_SHOT_ALREADY_SENT")
+        self.assertEqual(b.sent,1)
 
     def test_touch_release_is_sent_even_if_pitchbend_send_fails(self):
         sent=[]
