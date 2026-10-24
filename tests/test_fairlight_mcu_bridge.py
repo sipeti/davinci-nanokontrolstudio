@@ -297,6 +297,108 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(b.physical_event(1,2,62),"MCU_FADER_PREVIEW")
         self.assertEqual(sent,[])
 
+    def test_mute1_one_shot_requires_fresh_real_host_state(self):
+        calls=[]
+        t=[200.0]
+        b=mcu.Bridge(lambda kind, **kw:calls.append((kind,kw)),
+                     lambda cc,value:None,
+                     write=True,clock=lambda:t[0],
+                     one_shot_button="mute1")
+        self.assertEqual(b.physical_event(1,21,127),
+                         "BUTTON_HOST_STATE_STALE")
+        self.assertEqual(calls, [])
+        b.host(host("note_on",channel=0,note=16,velocity=0))
+        t[0]+=10.1
+        self.assertEqual(b.physical_event(1,21,127),
+                         "BUTTON_HOST_STATE_STALE")
+        self.assertEqual(calls, [])
+
+    def test_mute1_one_shot_exact_one_press_release_and_led_change(self):
+        calls=[]
+        leds=[]
+        t=[200.0]
+        b=mcu.Bridge(lambda kind, **kw:calls.append((kind,kw)),
+                     lambda cc,value:leds.append((cc,value)),
+                     write=True,clock=lambda:t[0],
+                     one_shot_button="mute1")
+        b.host(host("note_on",channel=0,note=16,velocity=0))
+        self.assertEqual(b.physical_event(1,2,64),"ONE_SHOT_BUTTON_ONLY")
+        self.assertEqual(b.physical_event(1,29,127),"ONE_SHOT_BUTTON_ONLY")
+        self.assertEqual(b.physical_event(1,21,0),"ONE_SHOT_WAIT_PRESS")
+        self.assertEqual(b.physical_event(1,21,127),
+                         "MCU_BUTTON_ONE_SHOT_SENT")
+        self.assertEqual(calls,[
+            ("note_on",{"channel":0,"note":16,"velocity":127})])
+        self.assertEqual(b.sent,1)
+        self.assertTrue(b.one_button_pressed)
+        self.assertFalse(b.release_one_button())
+        self.assertEqual(b.physical_event(1,21,0),"ONE_SHOT_ALREADY_SENT")
+        self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_ALREADY_SENT")
+        t[0]+=0.07
+        self.assertFalse(b.release_one_button())
+        t[0]+=0.02
+        self.assertTrue(b.release_one_button())
+        self.assertFalse(b.release_one_button())
+        self.assertEqual(calls,[
+            ("note_on",{"channel":0,"note":16,"velocity":127}),
+            ("note_off",{"channel":0,"note":16,"velocity":0})])
+        b.host(host("note_on",channel=0,note=16,velocity=127))
+        self.assertEqual(leds[-1],(21,127))
+        self.assertTrue(b.one_button_observed)
+        self.assertEqual(b.one_button_initial,False)
+        self.assertEqual(b.one_button_expected,True)
+        self.assertEqual(b.sent,1)
+
+    def test_solo1_one_shot_only_emits_note8_and_observes_state(self):
+        calls=[]
+        b=mcu.Bridge(lambda kind, **kw:calls.append((kind,kw)),
+                     lambda cc,value:None,
+                     write=True,one_shot_button="solo1")
+        b.host(host("note_on",channel=0,note=8,velocity=127))
+        self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_BUTTON_ONLY")
+        self.assertEqual(b.physical_event(1,29,127),
+                         "MCU_BUTTON_ONE_SHOT_SENT")
+        self.assertEqual(b.one_button_initial,True)
+        self.assertEqual(b.one_button_expected,False)
+        self.assertEqual(b.physical_event(1,29,0),"ONE_SHOT_ALREADY_SENT")
+        self.assertTrue(b.release_one_button(force=True))
+        self.assertEqual(calls,[
+            ("note_on",{"channel":0,"note":8,"velocity":127}),
+            ("note_off",{"channel":0,"note":8,"velocity":0})])
+        b.host(host("note_on",channel=0,note=8,velocity=0))
+        self.assertTrue(b.one_button_observed)
+
+    def test_mute1_one_shot_releases_on_focus_scene_rearm(self):
+        calls=[]
+        b=mcu.Bridge(lambda kind, **kw:calls.append((kind,kw)),
+                     lambda cc,value:None,write=True,
+                     one_shot_button="mute1")
+        b.host(host("note_on",channel=0,note=16,velocity=0))
+        self.assertEqual(b.physical_event(1,21,127),
+                         "MCU_BUTTON_ONE_SHOT_SENT")
+        self.assertEqual(b.physical_event(0,2,64),"SCENE_REARM")
+        self.assertEqual(calls[-1],("note_off",
+                                   {"channel":0,"note":16,"velocity":0}))
+        self.assertFalse(b.one_button_pressed)
+        self.assertEqual(b.sent,1)
+        self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_ALREADY_SENT")
+
+    def test_mute1_one_shot_releases_after_send_error(self):
+        calls=[]
+        def fail_press(kind,**kw):
+            calls.append((kind,kw))
+            if kind == "note_on" and kw.get("velocity") == 127:
+                raise IOError("injected MIDI write fault")
+        b=mcu.Bridge(fail_press,lambda cc,v:None,
+                     write=True,one_shot_button="mute1")
+        b.host(host("note_on",channel=0,note=16,velocity=0))
+        with self.assertRaisesRegex(IOError,"injected MIDI write fault"):
+            b.physical_event(1,21,127)
+        self.assertFalse(b.one_button_pressed)
+        self.assertEqual(calls,[
+            ("note_on",{"channel":0,"note":16,"velocity":127}),
+            ("note_off",{"channel":0,"note":16,"velocity":0})])
+
     def test_host_diagnostics_classify_only_valid_mcu_fader_and_notes(self):
         self.assertEqual(
             mcu.classify_host_event(host("pitchwheel", channel=0,
