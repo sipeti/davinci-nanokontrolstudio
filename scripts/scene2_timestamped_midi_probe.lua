@@ -48,7 +48,7 @@ end
 
 local probe = {
   device = device, file = path, phase = "UNMARKED",
-  active = true, events = 0, count = {},
+  active = true, events = 0, count = {}, samples = {},
   timer = nil,
 }
 
@@ -74,9 +74,9 @@ local function record(kind, ch, cc, value, raw, midiTimestamp)
   if not result then
     hs.printf("[NK TS] CSV_WRITE_FAILED; stopping; WRITES=0")
     probe.stop()
-    return false
+    return nil
   end
-  return true
+  return epochMs, elapsedMs
 end
 
 function probe.mark(phase)
@@ -105,10 +105,15 @@ function probe.stop()
   for key in pairs(probe.count) do keys[#keys + 1] = key end
   table.sort(keys)
   for _, key in ipairs(keys) do
-    hs.printf("[NK TS] %s COUNT=%d", key, probe.count[key])
+    local sample = probe.samples[key]
+    hs.printf("[NK TS] %s COUNT=%d FIRST_MS=%d RAW=%s",
+      key, probe.count[key], sample.ms, sample.raw)
   end
   hs.printf("[NK TS] FILE=%s", path)
 end
+
+file:write("kind,epoch_ms,elapsed_ms,phase,channel,cc,value,raw_hex,midi_timestamp\n")
+file:flush()
 
 device:callback(function(_, _, command, _, meta)
   if not probe.active or command ~= "controlChange"
@@ -122,11 +127,15 @@ device:callback(function(_, _, command, _, meta)
   -- The Hammerspoon input channel is 0..15 (distinct from MIDI
   -- output sendCommand where channel 0 has all-channels semantics).
   local raw = meta.data or ""
-  if not record("CC", ch, cc, value, raw, meta.timestamp) then return end
+  local epochMs, elapsedMs = record("CC", ch, cc, value, raw, meta.timestamp)
+  if not epochMs then return end
   probe.events = probe.events + 1
   local key = string.format("%s CHANNEL=%d CC=%d",
     probe.phase, ch, cc)
   probe.count[key] = (probe.count[key] or 0) + 1
+  if not probe.samples[key] then
+    probe.samples[key] = {ms=elapsedMs, raw=safeField(raw)}
+  end
   if probe.events % 100 == 0 then file:flush() end
   if probe.events >= 12000 then
     hs.printf("[NK TS] EVENT_CAP=12000; auto stop; WRITES=0")
@@ -140,7 +149,5 @@ probe.timer = hs.timer.doAfter(120, function()
     probe.stop()
   end
 end)
-file:write("kind,epoch_ms,elapsed_ms,phase,channel,cc,value,raw_hex,midi_timestamp\n")
-file:flush()
 hs.printf("[NK TS] READY; mark SCENE1, rotate knob4; mark SCENE2, rotate knob4; then stop(); WRITES=0")
 return probe
