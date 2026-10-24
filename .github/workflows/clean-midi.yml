@@ -4,7 +4,7 @@ on:
     branches: ["main"]
   pull_request:
     # Stacked research PRs must run CI against their actual target branches.
-    branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test", "research/scene2-soft-takeover-offline", "research/scene2-midi-one-shot-roundtrip"]
+    branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test", "research/scene2-soft-takeover-offline", "research/scene2-midi-one-shot-roundtrip", "research/scene2-eight-rotary-clip-gain"]
 
 permissions:
   contents: read
@@ -38,3 +38,9 @@ jobs:
         run: |
           luac5.4 -p scripts/scene2_timestamped_midi_probe.lua tests/test_scene2_timestamped_midi_probe.lua
           lua5.4 tests/test_scene2_timestamped_midi_probe.lua
+      - name: Persistent Scene 2 Hammerspoon bridge tests
+        run: |
+          luac5.4 -p scene2_clip_gain_bridge.lua tests/test_scene2_continuous_bridge.lua nanokontrol_resolve21.lua
+          lua5.4 tests/test_scene2_continuous_bridge.lua
+      - name: Continuous Scene 2 Python worker offline safety tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_continuous_clip_gain.py'
