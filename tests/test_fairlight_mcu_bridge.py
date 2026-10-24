@@ -170,16 +170,22 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(b.physical_event(1,29,127), "ONE_SHOT_FADER1_ONLY")
         self.assertEqual(b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
         self.assertEqual(b.physical_event(1,2,61),"FADER_PICKUP_PASS")
-        self.assertEqual(b.physical_event(1,2,62),"MCU_FADER_SENT")
-        self.assertEqual(sent, [("pitchwheel",{"channel":0,
-                                  "pitch":mcu.physical_to_mcu(62)-8192})])
+        self.assertEqual(b.physical_event(1,2,62),"MCU_FADER_TOUCH_SENT")
+        self.assertEqual(sent, [
+            ("note_on", {"channel":0,"note":104,"velocity":127}),
+            ("pitchwheel",{"channel":0,
+                           "pitch":mcu.physical_to_mcu(62)-8192}),
+            ("note_on", {"channel":0,"note":104,"velocity":0}),
+        ])
         self.assertEqual(b.physical_event(1,2,63), "ONE_SHOT_ALREADY_SENT")
         self.assertEqual(b.physical_event(1,21,127),"ONE_SHOT_FADER1_ONLY")
-        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(sent), 3)
+        self.assertEqual(b.sent, 1, "only 1 fader adjustment, despite 3 MIDI packets")
         b.host(host("pitchwheel",channel=0,
                     pitch=mcu.physical_to_mcu(62)-8192))
         self.assertEqual(b.ack_received,1)
         self.assertEqual(b.ack_mismatch,0)
+        self.assertEqual(b.host_after_command,1)
 
     def test_fader1_one_shot_needs_recent_real_host_position(self):
         sent=[]
@@ -219,7 +225,42 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(b.ack_received,0)
         self.assertFalse(b.engaged[0])
         self.assertEqual(b.physical_event(1,2,65),"ONE_SHOT_ALREADY_SENT")
-        self.assertEqual(len(sent),1)
+        self.assertEqual(len(sent),3)
+        self.assertEqual(sent[2], ("note_on", {"channel":0,"note":104,
+                                               "velocity":0}))
+
+    def test_touch_release_is_sent_even_if_pitchbend_send_fails(self):
+        sent=[]
+        def fail_pitch(kind,**kw):
+            sent.append((kind,kw))
+            if kind == "pitchwheel":
+                raise IOError("simulated port failure")
+        b=mcu.Bridge(fail_pitch,lambda cc,v:None,write=True,
+                     fader1_one_shot=True)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        b.physical_event(1,2,60)
+        b.physical_event(1,2,61)
+        with self.assertRaisesRegex(IOError, "simulated port failure"):
+            b.physical_event(1,2,62)
+        self.assertEqual(sent, [
+            ("note_on", {"channel":0,"note":104,"velocity":127}),
+            ("pitchwheel", {"channel":0,
+                            "pitch":mcu.physical_to_mcu(62)-8192}),
+            ("note_on", {"channel":0,"note":104,"velocity":0}),
+        ])
+        self.assertEqual(b.sent,0)
+
+    def test_unmodified_read_only_fader_preview_sends_no_touch_packets(self):
+        sent=[]
+        b=mcu.Bridge(lambda kind,**kw:sent.append((kind,kw)),
+                     lambda cc,v:None,write=False)
+        b.host(host("pitchwheel",channel=0,
+                    pitch=mcu.physical_to_mcu(60)-8192))
+        b.physical_event(1,2,60)
+        b.physical_event(1,2,61)
+        self.assertEqual(b.physical_event(1,2,62),"MCU_FADER_PREVIEW")
+        self.assertEqual(sent,[])
 
     def test_host_diagnostics_classify_only_valid_mcu_fader_and_notes(self):
         self.assertEqual(
