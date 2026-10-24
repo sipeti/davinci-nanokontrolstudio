@@ -183,20 +183,26 @@ local function sendLED(cc, on, force, outputChannel)
   ledOutputStatus = "API OK / Scenes 1-2 verified; 3-5 unverified"
   return true
 end
--- Only a genuine Fairlight->MCU feedback note may drive Scene2 mixer
--- MUTE/SOLO LEDs; no hardware press echo, no guessed mixer state.
--- Korg output channel=0 (broadcast) is the previously physically
--- verified External LED route. Output channel=1 returned API success but
--- did not light the hardware. Broadcast MUST be guarded by a recent
--- physical Scene2 CC: do not overwrite Scene1 LEDs during other scenes.
+-- Only Fairlight's genuine MCU note feedback drives Scene2 mixer LEDs,
+-- never the physical button input. Prior physical Korg probe lit MUTE1
+-- on one of the two tested output routes but did not isolate which.
+-- Send the SAME idempotent CC state through both possible Korg channels,
+-- ONLY while physical Scene2 is active. Source Scene1 editing remains
+-- unchanged; no unverified transport or calibration commands.
+local scene2LedReported = {}
 if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
   scene2Bridge:setLedSender(function(cc, on)
     if enabled and cfg and ledEnabled and device
       and scene2Bridge.lastScene == 1
       and ((scene2Bridge.active and scene2Bridge.ready) or not on) then
-      -- Preserve OFF on focus loss and bridge shutdown; never leave
-      -- a previous Fairlight MUTE/SOLO LED latched on the Korg.
-      return sendLED(cc, on, true, 0)
+      local broadcast = sendLED(cc, on, true, 0)
+      local scene2 = sendLED(cc, on, true, 1)
+      if scene2LedReported[cc] ~= on then
+        scene2LedReported[cc] = on
+        hs.printf("[NK SCENE2 LED TX] host_cc=%d state=%s ch0=%s ch1=%s",
+          cc, tostring(on), tostring(broadcast), tostring(scene2))
+      end
+      return broadcast or scene2
     end
     return false
   end)
