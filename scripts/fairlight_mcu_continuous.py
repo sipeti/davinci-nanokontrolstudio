@@ -314,7 +314,9 @@ def main():
     p.add_argument("--reply-mcu-identity", action="store_true",
                    help="experimental MIDI Universal Identity Reply; alone did NOT seed host faders")
     p.add_argument("--init-mcu-session", action="store_true",
-                   help="experimental MCU host connection handshake, no fader writes")
+                   help="experimental MCU host connection handshake")
+    p.add_argument("--handshake-only", action="store_true",
+                   help="hard fence ALL physical fader/MUTE/SOLO writes during MCU connection trial")
     p.add_argument("--enable-strip8-bus1", action="store_true",
                    help="EXPLICIT option: strip8 follows CURRENT Fairlight bank; not fixed master")
     p.add_argument("--consent")
@@ -327,6 +329,12 @@ def main():
         p.error("MCU identity replies need --enable-output and disposable consent")
     if args.init_mcu_session and not args.enable_output:
         p.error("MCU session handshake needs --enable-output and disposable consent")
+    if args.handshake_only and not args.init_mcu_session:
+        p.error("--handshake-only requires --init-mcu-session")
+    if args.handshake_only and args.reply_mcu_identity:
+        p.error("One handshake protocol at a time; disable --reply-mcu-identity")
+    if args.handshake_only and args.enable_strip8_bus1:
+        p.error("Bus1 enabling is forbidden in MCU handshake-only trial")
     if args.enable_strip8_bus1 and not args.enable_output:
         p.error("strip8 is blocked unless explicit output trial is enabled")
     if args.input_port == args.output_port:
@@ -376,8 +384,10 @@ def main():
                       "host-authoritative; feedback file updated" %
                       (cc, "ON" if value == 127 else "OFF"), flush=True)
 
-        mixer = LiveMixer(send, led, write=args.enable_output,
-                          allow_strip8=args.enable_strip8_bus1)
+        mixer = LiveMixer(
+            send, led,
+            write=args.enable_output and not args.handshake_only,
+            allow_strip8=args.enable_strip8_bus1)
         started = time.monotonic()
         last_h = None
         last_feedback_h = float("-inf")
@@ -397,7 +407,8 @@ def main():
         printed = set()
         print("MCU_LIVE=START; mode=%s; duration=%ds; "
               "strip8=%s; no auto-start" %
-              ("BENCH_OUTPUT" if args.enable_output else "READ_ONLY",
+              ("HANDSHAKE_ONLY" if args.handshake_only
+               else "BENCH_OUTPUT" if args.enable_output else "READ_ONLY",
                args.seconds, "explicitly_enabled" if args.enable_strip8_bus1
                else "LOCKED"), flush=True)
         try:
@@ -473,6 +484,12 @@ def main():
                         ready = False
                         mixer.rearm()
                     elif kind == "M" and ready:
+                        if args.handshake_only:
+                            # Double fence: LiveMixer.write=False as well.
+                            # No physical CC is allowed to modify Fairlight
+                            # while testing MCU initialization.
+                            counters["MIXER_OUTPUT_FENCED"] += 1
+                            continue
                         result = mixer.physical_event(ch, cc, value)
                         counters[result] += 1
                         marker = (cc, result)
