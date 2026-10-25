@@ -18,7 +18,7 @@ Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tes
 | Physical controls | MIDI CC |
 | --- | --- |
 | Eight rotary knobs | 13–20, in order |
-| Eight sliders/faders | **2, 3, 4, 5, 6, 8, 9, 12** — factory Korg assignments on all Scenes. Slider 8 (CC12) locked by default; temporary NK JOG trial may control **A8 or Bus 1**, depending on the current MCU bank |
+| Eight sliders/faders | **2, 3, 4, 5, 6, 8, 9, 12** — factory Korg assignments on all Scenes. Slider 8 (CC12) is ON by default; controls A8 in the tested eight-track project, but may control **Bus1** in another MCU bank. NK JOG offers an OFF switch |
 | MUTE 1–8 | 21–28 |
 | SOLO 1–8 | 29, 30, 31, 33, 34, 35, 36, 37 |
 | Scene 2 JOG wheel | **CC82 / Sign Magnitude / Const** |
@@ -61,10 +61,10 @@ Finish with **Hammerspoon → Reload Config**. With Resolve ready and frontmost,
 2. In Resolve, **back up the current project**, STOP playback and scrubbing, and ensure the targeted audio clips have no gain keyframes or gain automation.
 3. Hammerspoon → **Reload Config**; Scene 2 workers start in the background when Resolve is ready and frontmost.
 4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. Clip knobs follow the active project; the mixer uses the **unchanged, hardware-accepted v1.4 MCU worker** with its original host-feedback soft pickup.
-5. Use **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** to pause or resume. The adjacent **Scene 2: 8. MCU STRIP PROBA** option is OFF by default. Enable it only while testing a disposable A1–A8 project; observe both A8 and Bus 1. It also unlocks MUTE8/SOLO8. Pausing Scene 2 or reloading Hammerspoon resets the trial to OFF. Session logs: ~/Library/Logs/nk-scene2-session.log.
+5. Use **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** to pause or resume. **Scene 2: 8. CSATORNA BE/KI** is enabled by default and can disable the eighth fader plus MUTE8/SOLO8 when the eighth MCU bank slot belongs to Bus1. The setting is session-local; Hammerspoon reload restores eight enabled strips. Session logs: ~/Library/Logs/nk-scene2-session.log.
 6. For v1.5 physical acceptance, verify the mixer faders, MUTE/SOLO and LED feedback work just like v1.4, then try Scene 1/2 switching and clip gain on two disposable projects.
 
-**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. Mixer strip 8 (potential Bus 1) remains locked by default; the one-session trial reuses the existing MCU --enable-strip8-bus1 flag, without changing Korg CCs.
+**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. MCU strip 8 is active by default after the A8 physical test; it always follows the eighth slot of the **current Resolve bank**, which may be Bus1 in some projects. NK JOG can disable it without affecting strips 1–7. No Korg CC change is required.
 
 ## 6. Uninstall / rollback
 

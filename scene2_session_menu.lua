@@ -28,7 +28,7 @@ return function(host, bridge, options)
   local self = {
     task = nil, log = nil, timer = nil, stopping = false,
     enabled = enabled, retryAt = 0, shutdownRequested = false,
-    lastError = nil, strip8Trial = false
+    lastError = nil, strip8Enabled = true
   }
 
   function self:isRunning()
@@ -39,18 +39,20 @@ return function(host, bridge, options)
     return self.enabled
   end
 
-  function self:isStrip8Trial()
-    return self.strip8Trial
+  function self:isStrip8Enabled()
+    return self.strip8Enabled
   end
 
-  -- Session-local, not saved. Existing MCU strip8 option is opt-in.
-  function self:toggleStrip8Trial()
+  -- Default: all 8 MCU faders active. The current bank can contain Bus1
+  -- in a smaller project, so users can turn strip8 off from NK JOG.
+  -- No additional MIDI gate or protocol, no persistent setting.
+  function self:toggleStrip8()
     if self.shutdownRequested or not self.enabled then return false end
-    self.strip8Trial = not self.strip8Trial
-    host.printf("[NK SCENE2] eighth MCU strip trial=%s (may be Bus1)",
-                tostring(self.strip8Trial))
+    self.strip8Enabled = not self.strip8Enabled
+    host.printf("[NK SCENE2] eighth MCU strip=%s (current Resolve bank)",
+                tostring(self.strip8Enabled))
     if self:isRunning() then
-      self:stop()  -- recycle workers to get a fresh MCU pickup
+      self:stop()  -- same workers restart and rearm physical pickup
     elseif self.task == nil then
       self.retryAt = 0
       self:ensureRunning()
@@ -67,7 +69,6 @@ return function(host, bridge, options)
 
   function self:pause()
     self.enabled = false
-    self.strip8Trial = false  -- paused sessions do not silently rearm strip8
     if host.settings then host.settings.set(key, false) end
     self:stop()
     if bridge.active then bridge:stop() end
@@ -113,8 +114,8 @@ return function(host, bridge, options)
       runner, "--auto-run", "--mcu-python", mcuPython,
       "--resolve-python", python
     }
-    if self.strip8Trial then
-      args[#args + 1] = "--enable-strip8-trial"
+    if not self.strip8Enabled then
+      args[#args + 1] = "--disable-strip8"
     end
     local function append(out, errText)
       if self.log then
@@ -148,10 +149,7 @@ return function(host, bridge, options)
   function self:ensureRunning()
     if self.shutdownRequested or not self.enabled then return false end
     if self:isRunning() then
-      if not appRunning() then
-        self.strip8Trial = false
-        self:stop()
-      end
+      if not appRunning() then self:stop() end
       return true
     end
     if self.task ~= nil or self.stopping or clock() < self.retryAt then
@@ -175,7 +173,6 @@ return function(host, bridge, options)
 
   function self:shutdown()
     self.shutdownRequested = true
-    self.strip8Trial = false
     if self.timer then self.timer:stop(); self.timer = nil end
     self:stop()
     if bridge.active then bridge:stop() end

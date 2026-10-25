@@ -830,12 +830,12 @@ menu:setMenu(function()
       fn=function() if scene2Session then scene2Session:toggle() end end,
       disabled=not scene2Session},
     {title=scene2Session and
-      ("Scene 2: 8. MCU STRIP PROBA " ..
-        (scene2Session:isStrip8Trial() and "BE (BUS1 IS LEHET!)" or
+      ("Scene 2: 8. CSATORNA " ..
+        (scene2Session:isStrip8Enabled() and "BE (katt: KI)" or
           "KI (katt: BE)")) or
-      "Scene 2: 8. MCU strip nem elerheto",
+      "Scene 2: 8. csatorna nem elerheto",
       fn=function()
-        if scene2Session then scene2Session:toggleStrip8Trial() end
+        if scene2Session then scene2Session:toggleStrip8() end
       end,
       disabled=not scene2Session or not scene2Session:isEnabled()},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",

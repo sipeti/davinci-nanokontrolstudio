@@ -107,34 +107,35 @@ assert(not paused:isEnabled())
 assert(not paused:ensureRunning())
 paused:shutdown()
 
--- Eighth MCU strip is OFF by default, can be toggled only in the active
--- session, restarts the SAME workers, and is never silently persisted.
+-- A8 was physically verified in Resolve (Bus1 unchanged).
+-- Default 1..8 uses exactly the existing MCU worker and command.
+-- A local off-switch lets users avoid Bus1 in a shorter mixer bank.
 ready=true
 runningApp=true
-local trial=make({timer=false})
-assert(trial:isEnabled() and not trial:isStrip8Trial())
-assert(trial:start())
-assert(not table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
-assert(trial:toggleStrip8Trial() and trial:isStrip8Trial())
-assert(not currentTask:isRunning())
+local strip8=make({timer=false})
+assert(strip8:isEnabled() and strip8:isStrip8Enabled())
+assert(strip8:start())
+assert(not table.concat(lastArgs," "):find("--disable-strip8",1,true))
+assert(strip8:toggleStrip8() and not strip8:isStrip8Enabled())
+assert(not currentTask:isRunning(), "toggle stops the running worker")
 currentTask.done(130, "", "")
 now=now+2
-assert(trial:ensureRunning())
-assert(table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
-assert(trial:toggleStrip8Trial() and not trial:isStrip8Trial())
+assert(strip8:ensureRunning())
+assert(table.concat(lastArgs," "):find("--disable-strip8",1,true))
+assert(strip8:pause() and not strip8:isStrip8Enabled(),
+  "pause must preserve user's explicit strip8 choice")
+currentTask.done(130, "", "")
+assert(not strip8:toggleStrip8(), "no strip8 change while paused")
+assert(strip8:resume(), "resume starts the same selected bank mode")
+assert(table.concat(lastArgs," "):find("--disable-strip8",1,true))
+assert(strip8:toggleStrip8() and strip8:isStrip8Enabled())
 currentTask.done(130, "", "")
 now=now+2
-assert(trial:ensureRunning())
-assert(not table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
-assert(trial:toggleStrip8Trial() and trial:isStrip8Trial())
-assert(trial:pause() and not trial:isStrip8Trial(),
-  "pausing must clear the eighth-strip trial")
-currentTask.done(130, "", "")
-assert(not trial:toggleStrip8Trial(),
-  "trial cannot be enabled while Scene 2 is paused")
-trial:shutdown()
+assert(strip8:ensureRunning())
+assert(not table.concat(lastArgs," "):find("--disable-strip8",1,true))
+strip8:shutdown()
 local fresh=make({timer=false})
-assert(not fresh:isStrip8Trial(),
-  "eighth strip must be OFF after a fresh manager/reload")
+assert(fresh:isStrip8Enabled(),
+  "eight channels default ON after a new manager instance")
 fresh:shutdown()
 print("SCENE2_AUTO_SESSION_TEST=PASS")

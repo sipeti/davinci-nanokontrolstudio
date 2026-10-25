@@ -10,11 +10,11 @@ Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep i
 
 ## Scene 2: Fairlight mixer
 
-**Sliders/faders 1–7** adjust the respective Fairlight mixer strips using 14-bit MCU pitch messages over IAC. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12** for physical sliders 1–8; the software correctly translates the gaps (CC8 = strip 6, CC9 = strip 7). Each slider uses **soft pickup**: it must cross the host's currently reported position before taking control. Slider 8 (CC12) is **locked by default** because the CURRENT eighth MCU strip may address **Bus 1**, rather than A8.
+**Sliders/faders 1–8** control the current Fairlight MCU bank through 14-bit pitch messages over IAC. In the hardware-accepted eight-audio-track project, they control **A1–A8**; the eighth slider (CC12) moved A8 while Bus1 remained unchanged. The original soft pickup is unchanged. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12**; the software maps the gaps (CC8 = slider 6, CC9 = slider 7).
 
-**Testing A8:** In a disposable Resolve project with eight audio tracks A1–A8, use **NK JOG → Scene 2: 8. MCU STRIP PROBA KI (katt: BE)**. This enables the existing MCU strip8 option for the current Hammerspoon session and restarts the workers; no new MIDI protocol is involved. Slowly cross the eighth slider's current host position, then move it slightly while watching **both A8 and Bus 1** in Fairlight. If Bus 1 changes instead of A8, immediately switch the trial back OFF. The same option also unlocks MUTE8/SOLO8, so do not press those until the track mapping is confirmed. Pausing Scene 2 or reloading Hammerspoon disables the trial; it does not persist across launches. No Korg hardware rewrite is needed.
+**Other projects:** MCU strip 8 represents the eighth control in the *current Resolve bank*, not a permanently pinned A8. With fewer than eight audio tracks it may instead represent **Bus1**. The NK JOG menu has **Scene 2: 8. CSATORNA BE (katt: KI)** to temporarily disable the eighth MCU strip, including MUTE8/SOLO8. The setting remains until changed or Hammerspoon is reloaded; eight channels are enabled by default. No Korg CC rewrite or controller relearn is needed.
 
-**MUTE/SOLO 1–7** send MCU notes (strip 8 is locked by default). LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
+**MUTE/SOLO 1–8** send MCU notes while the corresponding strips are enabled; strip 8 can be disabled from NK JOG. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
 
 ## Scene 2: per-clip gain
 
@@ -50,4 +50,4 @@ tail -n 60 "$HOME/Library/Logs/nk-scene2-session.log"
 
 Typical messages: PICKUP_PENDING (waiting for a real crossing), PICKUP=PASS (armed), AUDIO_WRITE_READBACK=PASS (actual clip setter verified), REARM (focus/scene/playhead changed) and BUS1_STRIP8_LOCKED (deliberate safety lock). The diagnostic command **sh ./doctor.command** does not send MIDI or alter projects.
 
-**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip is locked by default and its trial may target Bus 1; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport and the four REC/MARKER editing keys; their external LED output routes still need physical verification.
+**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip can target Bus1 in a different project/bank; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport and the four REC/MARKER editing keys; their external LED output routes still need physical verification.

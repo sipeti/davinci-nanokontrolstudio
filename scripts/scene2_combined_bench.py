@@ -25,9 +25,9 @@ def parser():
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--auto-run", action="store_true",
                    help="normal v1.5: no prompts, follow active Resolve project")
-    p.add_argument("--enable-strip8-trial", action="store_true",
-                   help="one-session experiment: unlock current 8th MCU strip "
-                        "(may be Bus1, not necessarily A8)")
+    p.add_argument("--disable-strip8", action="store_true",
+                   help="exclude the eighth MCU bank strip (may be Bus1 "
+                        "in projects with fewer than eight audio tracks)")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -60,8 +60,11 @@ def commands(args, scripts):
     if args.auto_run:
         # Existing proven MCU faders 1..7 and MUTE/SOLO remain unchanged.
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
-        if args.enable_strip8_trial:
-            # Reuse the MCU worker's existing opt-in, NO new MIDI protocol.
+        # Eight audio tracks are now physically verified. The eighth
+        # physical slider is CC12; the current MCU strip8 can be A8 or
+        # another channel (including Bus1) depending on the Resolve bank.
+        # Allow a simple user override, without touching the MCU protocol.
+        if not args.disable_strip8:
             mcu.append("--enable-strip8-bus1")
         clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
@@ -141,8 +144,8 @@ def supervise(specs):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
-    if args.enable_strip8_trial and not args.auto_run:
-        p.error("--enable-strip8-trial requires --auto-run")
+    if args.disable_strip8 and not args.auto_run:
+        p.error("--disable-strip8 requires --auto-run")
     if args.auto_run:
         if (args.write_test_copy or args.allow_named_project or
                 args.expected_project or args.confirmed_backup or
@@ -191,8 +194,8 @@ def main(argv=None):
            "AUTO_FOLLOW_PROJECT" if args.auto_run else
            "TEST_COPY_WRITE" if args.write_test_copy else
            "READ_ONLY",
-           "TRIAL (CURRENT MCU BANK)" if args.enable_strip8_trial
-           else "LOCKED"), flush=True)
+           "ENABLED (CURRENT MCU BANK)" if args.auto_run and
+           not args.disable_strip8 else "LOCKED"), flush=True)
     return supervise(commands(args, scripts))
 
 
