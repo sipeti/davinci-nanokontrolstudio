@@ -133,8 +133,60 @@ class LiveMixerTests(unittest.TestCase):
             ("note_on",{"channel":0,"note":104,"velocity":0}),
             ("note_off",{"channel":0,"note":16,"velocity":0}),
         ])
+        self.assertEqual(
+            self.b.host_state.host_faders[0],mcu.physical_to_mcu(60),
+            "A Korg Scene change does not erase actual Fairlight host state")
+        self.assertEqual(self.b.physical_event(1,2,64),"FADER_PICKUP_PENDING")
+
+    def test_project_open_snapshot_survives_focus_loss_h0_and_korg_scene_r(self):
+        # Regression for actual Resolve logs: all eight host pitchwheels
+        # arrived at project open, but later H=0/R called Bridge.rearm()
+        # and erased them. Never destroy genuine MIDI feedback on a
+        # physical-source rearm.
+        for strip in range(8):
+            self.fader_host(strip,60)
+        self.b.host(msg("note_on",channel=0,note=16,velocity=127))
+        self.b.rearm()  # Hammerspoon focus lost / Scene2 R
+        self.assertEqual(
+            self.b.host_state.host_faders,
+            [mcu.physical_to_mcu(60)]*8)
+        self.assertEqual(self.b.host_state.known_buttons[21],True)
+        self.assertEqual(self.b.engaged,[False]*8)
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.sent_faders,1)
+
+    def test_project_open_snapshot_does_not_expire_after_ten_seconds(self):
+        # MCU host initial state is not sent periodically. A recorded
+        # position is trustworthy while this *same connected session* runs.
+        self.fader_host(0,60)
+        self.now += 60.0
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.sent_faders,1)
+
+    def test_explicit_host_invalidation_requires_new_real_pitchwheel(self):
+        self.fader_host(0,60)
+        self.b.rearm(invalidate_host=True)
         self.assertEqual(self.b.host_state.host_faders,[None]*8)
-        self.assertEqual(self.b.physical_event(1,2,64),"FADER_WAIT_HOST")
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_WAIT_HOST")
+        self.assertEqual(self.b.sent_faders,0)
+        self.assertEqual(self.calls,[])
+        self.fader_host(0,60)
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
+
+    def test_crossing_host_position_does_not_authorize_large_gain_jump(self):
+        self.fader_host(0,60)
+        self.assertEqual(self.b.physical_event(1,2,45),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,75),"FADER_PICKUP_PASS")
+        # The physical crossing can arm pickup, but a big next movement
+        # cannot send a gain jump far from host position.
+        self.assertEqual(self.b.physical_event(1,2,76),"FADER_DESYNC_REARM")
+        self.assertEqual(self.b.sent_faders,0)
+        self.assertEqual(self.calls,[])
 
     def test_external_mixer_move_disarms_previous_pickup(self):
         self.fader_host(0,60)
