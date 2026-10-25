@@ -30,6 +30,8 @@ def parser():
     p.add_argument("--confirmed-backup", action="store_true")
     p.add_argument("--confirmed-no-automation", action="store_true")
     p.add_argument("--max-clip-writes", type=int, default=None)
+    p.add_argument("--low-latency", action="store_true",
+                   help="opt-in 20ms clip poll and no extra per-write wait")
     p.add_argument("--mcu-python", default="/tmp/nk-mcu-venv/bin/python3")
     p.add_argument("--resolve-python", default="/opt/homebrew/bin/python3")
     return p
@@ -44,6 +46,8 @@ def commands(args, scripts):
         mcu.append("--continuous")
     clip = [args.resolve_python, str(scripts / "scene2_continuous_clip_gain.py"),
             "--seconds", str(args.seconds)]
+    if args.low_latency:
+        clip.append("--low-latency")
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
         clip += ["--write-test-copy", "--expected-project", args.expected_project,

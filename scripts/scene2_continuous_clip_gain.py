@@ -21,6 +21,8 @@ from scene2_clip_gain_8rotary import (
 EVENT_PATH = pathlib.Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
 LIVE_LOCK = pathlib.Path.home() / "Library/Caches/nk-scene2-clip-live.lock"
 POLL_SECONDS = 0.20
+FAST_POLL_SECONDS = 0.02
+FAST_IDLE_SLEEP_SECONDS = 0.005
 HEARTBEAT_TIMEOUT = 2.5
 STARTUP_TIMEOUT = 5.0
 MAX_INPUT_AGE_MS = 1200
@@ -62,7 +64,7 @@ class ContinuousController(Controller):
     def __init__(self, app, *, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False,
                  max_writes=256, now=time.monotonic,
-                 stability_wait=time.sleep):
+                 stability_wait=time.sleep, low_latency=False):
         super().__init__(
             app, write=write, expected_project=expected_project,
             confirmation=confirmation,
@@ -72,23 +74,25 @@ class ContinuousController(Controller):
         )
         self.pause_reason = None
         self.stability_wait = stability_wait
+        self.low_latency = bool(low_latency)
 
     def _write(self, track, before, identity, requested):
-        # Require the playhead, clip identity and dB to remain unchanged
-        # across a real 120ms observation interval, not only two API calls
-        # made back-to-back while Resolve might be playing/scrubbing.
-        self.stability_wait(0.12)
-        try:
-            fresh, fresh_identity, fresh_session = snapshot(self.app, track)
-        except api.ProbeBlocked:
-            return self._halt("playhead/clip unavailable in stability window")
-        if (fresh["key"] != before["key"] or
-                fresh_identity != identity or
-                fresh_session != self.session):
-            self.engine.reject(track)
-            return self._halt("playhead/clip/gain moved during stability window")
-        # Inherited setter separately snapshots and verifies again, and
-        # attempts rollback on errors; never bypass its original safety.
+        # Normal mode retains the 120ms independent stationary-playhead
+        # observation. Explicit low-latency test mode omits that timer and
+        # extra full snapshot, but NEVER bypasses the inherited setter-bound
+        # fresh snapshot, project/clip/frame validation or post-setter readback.
+        # Fast mode is restricted by the existing test-copy consent gate.
+        if not self.low_latency:
+            self.stability_wait(0.12)
+            try:
+                fresh, fresh_identity, fresh_session = snapshot(self.app, track)
+            except api.ProbeBlocked:
+                return self._halt("playhead/clip unavailable in stability window")
+            if (fresh["key"] != before["key"] or
+                    fresh_identity != identity or
+                    fresh_session != self.session):
+                self.engine.reject(track)
+                return self._halt("playhead/clip/gain moved during stability window")
         return super()._write(track, before, identity, requested)
 
     def rearm(self, reason):
@@ -112,24 +116,24 @@ class ContinuousController(Controller):
         if (self.last_event is not None and
                 now - self.last_event > IDLE_REARM_SECONDS):
             self.rearm("inactive for 20 seconds")
-        if self.session is not None:
-            # Read context *before* delegating to the original setter gate.
-            # That gate obtains an independent fresh snapshot and checks
-            # everything again at the exact setter call.
-            try:
-                fresh, _, session = snapshot(self.app, cc - 12)
-            except api.ProbeBlocked:
-                self.engine.reject(cc - 12)
-                return super().handle(channel, cc, value)
-            if self.write and fresh["project"] != self.expected_project:
-                return self._halt("project is not exact approved test copy")
-            if session != self.session:
-                self.rearm("project/timeline/playhead changed")
-        # Parent's short 2s *research* rearm is too aggressive for actual
-        # editing; we have already implemented a separate 20s safe timeout.
+        # Reuse this authoritative snapshot in the parent's feed: the old
+        # version queried the SAME full project/track/clip twice per CC.
+        # A fresh, separate snapshot still runs IMMEDIATELY before each
+        # actual setter and again after it, inside the inherited _write().
+        try:
+            current = snapshot(self.app, cc - 12)
+        except api.ProbeBlocked:
+            self.engine.reject(cc - 12)
+            return super().handle(channel, cc, value)
+        fresh, _, session = current
+        if self.write and fresh["project"] != self.expected_project:
+            return self._halt("project is not exact approved test copy")
+        if self.session is not None and session != self.session:
+            self.rearm("project/timeline/playhead changed")
+        # Parent's 2s research idle reset is superseded by our 20s timer.
         self.last_event = self.now()
         self.pause_reason = None
-        return super().handle(channel, cc, value)
+        return super().handle(channel, cc, value, preloaded=current)
 
 
 def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
@@ -147,11 +151,15 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
         ready = False
         pending = MidiPoll()
         next_poll = started
+        poll_seconds = FAST_POLL_SECONDS if controller.low_latency else POLL_SECONDS
+        idle_sleep = FAST_IDLE_SLEEP_SECONDS if controller.low_latency else 0.04
         end_at = started + seconds if seconds else None
         print("SCENE2_CONTINUOUS=START; mode=%s; CC13..20=A1..A8; "
-              "max_writes=%d; stopped_playhead_required=True" %
+              "max_writes=%d; poll_ms=%d; low_latency=%s; "
+              "stopped_playhead_required=True" %
               ("TEST_COPY_WRITE" if controller.write else "READ_ONLY",
-               controller.max_writes if controller.write else 0), flush=True)
+               controller.max_writes if controller.write else 0,
+               int(poll_seconds * 1000), controller.low_latency), flush=True)
         try:
             while end_at is None or clock() < end_at:
                 try:
@@ -209,7 +217,7 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                           "STOP ALL WRITES", flush=True)
                     return 1
                 if clock() >= next_poll:
-                    next_poll = clock() + POLL_SECONDS
+                    next_poll = clock() + poll_seconds
                     if ready and (pending.events or pending.foreign is not None):
                         if process_poll(controller, pending) == "HALTED":
                             print("SCENE2_CONTINUOUS=STOPPED; VERIFIED_WRITES=%d" %
@@ -220,7 +228,7 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                         pending = MidiPoll()
                     elif not ready:
                         pending = MidiPoll()
-                sleep(0.04)
+                sleep(idle_sleep)
         except KeyboardInterrupt:
             print("SCENE2_CONTINUOUS=STOPPED; Ctrl+C; VERIFIED_WRITES=%d" %
                   controller.writes, flush=True)
@@ -236,6 +244,9 @@ def main():
     parser.add_argument("--seconds", type=int, default=0,
                         help="0 = until Ctrl+C; otherwise 5..3600")
     parser.add_argument("--write-test-copy", action="store_true")
+    parser.add_argument("--low-latency", action="store_true",
+                        help="test mode: 20ms event polling; skip the 120ms "
+                             "extra wait but keep setter-bound snapshots")
     parser.add_argument("--expected-project")
     parser.add_argument("--confirmed-no-automation", action="store_true")
     parser.add_argument("--consent")
@@ -269,6 +280,7 @@ def main():
             confirmation=args.consent,
             automation_confirmed=args.confirmed_no_automation,
             max_writes=args.max_writes,
+            low_latency=args.low_latency,
         )
     except ValueError as exc:
         print("SCENE2_CONTINUOUS=BLOCKED; %s; WRITES=0" % exc)

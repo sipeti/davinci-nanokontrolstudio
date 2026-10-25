@@ -42,6 +42,13 @@ class CombinedTest(unittest.TestCase):
         self.assertIn("--unlimited-writes", specs[1][1])
         self.assertNotIn("--max-writes", specs[1][1])
 
+    def test_low_latency_is_forwarded_only_to_clip_worker(self):
+        a = bench.parser().parse_args(["--seconds", "60", "--low-latency"])
+        specs = bench.commands(a, Path("/test/scripts"))
+        self.assertIn("--low-latency", specs[1][1])
+        self.assertNotIn("--low-latency", specs[0][1])
+        self.assertNotIn("--enable-output", specs[0][1])
+
     def test_missing_write_confirmation_is_rejected_before_start(self):
         with self.assertRaises(SystemExit) as exc:
             bench.main(["--write-test-copy", "--expected-project", "testing"])

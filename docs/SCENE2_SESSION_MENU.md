@@ -19,6 +19,29 @@ The new gain curve uses all 128 physical rotary positions:
 - This changes pickup positions from the previous experimental curve:
   a new physical pickup is required on first use.
 
+## Low-latency rotary test (opt-in)
+
+The default worker retains its conservative 200ms poll and 120ms
+pre-setter stability pause. The optional `--low-latency` mode uses 20ms
+polling, skips that extra pause and reuses the first full snapshot per CC.
+Its setter STILL takes a fresh snapshot of the exact project, playhead,
+target clip and gain BEFORE writing, and another after for readback.
+Already-engaged rotaries send only the latest CC in each batch to avoid
+old queued writes. The MCU mixer path, Scene1, host LEDs and gain curve
+are unchanged.
+
+The low-latency optimization has NOT been physically accepted: continue
+to use only a backed-up disposable test copy with no clip automation.
+Stopped playback is required. Because the 120ms playback-motion gate is
+bypassed, never use this mode while playback/scrubbing is active.
+
+```sh
+/opt/homebrew/bin/python3 /tmp/nk-scene2-combined/scripts/scene2_combined_bench.py \
+  --run-until-stopped --low-latency --write-test-copy \
+  --expected-project "hajoagyu_261022 testing" \
+  --confirmed-backup --confirmed-no-automation --max-clip-writes 0
+```
+
 ## Continuous session
 
 Normal bench: `--seconds 90`, 1200 MCU messages and 12 clip writes

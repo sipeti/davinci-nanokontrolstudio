@@ -5,6 +5,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from test_scene2_clip_gain_8rotary import Timeline8
 from test_audio_roundtrip_probe import Project, Resolve
 import scene2_continuous_clip_gain as worker
+import scene2_clip_gain_8rotary as driver
 from scene2_clip_gain_8rotary import CONSENT
 
 
@@ -71,6 +73,39 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 16, 107), "SIMULATED")
         self.assertFalse(self.timeline.track_items[4].calls)
+
+    def test_low_latency_writes_without_timer_and_still_checks_result(self):
+        def forbidden_delay(_seconds):
+            raise AssertionError("low-latency should not sleep 120ms")
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=0,
+            expected_project="Audio QA backup",
+            confirmation=CONSENT, automation_confirmed=True,
+            now=lambda: self.now, stability_wait=forbidden_delay,
+            low_latency=True)
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
+        self.assertEqual(c.writes, 1)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.727)
+
+    def test_low_latency_blocks_project_playhead_change_at_setter_gate(self):
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=0,
+            expected_project="Audio QA backup",
+            confirmation=CONSENT, automation_confirmed=True,
+            now=lambda: self.now, low_latency=True)
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
+        original = driver.snapshot
+        def move_just_before_setter(app, track):
+            self.timeline.tc = "01:00:05:01"
+            return original(app, track)
+        with mock.patch.object(driver, "snapshot", side_effect=move_just_before_setter):
+            result = self.feed(c, 1, 16, 107)
+        self.assertEqual(result, "HALTED")
+        self.assertEqual(c.writes, 0)
+        self.assertEqual(self.timeline.track_items[4].calls, [])
 
     def test_unlimited_test_copy_writes_repeatedly(self):
         c = self.controller(write=True, max_writes=0)

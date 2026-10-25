@@ -134,7 +134,7 @@ class Controller:
                       (track, original), flush=True)
             return self._halt("setter or readback failure")
 
-    def handle(self, channel, cc, value):
+    def handle(self, channel, cc, value, *, preloaded=None):
         if self.halted:
             return "HALTED"
         if channel != 1:
@@ -158,7 +158,9 @@ class Controller:
             print("MIDI_IDLE=REARM; no stale pickup retained", flush=True)
         self.last_event = now
         try:
-            before, identity, session = snapshot(self.app, track)
+            before, identity, session = (
+                preloaded if preloaded is not None
+                else snapshot(self.app, track))
         except api.ProbeBlocked as exc:
             self.engine.reject(track)
             label = (track, str(exc))
@@ -245,12 +247,15 @@ class MidiPoll:
             else:
                 samples[-1] = event
 
-    def take(self):
+    def take(self, *, engaged_ccs=()):
         foreign, count = self.foreign, self.rotary_count
-        # Do not apply ANY CC from a poll which also contained a
-        # conflicting scene's MIDI, even if CC13..20 was present.
+        # Retain first+last for soft pickup, but once a knob is ENGAGED
+        # only its LAST actual physical CC is relevant. Old intermediate
+        # values would cause redundant slow Resolve setters and lag.
+        # A conflicting scene still discards the entire batch.
         events = [] if foreign is not None else [
-            event for pair in self.events.values() for event in pair
+            event for cc, pair in self.events.items()
+            for event in (pair[-1:] if cc in engaged_ccs else pair)
         ]
         self.__init__()
         return foreign, count, events
@@ -277,7 +282,11 @@ def process_poll(controller, pending):
                   "READ_ONLY; WRITES=0; slow down near pickup" %
                   (pending.raw_rotary_count, pending.rotary_count), flush=True)
             controller.high_rate_reported = True
-    foreign, _, events = pending.take()
+    engaged_ccs = {
+        cc for cc in pending.events
+        if controller.engine.state(cc - 12) == "ENGAGED"
+    }
+    foreign, _, events = pending.take(engaged_ccs=engaged_ccs)
     if foreign is not None:
         if controller.handle(*foreign) == "HALTED":
             return "HALTED"

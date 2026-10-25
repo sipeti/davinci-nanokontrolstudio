@@ -176,6 +176,20 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(self.feed(c, *foreign), "HALTED")
         self.assertFalse(self.timeline.track_items[4].calls)
 
+    def test_engaged_fast_batch_writes_latest_cc_only(self):
+        c = self.controller(write=True, max_writes=8)
+        self.pickup_a4(c)
+        p = driver.MidiPoll()
+        p.add("1,16,107")
+        p.add("1,16,104")
+        with contextlib.redirect_stdout(self.output):
+            result = driver.process_poll(c, p)
+        self.assertEqual(result, "CONTINUE")
+        self.assertEqual(c.writes, 1)
+        self.assertEqual(len(self.timeline.track_items[4].calls), 1)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume,
+                               gain_for_cc(104))
+
     def test_midi_poll_preserves_first_and_last_rotary_value(self):
         p = driver.MidiPoll()
         for value in [80,85,91,97,98]:
