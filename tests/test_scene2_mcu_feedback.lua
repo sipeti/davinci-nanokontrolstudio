@@ -133,6 +133,22 @@ assert(latest(37)==true, "eighth solo uses skipped CC32 pattern")
 now=now+3
 timers[1].fn()
 assert(latest(37)==false, "stale/absent host feedback cannot latch LEDs forever")
+
+-- Regression: after >150 compact CSV rows in the 4KB bounded tail,
+-- a second line count cap incorrectly skipped the NEWEST H + L records.
+-- This happens naturally in a multi-minute 2Hz LED heartbeat session.
+bridge:publish("controlChange",
+  {channel=1,controllerNumber=21,controllerValue=127})
+local oldHeartbeat = ("%d,H,0,1\n"):format(t()-4000)
+feedback = string.rep(oldHeartbeat, 210) ..
+  ("%d,H,0,1\n%d,L,21,127\n"):format(t(),t())
+assert(#feedback > 4096, "regression requires tail truncation")
+now=now+.5
+timers[1].fn()
+assert(bridge.lastFeedbackHeartbeat == t()-500,
+  "the newest heartbeat must be parsed even beyond 150 tail records")
+assert(latest(21)==true,
+  "a late live MUTE LED update must survive >150 tail records")
 bridge:stop()
 assert(timers[1].stopped)
 io.open=ioOld
