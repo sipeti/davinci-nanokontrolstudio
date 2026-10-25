@@ -125,7 +125,8 @@ def main(argv=None):
     elif not 5 <= args.seconds <= 180:
         p.error("--seconds must be 5..180 (bounded MCU bench)")
     if args.max_clip_writes is None:
-        args.max_clip_writes = 0 if args.run_until_stopped else 12
+        args.max_clip_writes = (0 if args.run_until_stopped and
+                               args.write_test_copy else 12)
     if not (1 <= args.max_clip_writes <= 256 or
             args.max_clip_writes == 0 and args.run_until_stopped
             and args.write_test_copy):

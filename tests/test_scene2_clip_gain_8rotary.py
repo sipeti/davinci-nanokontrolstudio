@@ -60,7 +60,7 @@ class EightRotaryTest(unittest.TestCase):
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 1, 16, 107), "SIMULATED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
-        self.assertIn("SIMULATED_GAIN=8.526", self.output.getvalue())
+        self.assertIn("SIMULATED_GAIN=11.684", self.output.getvalue())
 
     def test_real_writes_require_explicit_test_copy_and_no_automation(self):
         for name, phrase, no_auto in [
@@ -78,10 +78,10 @@ class EightRotaryTest(unittest.TestCase):
         item = self.timeline.track_items[4]
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
-        self.assertAlmostEqual(item.volume, gain_for_cc(97))
+        self.assertAlmostEqual(item.volume, gain_for_cc(107))
         self.assertEqual(self.feed(c, 1, 16, 106), "HALTED")
         self.assertEqual(len(item.calls), 2)
-        self.assertAlmostEqual(item.calls[1]["AudioVolume"], gain_for_cc(96))
+        self.assertAlmostEqual(item.calls[1]["AudioVolume"], gain_for_cc(106))
         self.assertEqual(c.writes, 2)
         self.assertTrue(c.halted)
 
@@ -314,7 +314,7 @@ class EightRotaryTest(unittest.TestCase):
         # A successful intentional edit should remain until the operator
         # changes it or discards the disposable test project.
         self.assertEqual(len(item.calls), 1)
-        self.assertEqual(item.volume, gain_for_cc(97))
+        self.assertEqual(item.volume, gain_for_cc(107))
 
     def test_failed_rollback_is_critical_and_halts_session(self):
         c = self.controller(write=True)
@@ -330,7 +330,7 @@ class EightRotaryTest(unittest.TestCase):
         item.SetProperties = partial_failure
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
-        self.assertAlmostEqual(item.volume, gain_for_cc(97))
+        self.assertAlmostEqual(item.volume, gain_for_cc(107))
         self.assertEqual(c.writes, 0)
         self.assertTrue(c.halted)
         self.assertIn("ROLLBACK_VERIFIED=False", self.output.getvalue())

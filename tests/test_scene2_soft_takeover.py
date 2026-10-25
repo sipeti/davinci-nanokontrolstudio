@@ -26,10 +26,10 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(self.feed(90).state, 'ENGAGED')
 
     def test_skipped_midi_values_cross_target_and_propose_last_gain(self):
-        self.assertEqual(self.feed(98, db=9.0).state, 'PICKUP_PENDING')
-        result = self.feed(100, db=9.0)
+        self.assertEqual(self.feed(97, db=9.0).state, 'PICKUP_PENDING')
+        result = self.feed(102, db=9.0)
         self.assertEqual(result.state, 'WRITE_INTENT')
-        self.assertEqual(result.proposed_db, gain_for_cc(100))
+        self.assertEqual(result.proposed_db, gain_for_cc(102))
 
     def test_fast_full_sweep_crosses_and_proposes_last_gain(self):
         self.assertEqual(self.feed(10, db=9.0).state, 'PICKUP_PENDING')

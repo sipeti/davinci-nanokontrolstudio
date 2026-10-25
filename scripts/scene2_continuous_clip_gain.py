@@ -8,6 +8,7 @@ Scene 2 bridge publishes timestamped local input events and 0.5 s heartbeats.
 This script never claims to change Fairlight MIXER track faders or mute/solo.
 """
 import argparse
+import fcntl
 import pathlib
 import sys
 import time
@@ -18,6 +19,7 @@ from scene2_clip_gain_8rotary import (
 )
 
 EVENT_PATH = pathlib.Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
+LIVE_LOCK = pathlib.Path.home() / "Library/Caches/nk-scene2-clip-live.lock"
 POLL_SECONDS = 0.20
 HEARTBEAT_TIMEOUT = 2.5
 STARTUP_TIMEOUT = 5.0
@@ -271,7 +273,19 @@ def main():
     except ValueError as exc:
         print("SCENE2_CONTINUOUS=BLOCKED; %s; WRITES=0" % exc)
         return 1
-    return monitor(controller, seconds=args.seconds)
+    # One clip worker at a time, even if the combined menu and a terminal
+    # attempt to start separate sessions. MCU retains its own IAC lock.
+    try:
+        with LIVE_LOCK.open("w") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("SCENE2_CONTINUOUS=BLOCKED; another clip worker is running; WRITES=0")
+                return 1
+            return monitor(controller, seconds=args.seconds)
+    except OSError as exc:
+        print("SCENE2_CONTINUOUS=BLOCKED; clip lock unavailable: %s" % exc)
+        return 1
 
 
 if __name__ == "__main__":
