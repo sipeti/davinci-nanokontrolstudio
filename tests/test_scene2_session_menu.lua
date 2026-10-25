@@ -36,7 +36,7 @@ local host = {
   end},
 }
 local bridge={
-  active=false,
+  active=false, bankIndex=0, bankStatus=1,
   start=function(self)
     self.active=true; bridgeStarts=bridgeStarts+1; return true
   end,
@@ -134,6 +134,18 @@ now=now+2
 assert(strip8:ensureRunning())
 assert(not table.concat(lastArgs," "):find("--disable-strip8",1,true))
 strip8:shutdown()
+local bank=make({timer=false})
+assert(not bank:isBankPagesEnabled(), "banking is opt-in")
+assert(bank:toggleBankPages() and bank:isBankPagesEnabled())
+assert(bank:isStrip8Enabled(), "bank pages require eight enabled MCU strips")
+assert(table.concat(lastArgs," "):find("--enable-bank-pages",1,true))
+assert(not bank:toggleStrip8(), "cannot disable strip8 during bank preview")
+bridge.bankIndex=1
+assert(not bank:toggleBankPages(),
+  "bank2 cannot silently be mistaken for bank1 on restart")
+bridge.bankIndex=0
+assert(bank:toggleBankPages() and not bank:isBankPagesEnabled())
+bank:shutdown()
 local fresh=make({timer=false})
 assert(fresh:isStrip8Enabled(),
   "eight channels default ON after a new manager instance")

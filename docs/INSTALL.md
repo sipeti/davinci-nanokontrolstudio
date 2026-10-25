@@ -13,6 +13,13 @@ Scene 1's 28-step learned binding remains in Hammerspoon hs.settings. First-time
 
 ## 2. Korg Scene 2 configuration
 
+**Optional bank-paging Draft only:** SELECT7/8 already use CC52/53 in the
+factory layout. No Korg hardware rewrite is needed. NK JOG → Beallitasok
+→ Bank lapozas enables the two-bank preview for A1–A8 / A9–A16.
+Use only with 16 real audio tracks; return to the first bank before
+changing projects or stopping the preview. Normal v1.5 does not
+enable this mode.
+
 Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tested mapping is:
 
 | Physical controls | MIDI CC |

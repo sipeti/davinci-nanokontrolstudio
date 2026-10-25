@@ -438,6 +438,16 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertEqual(self.leds, [])
     
+    def test_bank_event_requires_exact_scene2_select7_or_select8(self):
+        now_ms = 1800000000000
+        self.assertEqual(
+            mcu.parse_event("%d,B,1,53,127" % now_ms, now_ms),
+            ("B", 1, 53, 127))
+        for line in ("%d,B,0,53,127" % now_ms,
+                     "%d,B,1,52,17" % now_ms,
+                     "%d,B,1,51,127" % now_ms):
+            self.assertIsNone(mcu.parse_event(line, now_ms))
+
     def test_event_parsing_never_replays_stale_or_foreign_data(self):
         now=1800000000000
         self.assertEqual(mcu.parse_event("%d,M,1,21,127"%(now-100),now),

@@ -235,6 +235,19 @@ if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
     return false
   end)
 end
+if scene2Bridge and type(scene2Bridge.setBankListener) == "function" then
+  scene2Bridge:setBankListener(function(bank, status)
+    if not scene2Session or not scene2Session:isBankPagesEnabled() then return end
+    local label = bank == 0 and "A1-A8" or "A9-A16"
+    if status == 1 then
+      toast("NK Fairlight bank: "..label, 1.6)
+    elseif status == 0 then
+      toast("NK bank valtas: "..label.." (Resolve visszajelzesre var)", 1.8)
+    else
+      toast("NK bank: nincs visszajelzes - federek zarolva", 3.0)
+    end
+  end)
+end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
@@ -276,7 +289,9 @@ local function inputLED(command, meta, signal, value)
   local cc, channel = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
   if scene2Bridge and scene2Bridge.active and channel == 1
-    and ((cc >= 21 and cc <= 31) or (cc >= 33 and cc <= 37)) then
+    and (((cc >= 21 and cc <= 31) or (cc >= 33 and cc <= 37))
+      or (scene2Session and scene2Session:isBankPagesEnabled()
+          and (cc == 52 or cc == 53))) then
     return -- Scene2 mixer LEDs always use Fairlight's response, not input echo
   end
   if value ~= 0 and value ~= 127 then return end
@@ -803,6 +818,14 @@ local function attach()
 end
 
 menu:setMenu(function()
+  local bankLabel = "A1-A8"
+  if scene2Bridge and scene2Session and
+    scene2Session:isBankPagesEnabled() then
+    bankLabel = scene2Bridge.bankIndex == 1 and "A9-A16" or "A1-A8"
+    if scene2Bridge.bankStatus ~= 1 then
+      bankLabel = bankLabel.." (SZINKRON...)"
+    end
+  end
   -- Daily menu is deliberately small. Calibration and raw MIDI state are
   -- still accessible, but they must not crowd the working mixer controls.
   local diagnostics = {
@@ -833,6 +856,14 @@ menu:setMenu(function()
   }
   local settings = {
     {title=scene2Session and
+      ("Bank lapozas (SELECT 7/8): " ..
+        (scene2Session:isBankPagesEnabled() and "BE (katt: KI)" or
+          "KI (katt: BE)")) or "Bank lapozas nem elerheto",
+      fn=function()
+        if scene2Session then scene2Session:toggleBankPages() end
+      end,
+      disabled=not scene2Session or not scene2Session:isEnabled()},
+    {title=scene2Session and
       ("8. MCU csatorna: " ..
         (scene2Session:isStrip8Enabled() and "BE (katt: KI)" or
           "KI (katt: BE)")) or
@@ -840,7 +871,8 @@ menu:setMenu(function()
       fn=function()
         if scene2Session then scene2Session:toggleStrip8() end
       end,
-      disabled=not scene2Session or not scene2Session:isEnabled()},
+      disabled=not scene2Session or not scene2Session:isEnabled()
+        or scene2Session:isBankPagesEnabled()},
     {title="LED visszajelzes BE/KI (KI minden LED-et torol)",
       fn=toggleLEDFeedback, disabled=not cfg or not device},
     {title=enabled and "Vezerles SZUNETELTETESE" or
@@ -859,7 +891,8 @@ menu:setMenu(function()
       disabled=true},
     {title=scene2Session and
       (scene2Session:isEnabled() and
-        (scene2Session:isRunning() and "Scene 2: FUT (katt: SZUNET)" or
+        (scene2Session:isRunning() and
+          ("Scene 2: FUT | "..bankLabel.." (katt: SZUNET)") or
           "Scene 2: AUTOMATIKUS (katt: SZUNET)") or
         "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
       "Scene 2: manager nincs telepitve",

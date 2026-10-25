@@ -181,6 +181,8 @@ assert(findMenuAction(daily,"TELJES UJRABETANITAS"),
   "Relearn must remain reachable, never deleted")
 assert(findMenuAction(daily,"LED visszajelzes BE/KI"),
   "LED off must remain reachable without changing its behavior")
+assert(findMenuAction(daily,"Bank lapozas"),
+  "Bank navigation toggle must be available in settings only")
 -- Old v1.2 settings deliberately not reused as a valid v1.3 configuration.
 local exists=false
 for _,item in ipairs(menus.items()) do

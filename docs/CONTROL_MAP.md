@@ -110,7 +110,15 @@ SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action
 | 7 | 19 — unassigned | 9 — unassigned |
 | 8 | 20 — unassigned | 12 — unassigned |
 
-This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2:** the factory physical slider CCs **2, 3, 4, 5, 6, 8, 9, 12** map to MCU mixer strips 1–8 respectively; the 8th MCU strip (physical CC12) was physically verified as A8 in the eight-audio-track project and is enabled by default. In other Resolve banks it may instead be Bus1, so the NK JOG menu allows disabling the eighth strip (including MUTE8/SOLO8). CC7 is unused, not slider 6. CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
+This table describes **Scene 1**, where only slider 1 is assigned. **Experimental Scene 2 bank buttons:** SELECT7 (physical CC52) requests
+MCU Bank Left (note 46), SELECT8 (physical CC53) requests MCU Bank Right
+(note 47). The two supported banks are A1–A8 and A9–A16. The NK JOG
+status and SELECT7/8 LEDs reflect the received MCU host-fader refresh,
+not merely the physical press. The clip-gain rotaries follow only an
+acknowledged bank. Requires an explicitly enabled preview; see
+[User guide](USER_GUIDE.md).
+
+**Scene 2:** the factory physical slider CCs **2, 3, 4, 5, 6, 8, 9, 12** map to MCU mixer strips 1–8 respectively; the 8th MCU strip (physical CC12) was physically verified as A8 in the eight-audio-track project and is enabled by default. In other Resolve banks it may instead be Bus1, so the NK JOG menu allows disabling the eighth strip (including MUTE8/SOLO8). CC7 is unused, not slider 6. CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
 
 ## Persistent LED feedback
 

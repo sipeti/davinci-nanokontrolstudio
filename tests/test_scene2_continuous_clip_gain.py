@@ -11,6 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 from test_scene2_clip_gain_8rotary import Timeline8
+from test_audio_roundtrip_probe import Item
 from test_audio_roundtrip_probe import Project, Resolve
 import scene2_continuous_clip_gain as worker
 import scene2_clip_gain_8rotary as driver
@@ -46,6 +47,19 @@ class FakeClock:
                 f.write(line)
 
 
+class Timeline16(Timeline8):
+    def __init__(self):
+        super().__init__()
+        for track in range(9, 17):
+            item = Item()
+            item.uid = "clip-A%d" % track
+            item.volume = -10.0
+            self.track_items[track] = item
+
+    def GetTrackCount(self, kind):
+        return 16 if kind == "audio" else 0
+
+
 class ContinuousTest(unittest.TestCase):
     def setUp(self):
         self.timeline = Timeline8()
@@ -66,6 +80,45 @@ class ContinuousTest(unittest.TestCase):
     def feed(self, controller, ch, cc, value):
         with contextlib.redirect_stdout(self.output):
             return controller.handle(ch, cc, value)
+
+    def test_bank2_rotary_retargets_A9_through_A16_only_after_ack(self):
+        timeline = Timeline16()
+        app = Resolve(Project(timeline))
+        c = worker.ContinuousController(
+            app, write=True, max_writes=0, low_latency=True,
+            follow_active_project=True, follow_mcu_bank=True,
+            now=lambda: self.now)
+        self.assertFalse(c.bank_ready)
+        self.assertEqual(c.handle(1, 16, 100), "BANK_WAIT_HOST")
+        self.assertFalse(any(item.calls for item in timeline.track_items.values()))
+        self.assertTrue(c.update_bank((0, 1)))
+        self.assertEqual(c.handle(1, 16, 100), "PICKUP_PENDING")
+        c.bank_request_target = 1
+        self.assertTrue(c.update_bank((0, 0)))
+        self.assertFalse(c.bank_ready)
+        self.assertEqual(c.handle(1, 16, 108), "BANK_WAIT_HOST")
+        self.assertFalse(c.update_bank((0, 1)), "old bank ACK ignored")
+        self.assertTrue(c.update_bank((1, 1)))
+        self.assertEqual(c.track_offset, 8)
+        self.assertEqual(c.handle(1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(c.handle(1, 16, 108), "PICKUP_PENDING")
+        self.assertEqual(c.handle(1, 16, 65), "ENGAGED")
+        with mock.patch.object(worker, "FEEDBACK", pathlib.Path("/no-bank-file")):
+            self.assertEqual(c.handle(1, 16, 66), "BLOCKED")
+        self.assertEqual(timeline.track_items[12].calls, [])
+        self.assertEqual(timeline.track_items[4].calls, [])
+        self.assertEqual(c.bank_index, 1)
+
+    def test_bank_feedback_parser_rejects_stale_wrong_and_partial_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / "feedback.csv"
+            now_ms = 1800000000000
+            p.write_text("%d,H,0,1\n%d,B,1,0\n%d,B,1,1\n" %
+                         (now_ms, now_ms, now_ms))
+            self.assertEqual(worker.read_bank_feedback(p, now_ms), (1, 1))
+            self.assertIsNone(worker.read_bank_feedback(p, now_ms + 2000))
+            p.write_text("%d,B,2,1\n" % now_ms)
+            self.assertIsNone(worker.read_bank_feedback(p, now_ms))
 
     def test_readonly_default_no_setters(self):
         c = self.controller()

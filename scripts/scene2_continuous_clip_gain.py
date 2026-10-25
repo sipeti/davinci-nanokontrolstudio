@@ -114,11 +114,18 @@ class ContinuousController(Controller):
         self.bank_index = 0
         self.track_offset = 0
         self.bank_ready = not self.follow_mcu_bank
+        self.bank_request_target = None
 
     def update_bank(self, state):
         """Disarm each rotary on every bank change or unknown host bank."""
         bank, status = state if state is not None else (self.bank_index, 2)
         ready = status == 1
+        # Never re-enable an old bank from a still-fresh MCU heartbeat
+        # while a new SELECT7/8 command has not been acknowledged.
+        if ready and self.bank_request_target is not None:
+            if bank != self.bank_request_target:
+                return False
+            self.bank_request_target = None
         if bank != self.bank_index or ready != self.bank_ready:
             self.rearm("MCU bank %d status %d" % (bank + 1, status))
             self.bank_index = bank
@@ -132,6 +139,12 @@ class ContinuousController(Controller):
         return False
 
     def _write(self, track, before, identity, requested):
+        if self.follow_mcu_bank:
+            state = read_bank_feedback(FEEDBACK, int(time.time() * 1000))
+            if state != (self.bank_index, 1) or not self.bank_ready:
+                self.rearm("bank changed immediately before setter")
+                self.bank_ready = False
+                return "BLOCKED"
         # Normal mode retains the 120ms independent stationary-playhead
         # observation. Explicit low-latency test mode omits that timer and
         # extra full snapshot, but NEVER bypasses the inherited setter-bound
@@ -285,9 +298,10 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                     elif event[0] == "B" and controller.follow_mcu_bank:
                         # Hard fence *before* the MCU's asynchronous host ACK.
                         saw_reset = True
+                        controller.bank_request_target = 0 if event[1] == 52 else 1
                         controller.update_bank((controller.bank_index, 0))
-                    elif event[0] == "C" and ready and not saw_reset
-                      and controller.bank_ready:
+                    elif (event[0] == "C" and ready and not saw_reset
+                          and controller.bank_ready):
                         _, ch, cc, value = event
                         pending.add("%d,%d,%d" % (ch, cc, value))
                 if saw_reset:

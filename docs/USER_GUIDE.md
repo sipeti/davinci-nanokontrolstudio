@@ -16,9 +16,39 @@ Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep i
 
 **MUTE/SOLO 1–8** send MCU notes while the corresponding strips are enabled; strip 8 can be disabled from NK JOG. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
 
+## Experimental Scene 2: 8-channel bank paging (separate Draft PR)
+
+The default v1.5 remains the proven **A1–A8** setup. On the bank-paging
+preview branch, use **NK JOG → Beallitasok → Bank lapozas (SELECT 7/8) → BE**.
+Test only in a backed-up project with at least **16 actual audio tracks**.
+No new Korg CCs or second MIDI listener are required:
+
+| Scene 2 button | Korg CC | MCU note | Requested bank |
+|---|---:|---:|---|
+| SELECT 7 | 52 | Bank Left 46 | A1–A8 |
+| SELECT 8 | 53 | Bank Right 47 | A9–A16 |
+
+On-screen feedback distinguishes **váltás / szinkron** from **aktív bank**.
+The NK JOG Scene 2 line names A1–A8 or A9–A16, and External LEDs on
+SELECT7/8 indicate the bank the MCU worker accepted (to be verified on
+physical hardware). The MCU worker acknowledges a bank change only after
+receiving **eight actual Resolve pitchwheel updates** for the new mixer
+bank; this is evidence of a bank refresh, **not** proof of individual track
+names. While waiting, all mixer writes and clip gain writes are blocked.
+When accepted, all eight physical faders require fresh soft pickup; the
+knobs' corresponding clip tracks change to A9–A16 with fresh pickup.
+
+This experimental version only supports **two banks**, not unbounded
+paging. Switch back to A1–A8 **before pausing, reloading Hammerspoon, or
+changing Resolve projects**. With fewer than 16 audio tracks, the second
+MCU bank can include Bus1; it is not yet hardware-accepted for production.
+If the host never returns eight new fader positions, both sets of writes
+stay blocked rather than guessing the destination. The switch is off by
+default and the original v1.5 single-bank mode remains available.
+
 ## Scene 2: per-clip gain
 
-**Knobs 1–8** adjust **AudioVolume on an individual audio clip** on tracks A1–A8 underneath the **stopped playhead**. They do not move the Fairlight mixer fader and do not adjust PAN.
+**Knobs 1–8** adjust **AudioVolume on an individual audio clip** on tracks A1–A8 (or A9–A16 in the experimental confirmed second MCU bank) underneath the **stopped playhead**. They do not move the Fairlight mixer fader and do not adjust PAN.
 
 | Absolute rotary position | Clip gain |
 | --- | ---: |
