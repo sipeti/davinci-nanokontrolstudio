@@ -127,14 +127,24 @@ if hs.configdir then
   end
 end
 
--- Optional one-click TEST session manager (never starts automatically).
--- Installed helper manages only Python subprocesses; no second MIDI listener.
+-- Scene 2 automatic session manager. Starts only when Resolve is ready.
+-- No second hardware MIDI listener is created.
 local scene2Session = nil
 if scene2Bridge and hs.configdir then
   local path = hs.configdir .. "/scene2_session_menu.lua"
   local ok, factory = pcall(dofile, path)
   if ok and type(factory) == "function" then
-    local built, instance = pcall(factory, hs, scene2Bridge)
+    local built, instance = pcall(factory, hs, scene2Bridge, {
+      ready=function()
+        return enabled and device ~= nil and cfg ~= nil
+          and not learning and resolveApp() ~= nil
+      end,
+      appRunning=function()
+        if not hs.application.get then return true end
+        return hs.application.get("DaVinci Resolve") ~= nil or
+          hs.application.get("Resolve") ~= nil
+      end,
+    })
     if built and type(instance) == "table" and
       type(instance.toggle) == "function" and
       type(instance.isRunning) == "function" then

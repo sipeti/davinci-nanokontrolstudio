@@ -15,8 +15,8 @@ return function(host, bridge, options)
   local mcuPython = options.mcuPython or (base .. "venv/bin/python3")
   local logPath = options.logPath or (home .. "/Library/Logs/nk-scene2-session.log")
   local key = "nk-scene2-autostart-enabled"
-  local enabled = (options.autoEnabled ~= nil and options.autoEnabled or
-                   (not host.settings or host.settings.get(key) ~= false))
+  local enabled = not host.settings or host.settings.get(key) ~= false
+  if options.autoEnabled ~= nil then enabled = options.autoEnabled end
   local ready = options.ready or function() return false end
   local appRunning = options.appRunning or function() return true end
   local clock = options.clock or function()
@@ -65,7 +65,7 @@ return function(host, bridge, options)
   end
 
   function self:start()
-    if self.shutdownRequested or not self.enabled or self:isRunning()
+    if self.shutdownRequested or not self.enabled or self.task ~= nil
       or self.stopping or not ready() then return false end
     local ok, reason = preflight()
     if not ok then
@@ -128,7 +128,9 @@ return function(host, bridge, options)
       if not appRunning() then self:stop() end
       return true
     end
-    if self.stopping or clock() < self.retryAt then return false end
+    if self.task ~= nil or self.stopping or clock() < self.retryAt then
+      return false
+    end
     return self:start()
   end
 
