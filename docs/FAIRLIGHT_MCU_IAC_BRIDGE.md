@@ -527,10 +527,13 @@ These guards could revoke ownership while the user continued a fast
 physical gesture. Replaying only the final delayed CC was not enough.
 
 **Simplified Draft-only fix** (no hardware install yet):
-- Keep a *single* initial soft pickup: a physically CHANGED sample
-  must be within `FADER_PICKUP_TOLERANCE` (~2 Korg positions) of the
-  actual Resolve host pitchwheel. Merely jumping from CC0 to CC127
-  ACROSS an unmatched host position does NOT acquire control.
+- Keep a *single* initial soft pickup: two consecutive CHANGED
+  physical samples either reach ~2 Korg positions from the actual
+  Resolve host pitchwheel OR straddle that real host position.
+  Example: Fairlight at 65, Korg 20 -> 80: pickup is proved,
+  and 80 is immediately sent as the physical requested position so
+  the mixer does not stop at 65 if no further CC arrives.
+  Without real host feedback or physical movement, no pickup/write.
 - After pickup, every changed 0..127 absolute Korg CC sends its
   matching MCU 14-bit pitchwheel IMMEDIATELY. No 30ms throttle,
   delayed tail, FADER_STEP_LIMIT rearm, extra gesture rearm, or
@@ -545,11 +548,32 @@ physical gesture. Replaying only the final delayed CC was not enough.
   shutdown; there is no queue now.
 
 New offline regression tests verify rapid full travel all the way
-to CC0/CC127, each physical CC forwarded without waiting for a
-timer, no output before host feedback / safe soft pickup, safe
-touch release, read-only fence and focus/scene resets. This has
-NOT YET been physically accepted. Keep the PR Draft. Do not
-merge to main or deploy a daemon until user-approved acceptance.
+to CC0/CC127, actual crossed pickup (forward 20 -> 80 and reverse
+110 -> 30 across host 65), immediate endpoint send, each physical
+CC forwarded without waiting for a timer, no output before genuine
+host feedback / safe soft pickup, touch release, read-only fence
+and focus/scene resets. This has NOT YET been physically accepted.
+
+**Rotary scope:** Scene 2 CC13..20 are already captured by the same
+Hammerspoon bridge as `C` events for the **separate per-clip audio
+volume/gain worker** in Draft [PR #14]. The MCU track-mixer
+controller in PR #15 deliberately accepts only `H/R/M` and sends
+only track fader, MUTE and SOLO commands. Hence physical knobs
+currently do NOT change either mixer level or selected clip gain
+unless the separately gated PR #14 worker is installed and
+explicitly running. Do not silently double-map the rotaries to the
+same 8 MCU track faders: that would break physical fader pickup
+and confuse clip gain with track level.
+
+**Live setup:** the opt-in Hammerspoon input bridge starts OFF even
+if Hammerspoon itself loads correctly. The user's latest two 180s
+benches stopped after ~3 seconds with `no Hammerspoon heartbeat`,
+`pitchwheel:0`, and `sysex:3`. This is NOT a physical Korg or pickup
+failure: the Scene2 bridge must be BE in the NK JOG menu before running
+the Python worker, and it must be explicitly re-enabled following
+`hs.reload()`. A more actionable startup diagnostic is included
+in the Draft. Keep the PR Draft. Do not merge to main or deploy
+a daemon until user-approved acceptance.
 
 
 ## Source refs
