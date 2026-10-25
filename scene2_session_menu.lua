@@ -83,7 +83,8 @@ return function(host, bridge, options)
     self.stopping = false
     local args = {
       runner, "--run-until-stopped", "--low-latency",
-      "--mcu-python", mcuPython, "--write-approved-project",
+      "--mcu-python", mcuPython, "--resolve-python", python,
+      "--write-approved-project",
       "--allow-named-project", "--expected-project", project,
       "--confirmed-backup", "--confirmed-no-automation",
       "--max-clip-writes", "0"

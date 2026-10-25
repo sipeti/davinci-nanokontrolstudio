@@ -36,6 +36,7 @@ project = "Real Production Project"
 assert(s:start() and s:isRunning())
 local joined = table.concat(argv, " ")
 assert(joined:find("--low-latency",1,true))
+assert(joined:find("--resolve-python /opt/homebrew/bin/python3",1,true))
 assert(joined:find("--allow-named-project",1,true))
 assert(joined:find("--expected-project Real Production Project",1,true))
 assert(joined:find("--max-clip-writes 0",1,true))
