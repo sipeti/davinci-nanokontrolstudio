@@ -711,15 +711,49 @@ assert(warningCount==2,
 cc(82,1,5);cc(82,65,5)
 assert(#keys==0,"input channel outside the five scenes must be ignored")
 
--- Editing-point trim remains Scene 1 ONLY, even if Scene 2 wheel sends CC82.
+-- MARKER SET+JOG is scene-local: switching scenes must release a held
+-- trim rather than leak a stale Scene 1 modifier onto Scene 2.
 keys={}
-cc(55,127,0) -- MARKER SET / trim held, Scene1-specific
+cc(55,127,0)
 cc(82,1,0)
 cc(82,1,1)
 cc(55,0,0)
 assert(keyCount("v")==1 and keyCount(".")==1
   and keyCount("right")==1,
-  "Scene1 held-marker jog trims; Scene2 wheel still navigates frames")
+  "Scene1 held-marker trims; Scene2 wheel must not inherit stale trim")
+
+-- REC/Undo CC81 and MARKER left/right CC56/57 now work in all five scenes.
+-- These four controls must not overlap Scene 2 Fairlight MCU MUTE/SOLO.
+for ch=0,4 do
+  keys={}
+  cc(81,127,ch);cc(81,0,ch)
+  cc(56,127,ch);cc(56,0,ch)
+  cc(57,127,ch);cc(57,0,ch)
+  assert(keyCount("z")==1 and keyCount(",")==1 and keyCount(".")==1,
+    "Scene"..(ch+1).." REC+MARKER arrows must send Undo/trim")
+  local undoCmd=false
+  for _,entry in ipairs(keys) do
+    if entry.key=="z" and #entry.mods==1 and entry.mods[1]=="cmd" then
+      undoCmd=true
+    end
+  end
+  assert(undoCmd,"Scene"..(ch+1).." Undo must be Cmd+Z")
+end
+
+-- A fresh MARKER SET on ANY scene selects V, then JOG trims only while
+-- held in that scene. Release returns JOG to normal frame navigation.
+for ch=0,4 do
+  keys={}
+  cc(55,127,ch)
+  cc(82,1,ch)
+  cc(82,65,ch)
+  cc(55,0,ch)
+  cc(82,1,ch)
+  assert(keyCount("v")==1 and keyCount(".")==1
+    and keyCount(",")==1 and keyCount("right")==1,
+    "Scene"..(ch+1).." MARKER SET hold/release/JOG regression")
+  assert(keyCount("left")==0,"marker trim should not navigate while held")
+end
 
 -- CYCLE is shared; SHUTTLE speed is global and follows scene switching.
 cc(54,127,3);cc(54,0,3)
@@ -779,8 +813,8 @@ cc(82,1,1)
 assert(keyCount("right")==1,
   "Scene2 wheel must immediately revert to frame JOG after CYCLE")
 
--- Only transport is global: Scene2 MUTE acknowledges LED but MUST NOT
--- invoke Scene1 CAM1 shortcut or any other editing side effect.
+-- Scene2 MUTE retains Fairlight ownership; shared REC/MARKER controls
+-- MUST NOT accidentally route the Scene1 camera shortcuts.
 keys={}
 cc(21,127,1);cc(21,0,1)
 assert(#keys==0 and latestLED(21)==0,

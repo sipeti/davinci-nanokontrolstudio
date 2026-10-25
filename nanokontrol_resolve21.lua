@@ -13,6 +13,7 @@ local enabled, mode, speed = true, "JOG", 0
 local device, deviceName = nil, nil
 local learning, draft, pending, step = false, nil, nil, 0
 local trimHeld, faderArmed, faderActive = false, false, false
+local trimSceneChannel = nil
 -- 1 jog tick = 1 shuttle gear. Coalesce small MIDI bursts before one J/K/L
 -- restart so quick turns cannot repeatedly cancel the pending L/J presses.
 local SHUTTLE_WHEEL_BATCH_SECONDS = 0.045
@@ -38,9 +39,10 @@ local LED_BUTTONS = {21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,
   54,55,56,57,58,59,60,61,62,63,80,81}
 local LED_BUTTON_SET = {}
 for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
--- Shared transport/navigation across the five Korg scenes. Other buttons
--- remain Scene 1-only until a future scene-specific mapping is agreed.
-local GLOBAL_TRANSPORT = {"cycle","begin","rew","ff","stop","play","trackPrev","trackNext"}
+-- Shared across all five scenes. The four additional editing buttons
+-- preserve their Scene 1 meanings, while mixer MUTE/SOLO stays independent.
+local GLOBAL_ACTIONS = {"cycle","begin","rew","ff","stop","play",
+  "trackPrev","trackNext","undo","trimLeft","trimRight"}
 local SCENE_COUNT = 5
 local LED_HEARTBEAT_SECONDS = 0.5
 -- Scene 1 output 0 and Scene 2 output 1 were verified on real hardware.
@@ -420,12 +422,12 @@ local function fader(value)
     shuttle(target,"fader")
   end
 end
-local function wheel(value, scene1Wheel)
-  -- Only CC82 Sign Magnitude is admitted, and all scenes share the SAME
-  -- mode and shuttle speed. MARKER SET trim is Scene 1-specific.
+local function wheel(value, inputChannel)
+  -- Only CC82 Sign Magnitude is admitted. MARKER SET+JOG trims within
+  -- the SAME scene that received MARKER SET; no cross-scene stuck trim.
   if type(value) ~= "number" or value < 1 or value > 127 or faderActive then return end
   local direction = value <= 64 and 1 or -1
-  if trimHeld and scene1Wheel then
+  if trimHeld and trimSceneChannel == inputChannel then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
     -- Frame nudging is navigation, not an explicit transport command.
@@ -594,6 +596,7 @@ local function finishLearn()
   transportIntent, transportDirection, transportGear = "stopped", 0, 0
   learning, draft, pending, step = false,nil,nil,0
   faderArmed, faderActive, trimHeld = false,false,false
+  trimSceneChannel = nil
   mode, speed = "JOG",0
   refreshStateLEDs()
   title()
@@ -704,16 +707,22 @@ local function midiCallback(_,_,command,_,meta)
         hs.printf("[NK FADER] other scene input; rearm at Scene 1 neutral before shuttle fader use")
       end
       faderArmed, faderActive = false, false
-      trimHeld = false
+    end
+    if incomingScene and trimHeld and trimSceneChannel ~= incomingScene then
+      trimHeld, trimSceneChannel = false, nil
     end
   end
   -- Echo physical CC to its own LED, independent of the learned action.
   -- When another app has focus, acknowledge the key but do not edit Resolve.
   inputLED(command,meta,signal,value)
   if not enabled or not cfg then return end
-  if signal == cfg.buttons.editSelect and buttonRelease(command,value) then
-    trimHeld = false
-    title()
+  local actionCC, actionChannel = sceneCC(signal)
+  local markerCC = ccFromSignal(cfg.buttons.editSelect)
+  if actionCC == markerCC and buttonRelease(command,value) then
+    if trimHeld and trimSceneChannel == actionChannel then
+      trimHeld, trimSceneChannel = false, nil
+      title()
+    end
     return
   end
   if not resolveApp() then
@@ -729,7 +738,7 @@ local function midiCallback(_,_,command,_,meta)
     if wheelCC and wheelCC == ccFromSignal(cfg.wheel) then
       -- A scene's wheel must be configured to exactly the learned Scene 1
       -- CC82 Sign Magnitude format. No implicit CC86 Continuous decoder.
-      wheel(value, channel == sceneInputChannel())
+      wheel(value, channel)
       return
     end
     if wheelCC == 86 and channel ~= sceneInputChannel()
@@ -740,25 +749,24 @@ local function midiCallback(_,_,command,_,meta)
     end
   end
   if not buttonPress(command,value) then return end
-  -- Every Scene keeps the same CC numbers for the physical transport strip,
-  -- but switches incoming MIDI channel (Scene 1: ch0, Scene 2: ch1, ...).
-  -- Share transport and navigation only; scene-specific functions remain
-  -- untouched and require the exact Scene 1 learned binding.
-  local cc,channel = sceneCC(signal)
+  -- Same physical CC in every Assignable scene, with MIDI channel
+  -- changing from Scene 1 ch0 through Scene 5 ch4.
+  local cc,channel = actionCC,actionChannel
+  if cc and cc == markerCC then
+    if speed ~= 0 then stop() end
+    key("v")
+    trimHeld = true
+    trimSceneChannel = channel
+    title()
+    return
+  end
   if cc and channel ~= sceneInputChannel() then
-    for _,name in ipairs(GLOBAL_TRANSPORT) do
+    for _,name in ipairs(GLOBAL_ACTIONS) do
       if cc == ccFromSignal(cfg.buttons[name]) then
         action(name)
         return
       end
     end
-    return
-  end
-  if signal == cfg.buttons.editSelect then
-    if speed ~= 0 then stop() end
-    key("v")
-    trimHeld = true
-    title()
     return
   end
   for name,binding in pairs(cfg.buttons) do
