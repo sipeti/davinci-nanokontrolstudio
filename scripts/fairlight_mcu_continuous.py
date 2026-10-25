@@ -252,7 +252,8 @@ class LiveMixer:
             # Preserve only very recent, actually RECEIVED MCU positions.
             now = self.clock()
             recent = [
-                (value, stamp) if (stamp is not None and
+                (value, stamp) if (preserve_recent_seconds > 0 and
+                                   stamp is not None and
                                    0 <= now - stamp <= preserve_recent_seconds)
                 else (None, None)
                 for value, stamp in zip(self.host_state.host_faders,
