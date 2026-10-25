@@ -61,10 +61,11 @@ return function(host, isReady)
     local pos = math.max(0, size - 4096)
     f:seek("set", pos)
     if pos > 0 then f:read("*l") end
-    local count = 0
+    -- The tail is already capped at 4096 BYTES. A separate 150-LINE
+    -- limit skipped the MOST RECENT heartbeat and LED updates after a
+    -- long session: at 2 Hz the compact CSV contains >150 lines in 4KB.
+    -- Read the full bounded tail so we never miss its newest entries.
     for line in f:lines() do
-      count = count + 1
-      if count > 150 then break end
       local stamp, kind, cc, value =
         line:match("^(%d+),([HL]),(%d+),(%d+)$")
       stamp, cc, value = tonumber(stamp), tonumber(cc), tonumber(value)
