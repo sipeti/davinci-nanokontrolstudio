@@ -806,22 +806,21 @@ menu:setMenu(function()
       disabled=not cfg or not device},
     {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
     {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
-    {title="Scene 2 clip gain MIDI bridge: " ..
+    {title="Scene 2 MIDI bridge: " ..
       (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or "NINCS TELEPITVE"),
       fn=function()
-        if not scene2Bridge then return end
+        if not scene2Bridge or scene2Session then return end
         if scene2Bridge.active then scene2Bridge:stop()
         else scene2Bridge:start() end
       end,
-      disabled=not scene2Bridge or not device or not cfg or learning or
-        (scene2Session and scene2Session:isRunning())},
+      disabled=not scene2Bridge or scene2Session ~= nil or
+        not device or not cfg or learning},
     {title=scene2Session and
-      (scene2Session:isRunning() and "Scene 2: STOP" or
-        "Scene 2: START (projekt valasztas)") or
+      (scene2Session:isEnabled() and "Scene 2: AUTOMATIKUS (katt: SZUNET)" or
+        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
       "Scene 2: manager nincs telepitve",
       fn=function() if scene2Session then scene2Session:toggle() end end,
-      disabled=not scene2Session or learning or
-        (not device and not (scene2Session and scene2Session:isRunning()))},
+      disabled=not scene2Session},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
@@ -833,9 +832,10 @@ end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
 if scene2Session then
+  scene2Session:ensureRunning()
   local previousShutdown = hs.shutdownCallback
   hs.shutdownCallback = function()
-    scene2Session:stop()
+    scene2Session:shutdown()
     if type(previousShutdown) == "function" then previousShutdown() end
   end
 end
