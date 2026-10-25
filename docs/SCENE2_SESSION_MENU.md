@@ -27,8 +27,11 @@ polling, skips that extra pause and reuses the first full snapshot per CC.
 Its setter STILL takes a fresh snapshot of the exact project, playhead,
 target clip and gain BEFORE writing, and another after for readback.
 Already-engaged rotaries send only the latest CC in each batch to avoid
-old queued writes. The MCU mixer path, Scene1, host LEDs and gain curve
-are unchanged.
+old queued writes. Every ten verified writes, `SCENE2_FAST_TIMING`
+reports the Python handler duration and first Resolve snapshot duration
+in milliseconds; it does not include the Korg/MIDI transit time. This
+distinguishes Python polling lag from the remaining Resolve API cost.
+The MCU mixer path, Scene1, host LEDs and gain curve are unchanged.
 
 The low-latency optimization has NOT been physically accepted: continue
 to use only a backed-up disposable test copy with no clip automation.

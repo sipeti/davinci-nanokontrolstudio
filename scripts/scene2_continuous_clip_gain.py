@@ -116,6 +116,7 @@ class ContinuousController(Controller):
         if (self.last_event is not None and
                 now - self.last_event > IDLE_REARM_SECONDS):
             self.rearm("inactive for 20 seconds")
+        start = time.perf_counter()
         # Reuse this authoritative snapshot in the parent's feed: the old
         # version queried the SAME full project/track/clip twice per CC.
         # A fresh, separate snapshot still runs IMMEDIATELY before each
@@ -125,6 +126,7 @@ class ContinuousController(Controller):
         except api.ProbeBlocked:
             self.engine.reject(cc - 12)
             return super().handle(channel, cc, value)
+        snapshot_ms = (time.perf_counter() - start) * 1000.0
         fresh, _, session = current
         if self.write and fresh["project"] != self.expected_project:
             return self._halt("project is not exact approved test copy")
@@ -133,7 +135,12 @@ class ContinuousController(Controller):
         # Parent's 2s research idle reset is superseded by our 20s timer.
         self.last_event = self.now()
         self.pause_reason = None
-        return super().handle(channel, cc, value, preloaded=current)
+        result = super().handle(channel, cc, value, preloaded=current)
+        if self.low_latency and self.write and self.writes and self.writes % 10 == 0 and result == "WRITTEN":
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            print("SCENE2_FAST_TIMING=handler_ms:%.1f,pre_snapshot_ms:%.1f,writes:%d" %
+                  (elapsed_ms, snapshot_ms, self.writes), flush=True)
+        return result
 
 
 def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
