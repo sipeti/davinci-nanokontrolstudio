@@ -82,6 +82,37 @@ class LiveMixerTests(unittest.TestCase):
                          ("note_on",{"channel":0,"note":104,"velocity":0}))
         self.assertEqual(self.b.touches,{})
 
+    def test_fast_but_safe_fader_extremes_flush_exact_zero_and_127(self):
+        # The user's actual gap appears at the top/bottom of a quick sweep.
+        # Both strips had already crossed a genuine host position, and
+        # every physical step stays within the existing MCU jump limit.
+        self.fader_host(0,120)
+        self.fader_host(1,7)
+        for cc, start, pickup, first in ((2,120,121,122),(3,7,6,5)):
+            self.assertEqual(self.b.physical_event(1,cc,start),
+                             "FADER_PICKUP_PENDING")
+            self.assertEqual(self.b.physical_event(1,cc,pickup),
+                             "FADER_PICKUP_PASS")
+            self.assertEqual(self.b.physical_event(1,cc,first),
+                             "FADER_LIVE_SENT")
+        for val in range(123,128):
+            self.assertEqual(self.b.physical_event(1,2,val),
+                             "FADER_RATE_COALESCED")
+        for val in range(4,-1,-1):
+            self.assertEqual(self.b.physical_event(1,3,val),
+                             "FADER_RATE_COALESCED")
+        self.now += live.FADER_PERIOD + .001
+        self.b.tick()
+        self.assertEqual(self.b.tail_flushed,2)
+        last_pitch = {
+            data["channel"]:data["pitch"]
+            for kind,data in self.calls if kind=="pitchwheel"
+        }
+        self.assertEqual(last_pitch[0],mcu.physical_to_mcu(127)-8192)
+        self.assertEqual(last_pitch[1],mcu.physical_to_mcu(0)-8192)
+        self.assertEqual(set(self.b.touches),{0,1})
+        self.assertEqual(self.b.sent_faders,4)
+
     def test_new_physical_cc_supersedes_coalesced_value_without_double_send(self):
         self.fader_host(0,60)
         self.b.physical_event(1,2,60)
