@@ -93,10 +93,9 @@ class ContextGate:
         generation, available = state
         if self.generation is None:
             self.generation = generation
-        elif generation != self.generation:
-            mixer.rearm(invalidate_host=True)
+        else:
+            if generation != self.generation or (not available and self.ready):
+                mixer.rearm(invalidate_host=True)
             self.generation = generation
-        if not available and self.ready:
-            mixer.rearm(invalidate_host=True)
         self.ready = available
         return self.ready

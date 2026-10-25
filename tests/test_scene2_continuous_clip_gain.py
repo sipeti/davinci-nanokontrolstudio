@@ -121,7 +121,7 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 16, 108), "PICKUP_PENDING")
         self.assertEqual(c.expected_project, "Another production project")
         self.assertEqual(c.writes, old_writes)
-        self.assertEqual(self.feed(c, 1, 16, 60), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 127), "PICKUP_PENDING")
         self.assertEqual(self.feed(c, 1, 16, 64), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 16, 65), "WRITTEN")
         self.assertEqual(c.writes, old_writes + 1)
