@@ -803,48 +803,71 @@ local function attach()
 end
 
 menu:setMenu(function()
-  return {
-    {title="Eszkoz: "..(deviceName or "nem csatlakozik").." | Scene 1 / Assignable",disabled=true},
-    {title=cfg and "Kalibracio: 28/28 OK" or "Kalibracio: TELJES BETANITAS SZUKSEGES",disabled=true},
+  -- Daily menu is deliberately small. Calibration and raw MIDI state are
+  -- still accessible, but they must not crowd the working mixer controls.
+  local diagnostics = {
+    {title="Eszkoz: "..(deviceName or "nem csatlakozik")..
+      " | Assignable", disabled=true},
+    {title=cfg and "Kalibracio: 28/28 OK" or
+      "Kalibracio: TELJES BETANITAS SZUKSEGES", disabled=true},
     {title=learning and "Betanitas: "..step.."/28 | utolso MIDI: "..lastMidi or
-      "JOG: "..mode.." | utolso MIDI: "..lastMidi,disabled=true},
-    {title="LED (Scene 1 External): "..(ledEnabled and "BE" or "KI")
-      .." | MIDI kimenet: "..ledOutputStatus,disabled=true},
-    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",fn=toggleLEDFeedback,
-      disabled=not cfg or not device},
-    {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
-    {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
+      "JOG: "..mode.." | utolso MIDI: "..lastMidi, disabled=true},
+    {title="LED (External): "..(ledEnabled and "BE" or "KI")..
+      " | MIDI kimenet: "..ledOutputStatus, disabled=true},
     {title="Scene 2 MIDI bridge: " ..
-      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or "NINCS TELEPITVE"),
+      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or
+        "NINCS TELEPITVE"),
       fn=function()
+        -- Manual legacy bridge operation only when no session manager exists.
         if not scene2Bridge or scene2Session then return end
         if scene2Bridge.active then scene2Bridge:stop()
         else scene2Bridge:start() end
       end,
       disabled=not scene2Bridge or scene2Session ~= nil or
         not device or not cfg or learning},
+    {title="-"},
+    {title="TELJES UJRABETANITAS (28 lepes)", fn=beginLearn,
+      disabled=not device},
+    {title="Betanitas MEGSZAKITASA", fn=cancelLearn,
+      disabled=not learning},
+  }
+  local settings = {
     {title=scene2Session and
-      (scene2Session:isEnabled() and "Scene 2: AUTOMATIKUS (katt: SZUNET)" or
-        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
-      "Scene 2: manager nincs telepitve",
-      fn=function() if scene2Session then scene2Session:toggle() end end,
-      disabled=not scene2Session},
-    {title=scene2Session and
-      ("Scene 2: 8. CSATORNA " ..
+      ("8. MCU csatorna: " ..
         (scene2Session:isStrip8Enabled() and "BE (katt: KI)" or
           "KI (katt: BE)")) or
-      "Scene 2: 8. csatorna nem elerheto",
+      "8. MCU csatorna: nem elerheto",
       fn=function()
         if scene2Session then scene2Session:toggleStrip8() end
       end,
       disabled=not scene2Session or not scene2Session:isEnabled()},
-    {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
+    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",
+      fn=toggleLEDFeedback, disabled=not cfg or not device},
+    {title=enabled and "Vezerles SZUNETELTETESE" or
+      "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
         enabled = not enabled
         title()
       end},
+    {title="-"},
+    {title="Diagnosztika es kalibracio", menu=diagnostics},
   }
+  return {
+    {title="Korg: "..(deviceName or "nem csatlakozik").." | "..
+      (cfg and "28/28 OK" or "TELJES BETANITAS SZUKSEGES"),
+      disabled=true},
+    {title=scene2Session and
+      (scene2Session:isEnabled() and
+        (scene2Session:isRunning() and "Scene 2: FUT (katt: SZUNET)" or
+          "Scene 2: AUTOMATIKUS (katt: SZUNET)") or
+        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
+      "Scene 2: manager nincs telepitve",
+      fn=function() if scene2Session then scene2Session:toggle() end end,
+      disabled=not scene2Session},
+    {title="Beallitasok", menu=settings},
+  }
+
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()

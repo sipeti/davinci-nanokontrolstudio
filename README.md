@@ -9,7 +9,7 @@ A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKON
 ## Features
 
 - **Scene 1:** the proven 28-step-learned editing shortcuts, frame JOG, SHUTTLE and transport LEDs. Existing calibration is preserved on upgrade.
-- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG offers an eighth-strip OFF switch.
+- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG → Beallitasok offers an eighth-strip OFF switch. The daily NK JOG menu contains just status, Scene 2 pause/resume and Beallitasok; advanced LED/calibration/MIDI diagnostics live in nested menus.
 - **Scene 2, rotary knobs 1–8:** clip AudioVolume on A1–A8 at the stopped playhead. Full left **−100 dB**, physical center **0 dB**, full right **+30 dB**. Soft pickup avoids unintended initial jumps. Uses the 20 ms low-latency input cycle.
 - **Scene 2, MUTE and SOLO:** actual Fairlight mute/solo via MCU over two virtual IAC MIDI ports; LEDs follow Resolve's response, not the button press.
 - **All scenes:** shared JOG / SHUTTLE wheel, transport/navigation, REC/Undo (CC81) and MARKER SET/left/right (CC55–57) in v1.5; configure the same CCs and write the Scene Set to hardware. One Hammerspoon physical MIDI input owner; no competing HUI mode on the Korg.

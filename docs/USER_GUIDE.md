@@ -12,7 +12,7 @@ Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep i
 
 **Sliders/faders 1–8** control the current Fairlight MCU bank through 14-bit pitch messages over IAC. In the hardware-accepted eight-audio-track project, they control **A1–A8**; the eighth slider (CC12) moved A8 while Bus1 remained unchanged. The original soft pickup is unchanged. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12**; the software maps the gaps (CC8 = slider 6, CC9 = slider 7).
 
-**Other projects:** MCU strip 8 represents the eighth control in the *current Resolve bank*, not a permanently pinned A8. With fewer than eight audio tracks it may instead represent **Bus1**. The NK JOG menu has **Scene 2: 8. CSATORNA BE (katt: KI)** to temporarily disable the eighth MCU strip, including MUTE8/SOLO8. The setting remains until changed or Hammerspoon is reloaded; eight channels are enabled by default. No Korg CC rewrite or controller relearn is needed.
+**Other projects:** MCU strip 8 represents the eighth control in the *current Resolve bank*, not a permanently pinned A8. With fewer than eight audio tracks it may instead represent **Bus1**. Under **NK JOG → Beallitasok → 8. MCU csatorna**, you can turn the eighth MCU strip OFF, including MUTE8/SOLO8. The setting remains until changed or Hammerspoon is reloaded; eight channels are enabled by default. No Korg CC rewrite or controller relearn is needed.
 
 **MUTE/SOLO 1–8** send MCU notes while the corresponding strips are enabled; strip 8 can be disabled from NK JOG. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
 
@@ -40,7 +40,9 @@ In v1.5, Hammerspoon starts Scene 2 automatically while Resolve is active. No pr
 
 ### Stop, logs and troubleshooting
 
-Use **NK JOG → Scene 2: SZÜNET** to pause automatic operation, and **FOLYTATÁS** to resume. The parent process releases MCU TOUCH and buttons during shutdown; Hammerspoon starts the workers quietly when Resolve is ready.
+The NK JOG main menu has just three rows: the Korg/calibration status, **Scene 2: FUT/AUTOMATIKUS/SZUNETEL** for pause/resume, and **Beallitasok**. Under Beallitasok are eighth-strip ON/OFF, LED ON/OFF and full Hammerspoon control ON/OFF; **Diagnosztika es kalibracio** contains the raw MIDI status and the unchanged 28-step setup.
+
+Use **NK JOG → Scene 2** to pause automatic operation and select it again to resume. The parent process releases MCU TOUCH and buttons during shutdown; Hammerspoon starts the workers quietly when Resolve is ready.
 
 Logs: ~/Library/Logs/nk-scene2-session.log. To inspect the latest events safely:
 

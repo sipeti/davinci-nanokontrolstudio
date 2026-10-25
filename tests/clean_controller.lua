@@ -149,13 +149,38 @@ local function checkTransportLEDs(play,stop,rew,ff,label)
       .." got "..tostring(latestLED(x[1])))
   end
 end
-local function menuAction(label)
-  for _,x in ipairs(menus.items()) do
-    if x.title and x.title:find(label,1,true) and x.fn then return x.fn() end
+local function findMenuAction(items, label)
+  for _,x in ipairs(items) do
+    if x.title and x.title:find(label,1,true) and x.fn then
+      return x.fn
+    end
+    if type(x.menu) == "table" then
+      local nested = findMenuAction(x.menu, label)
+      if nested then return nested end
+    end
   end
-  error("menu item not found: "..label)
+  return nil
+end
+local function menuAction(label)
+  local fn = findMenuAction(menus.items(), label)
+  assert(fn, "menu item not found: "..label)
+  return fn()
 end
 assert(menus.title=="NK JOG")
+local daily = menus.items()
+assert(#daily==3, "Daily menu must only show status, Scene 2, settings")
+assert(daily[1].disabled==true and
+  daily[1].title:find("Korg:",1,true), "Status should be one summary line")
+assert(daily[2].title:find("Scene 2:",1,true),
+  "Daily menu must retain Scene 2 control")
+assert(daily[3].title=="Beallitasok" and type(daily[3].menu)=="table",
+  "Advanced actions must be inside a submenu")
+assert(type(daily[3].menu[#daily[3].menu].menu)=="table",
+  "Calibration and diagnostics must remain available as second submenu")
+assert(findMenuAction(daily,"TELJES UJRABETANITAS"),
+  "Relearn must remain reachable, never deleted")
+assert(findMenuAction(daily,"LED visszajelzes BE/KI"),
+  "LED off must remain reachable without changing its behavior")
 -- Old v1.2 settings deliberately not reused as a valid v1.3 configuration.
 local exists=false
 for _,item in ipairs(menus.items()) do
