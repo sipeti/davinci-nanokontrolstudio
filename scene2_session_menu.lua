@@ -1,129 +1,160 @@
--- Optional Scene 2 per-project session launcher. Never owns MIDI input.
--- All audio writes require an explicit project name and user confirmation.
+-- Scene 2 v1.5: automatic, quiet Hammerspoon session lifecycle.
+-- Exactly one physical Korg MIDI listener; no dialog or project-name input.
 return function(host, bridge, options)
   assert(type(host) == "table" and type(bridge) == "table")
   options = options or {}
   local home = os.getenv("HOME") or ""
-  local runner = options.runner or
-    (home .. "/Library/Application Support/NK Scene2/scripts/scene2_combined_bench.py")
+  local base = home .. "/Library/Application Support/NK Scene2/"
+  local runner = options.runner or (base .. "scripts/scene2_combined_bench.py")
   local python = options.python
   if not python then
-    local saved = io.open(
-      home .. "/Library/Application Support/NK Scene2/resolve-python.path", "r")
-    if saved then
-      python = saved:read("*l")
-      saved:close()
-    end
+    local f = io.open(base .. "resolve-python.path", "r")
+    if f then python = f:read("*l"); f:close() end
     if not python or python == "" then python = "/opt/homebrew/bin/python3" end
   end
-  local mcuPython = options.mcuPython or
-    (home .. "/Library/Application Support/NK Scene2/venv/bin/python3")
+  local mcuPython = options.mcuPython or (base .. "venv/bin/python3")
   local logPath = options.logPath or (home .. "/Library/Logs/nk-scene2-session.log")
-  local settingsKey = "nk-scene2-last-approved-project"
-  local defaultProject = options.project or
-    (host.settings and host.settings.get(settingsKey)) or ""
-  local self = {task = nil, log = nil, stopping = false}
+  local key = "nk-scene2-autostart-enabled"
+  local enabled = (options.autoEnabled ~= nil and options.autoEnabled or
+                   (not host.settings or host.settings.get(key) ~= false))
+  local ready = options.ready or function() return false end
+  local appRunning = options.appRunning or function() return true end
+  local clock = options.clock or function()
+    if host.timer and host.timer.secondsSinceEpoch then
+      return host.timer.secondsSinceEpoch()
+    end
+    return os.time()
+  end
+  local self = {
+    task = nil, log = nil, timer = nil, stopping = false,
+    enabled = enabled, retryAt = 0, shutdownRequested = false,
+    lastError = nil
+  }
 
   function self:isRunning()
     return self.task ~= nil and self.task:isRunning()
   end
 
+  function self:isEnabled()
+    return self.enabled
+  end
+
   function self:stop()
-    if not self:isRunning() then return false end
+    if not self:isRunning() or self.stopping then return false end
     self.stopping = true
-    self.task:interrupt() -- parent SIGINT; workers release MCU TOUCH/buttons
+    self.task:interrupt()
+    return true
+  end
+
+  function self:pause()
+    self.enabled = false
+    if host.settings then host.settings.set(key, false) end
+    self:stop()
+    if bridge.active then bridge:stop() end
+    return true
+  end
+
+  local function preflight()
+    local files = {runner, python, mcuPython}
+    for _, path in ipairs(files) do
+      local f = io.open(path, "r")
+      if not f then return false, "missing runtime: " .. path end
+      f:close()
+    end
     return true
   end
 
   function self:start()
-    if self:isRunning() then return true end
-    local file = io.open(runner, "r")
-    if not file then
-      host.alert.show("Scene 2 Python indito nincs telepitve", 6)
+    if self.shutdownRequested or not self.enabled or self:isRunning()
+      or self.stopping or not ready() then return false end
+    local ok, reason = preflight()
+    if not ok then
+      if self.lastError ~= reason then
+        host.printf("[NK SCENE2 AUTO] %s", reason)
+        self.lastError = reason
+      end
+      self.retryAt = clock() + 10
       return false
     end
-    file:close()
-    local venv = io.open(mcuPython, "r")
-    if not venv then
-      host.alert.show("Scene 2 MIDI Python-kornyezet hianyzik", 6)
-      return false
-    end
-    venv:close()
-
-    local button, project = host.dialog.textPrompt(
-      "Scene 2: Resolve projekt engedelyezese",
-      "Add meg a Resolve-ban megnyitott projekt PONTOS nevet. " ..
-      "Mas projektben a hangeroiras le lesz tiltva.",
-      defaultProject, "Tovabb", "Megse")
-    if button ~= "Tovabb" or not project then return false end
-    project = project:match("^%s*(.-)%s*$")
-    if project == "" or #project > 200 then
-      host.alert.show("Scene 2: ervenytelen projektnev", 5)
-      return false
-    end
-
-    local choice = host.dialog.blockAlert(
-      "Scene 2: valodi hangeroiras",
-      "Projekt: " .. project ..
-      "\nMegvan a projektmentes? A lejátszas ALL, nincs gain keyframe " ..
-      "vagy Fairlight hangerőautomatizacio? A forgopotik a klipek " ..
-      "AudioVolume erteket, a tolopotik a Fairlight mixert allitjak.",
-      "Inditas", "Megse", "warning")
-    if choice ~= "Inditas" then return false end
-
     if not bridge.active and not bridge:start() then
-      host.alert.show("Scene 2 MIDI bridge inditasa sikertelen", 6)
+      self.retryAt = clock() + 10
       return false
     end
-    self.log = io.open(logPath, "w")
-    if not self.log then
-      host.alert.show("Scene 2 log nem irhato: " .. logPath, 6)
+    local log, err = io.open(logPath, "a")
+    if not log then
+      host.printf("[NK SCENE2 AUTO] cannot write log: %s", tostring(err))
+      self.retryAt = clock() + 10
       return false
     end
+    self.log = log
     self.stopping = false
+    self.lastError = nil
     local args = {
-      runner, "--run-until-stopped", "--low-latency",
-      "--mcu-python", mcuPython, "--resolve-python", python,
-      "--write-approved-project",
-      "--allow-named-project", "--expected-project", project,
-      "--confirmed-backup", "--confirmed-no-automation",
-      "--max-clip-writes", "0"
+      runner, "--auto-run", "--mcu-python", mcuPython,
+      "--resolve-python", python
     }
-    local function append(out, err)
+    local function append(out, errText)
       if self.log then
-        self.log:write(out or "", err or "")
+        self.log:write(out or "", errText or "")
         self.log:flush()
       end
     end
-    local task = host.task.new(python, function(code, out, err)
-      append(out, err)
+    local task = host.task.new(python, function(code, out, errText)
+      append(out, errText)
       self.task = nil
       if self.log then self.log:close(); self.log = nil end
-      host.printf("[NK SCENE2 SESSION] exit=%s stopped=%s log=%s",
-        tostring(code), tostring(self.stopping), logPath)
-      if not self.stopping and code ~= 0 then
-        host.alert.show("Scene 2 megallt: nezd meg a session naplot", 6)
-      end
+      host.printf("[NK SCENE2 AUTO] exit=%s; requested_stop=%s",
+                  tostring(code), tostring(self.stopping))
+      -- Automatic retry is bounded, with fresh pickup on every worker start.
+      self.retryAt = clock() + (self.stopping and 1 or 10)
       self.stopping = false
-    end, function(_, out, err)
-      append(out, err)
+    end, function(_, out, errText)
+      append(out, errText)
       return true
     end, args)
     if not task or not task:start() then
       if self.log then self.log:close(); self.log = nil end
-      host.alert.show("Scene 2 Python inditas sikertelen", 6)
+      self.retryAt = clock() + 10
       return false
     end
     self.task = task
-    defaultProject = project
-    if host.settings then host.settings.set(settingsKey, project) end
-    host.alert.show("Scene 2 aktiv - STOP: NK JOG menu", 3)
+    host.printf("[NK SCENE2 AUTO] started; clip/mixer now follow Resolve")
     return true
   end
 
-  function self:toggle()
-    if self:isRunning() then return self:stop() end
+  function self:ensureRunning()
+    if self.shutdownRequested or not self.enabled then return false end
+    if self:isRunning() then
+      if not appRunning() then self:stop() end
+      return true
+    end
+    if self.stopping or clock() < self.retryAt then return false end
     return self:start()
+  end
+
+  function self:resume()
+    self.enabled = true
+    if host.settings then host.settings.set(key, true) end
+    self.retryAt = 0
+    return self:ensureRunning()
+  end
+
+  function self:toggle()
+    if self.enabled then return self:pause() end
+    self:resume()
+    return true
+  end
+
+  function self:shutdown()
+    self.shutdownRequested = true
+    if self.timer then self.timer:stop(); self.timer = nil end
+    self:stop()
+    if bridge.active then bridge:stop() end
+  end
+
+  -- Timer never prompts or starts a Resolve session when the app is absent.
+  if options.timer ~= false and host.timer and host.timer.doEvery then
+    self.timer = host.timer.doEvery(1.0, function() self:ensureRunning() end)
   end
   return self
 end
