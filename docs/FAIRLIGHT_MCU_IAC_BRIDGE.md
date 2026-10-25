@@ -506,41 +506,51 @@ fader1 should cross its host position, producing
 move A1 in Fairlight. Do not repeat device identity/host handshake
 experiments: the Resolve startup behavior is already established.
 
-### October 25: continuous Fairlight hardware PASS and trailing fader refinement
+### October 25: continuous Fairlight hardware PASS; simplify absolute faders
 
-The operator's latest 180s integrated Scene2 Fairlight bench **physically
-confirmed working A1 and other tested fader movement**, MUTE/SOLO control,
-and hardware LED feedback with the corrected 4096-byte bounded Lua tail.
-The entire MCU host startup snapshot had all eight fader positions.
-Summary: `FADER_LIVE_SENT:188`, `FADER_PICKUP_PASS:3`,
+The operator's 180s integrated Scene2 Fairlight bench **physically
+confirmed working A1 and other tested fader movement**, MUTE/SOLO
+commands, and real Fairlight LED feedback. Resolve sent genuine
+pitchwheel start positions for all 8 strips. Captured:
+`FADER_LIVE_SENT:188`, `FADER_PICKUP_PASS:3`,
 `BUTTON_LIVE_SENT:20`, `FADER_RATE_COALESCED:503`,
-`pitchwheel RX:238`, `HOST_SNAPSHOT_PRESENT=1,2,3,4,5,6,7,8`;
-`blocked:473` was generated while physical faders moved before the
-project-open host state arrived. The test showed no new FADER_DESYNC
-or GESTURE_REARM events after pickup.
+`pitchwheel RX:238`, `HOST_SNAPSHOT_PRESENT=1,2,3,4,5,6,7,8`.
+The operator further reports that on very fast physical Korg fader
+throws, the on-screen Fairlight fader occasionally FREEZES halfway,
+not merely a small gap at the endpoint.
 
-**Trailing-edge deficiency (Draft-only fix):** the previous 30ms rate
-limiter returned `FADER_RATE_COALESCED` and discarded the intermediate
-CC. If the user's LAST fast physical CC was coalesced, Fairlight could
-stay one or more hardware steps short. The continuous Python script
-now retains only the latest value per strip during each 30ms window
-and flushes that final physical value from `tick()` even when the
-gesture ends without another CC. It does not flush unknown host gains,
-unengaged or strip8-locked controls, an expired queued value (>250ms),
-or any total jump beyond `FADER_STEP_LIMIT`; it also drops queued
-values on focus/scene rearm, shutdown and faults. It preserves the
-already working MUTE/SOLO/host LED Lua code. `MCU_LIVE_FADER_TAIL`
-reports how many final endpoints were flushed/dropped.
+**Root cause is overengineering on the controller side**:
+the old Python chain included 30ms rate coalescing, a delayed tail
+queue, FADER_STEP_LIMIT auto-disarm when consecutive CC values differed
+more than about 10 physical steps, and a separate gesture rearm.
+These guards could revoke ownership while the user continued a fast
+physical gesture. Replaying only the final delayed CC was not enough.
 
-Offline tests cover a single quick coalesced gesture, exact CC0 and
-CC127 endpoints across two faders, no duplicate output on newer
-physical events, stale queued data, unsafe aggregate jumps, focus/
-scene loss, and a partial MCU TOUCH failure with immediate release.
-This is a targeted improvement to smooth *safe* fast gestures, **not a
-license to bypass the deliberate large-jump safety guard**. The new
-physical feel is pending user observation during ordinary use.
-Keep the PR Draft, no production autostart/main merge, and do not
-replace live files without verified backup.
+**Simplified Draft-only fix** (no hardware install yet):
+- Keep a *single* initial soft pickup: a physically CHANGED sample
+  must be within `FADER_PICKUP_TOLERANCE` (~2 Korg positions) of the
+  actual Resolve host pitchwheel. Merely jumping from CC0 to CC127
+  ACROSS an unmatched host position does NOT acquire control.
+- After pickup, every changed 0..127 absolute Korg CC sends its
+  matching MCU 14-bit pitchwheel IMMEDIATELY. No 30ms throttle,
+  delayed tail, FADER_STEP_LIMIT rearm, extra gesture rearm, or
+  arbitrary fast-motion suppression. This matches a physical
+  nonmotorized absolute fader's intended behavior.
+- Preserve 500ms MCU TOUCH hold/release, an actual host snapshot,
+  disarm on external host changes while not touched, Hammerspoon
+  focus/scene revocation, the guarded finite bench, output cap,
+  default-disabled physical strip8 Bus1, and host-only MUTE/SOLO LED
+  feedback. Scene1/28-step calibration and all Lua files unchanged.
+- NO queued values can be emitted after focus change, fault, or
+  shutdown; there is no queue now.
+
+New offline regression tests verify rapid full travel all the way
+to CC0/CC127, each physical CC forwarded without waiting for a
+timer, no output before host feedback / safe soft pickup, safe
+touch release, read-only fence and focus/scene resets. This has
+NOT YET been physically accepted. Keep the PR Draft. Do not
+merge to main or deploy a daemon until user-approved acceptance.
+
 
 ## Source refs
 
