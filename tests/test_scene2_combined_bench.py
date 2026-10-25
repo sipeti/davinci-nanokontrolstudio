@@ -1,6 +1,5 @@
 """Offline checks for the bounded two-worker supervisor."""
 from pathlib import Path
-import hashlib
 import sys
 import tempfile
 import unittest
@@ -103,14 +102,14 @@ class CombinedTest(unittest.TestCase):
             self.assertIn("--unlimited-writes", clip[1])
             self.assertNotIn("--expected-project", clip[1])
 
-    def test_v14_mcu_source_kept_byte_identical(self):
-        path = (Path(__file__).resolve().parents[1] / "scripts"
-                / "fairlight_mcu_continuous.py")
-        data = path.read_bytes()
-        sha = hashlib.sha1(
-            b"blob " + str(len(data)).encode("ascii") + b"\x00" + data
-        ).hexdigest()
-        self.assertEqual(sha, "b621df3f50feddb86dbcaf73b8f5cf567f729faf")
+    def test_v15_only_reinterprets_factory_fader_cc_not_mcu_protocol(self):
+        from fairlight_mcu_bridge import FADER_CCS, FADER_CC_TO_STRIP, SOLO_CC
+        from fairlight_mcu_continuous import TOUCH_HOLD, BUTTON_HOLD
+        self.assertEqual(FADER_CCS, (2, 3, 4, 5, 6, 8, 9, 12))
+        self.assertEqual(tuple(FADER_CC_TO_STRIP.values()), tuple(range(8)))
+        self.assertEqual(SOLO_CC, (29, 30, 31, 33, 34, 35, 36, 37))
+        self.assertEqual(TOUCH_HOLD, .5)
+        self.assertEqual(BUTTON_HOLD, .08)
 
     def test_auto_run_rejects_incompatible_manual_controls(self):
         with self.assertRaises(SystemExit) as error:

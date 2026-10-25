@@ -47,10 +47,20 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.physical_event(1,2,64),"MCU_FADER_SENT")
         self.assertEqual(len(self.sent),2)
 
+    def test_factory_cc_gaps_are_not_seen_as_faders(self):
+        self.assertEqual(mcu.FADER_CCS, (2, 3, 4, 5, 6, 8, 9, 12))
+        self.assertEqual(mcu.FADER_CC_TO_STRIP[8], 5)
+        self.assertEqual(mcu.FADER_CC_TO_STRIP[9], 6)
+        self.assertEqual(mcu.FADER_CC_TO_STRIP[12], 7)
+        for cc in (7, 10, 11):
+            self.assertEqual(self.bridge.physical_event(1, cc, 64),
+                             "IGNORED")
+        self.assertEqual(self.sent, [])
+
     def test_each_of_eight_tracks_uses_separate_mcu_pitch_channel(self):
         for strip in range(1,9):
             self.host_fader(strip,40)
-            cc = strip+1
+            cc = mcu.FADER_CCS[strip-1]
             self.bridge.physical_event(1,cc,40)
             self.assertEqual(self.bridge.physical_event(1,cc,41),
                              "FADER_PICKUP_PASS")

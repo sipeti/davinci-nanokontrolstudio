@@ -18,14 +18,14 @@ Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tes
 | Physical controls | MIDI CC |
 | --- | --- |
 | Eight rotary knobs | 13–20, in order |
-| Eight sliders/faders | **2–9**, in order. Slider 8 (CC9) deliberately locked to protect potential Bus 1 |
+| Eight sliders/faders | **2, 3, 4, 5, 6, 8, 9, 12** — factory Korg assignments on all Scenes. Slider 8 (CC12) deliberately locked to protect potential Bus 1 |
 | MUTE 1–8 | 21–28 |
 | SOLO 1–8 | 29, 30, 31, 33, 34, 35, 36, 37 |
 | Scene 2 JOG wheel | **CC82 / Sign Magnitude / Const** |
 | Transport | Same physical CC assignments as Scene 1 |
 | LED Mode | **External** |
 
-**Communication → Write Scene Data** is required after each changed Korg scene. KORG KONTROL Editor merely displaying a value does not prove the physical controller received it. Keep Scene 1's mapping and firmware settings intact.
+**Do not rewrite the Korg's factory slider CCs to a consecutive range.** The software follows the actual factory mapping shown in KORG KONTROL Editor in all five Scenes. **Communication → Write Scene Data** is only needed when you intentionally change a hardware assignment (such as wheel CC82, LED Mode External or shared MARKER buttons). Keep Scene 1's mapping and 28-step calibration intact.
 
 ## 3. Two virtual macOS IAC MIDI buses
 

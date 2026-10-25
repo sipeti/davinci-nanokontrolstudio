@@ -9,7 +9,7 @@ A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKON
 ## Features
 
 - **Scene 1:** the proven 28-step-learned editing shortcuts, frame JOG, SHUTTLE and transport LEDs. Existing calibration is preserved on upgrade.
-- **Scene 2, sliders 1–7:** actual Fairlight track mixer levels, with host-aware soft pickup. **Slider 8 is deliberately locked** to protect potential Bus 1.
+- **Scene 2, sliders 1–7:** Fairlight mixer levels, with host-aware soft pickup. Uses the Korg's actual factory CC map **2, 3, 4, 5, 6, 8, 9, 12** (not the assumed consecutive CC2–CC9). **Slider 8 (CC12) stays locked** until its MCU strip is confirmed not to address Bus 1.
 - **Scene 2, rotary knobs 1–8:** clip AudioVolume on A1–A8 at the stopped playhead. Full left **−100 dB**, physical center **0 dB**, full right **+30 dB**. Soft pickup avoids unintended initial jumps. Uses the 20 ms low-latency input cycle.
 - **Scene 2, MUTE and SOLO:** actual Fairlight mute/solo via MCU over two virtual IAC MIDI ports; LEDs follow Resolve's response, not the button press.
 - **All scenes:** shared JOG / SHUTTLE wheel, transport/navigation, REC/Undo (CC81) and MARKER SET/left/right (CC55–57) in v1.5; configure the same CCs and write the Scene Set to hardware. One Hammerspoon physical MIDI input owner; no competing HUI mode on the Korg.

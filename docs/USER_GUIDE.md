@@ -10,9 +10,9 @@ Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep i
 
 ## Scene 2: Fairlight mixer
 
-**Sliders/faders 1–7** adjust the respective Fairlight mixer strips using 14-bit MCU pitch messages over IAC. Each slider uses **soft pickup**: it must cross the host's currently reported position before taking control, preventing unexpected jumps. Slider 8 is locked because it may address Bus 1.
+**Sliders/faders 1–7** adjust the respective Fairlight mixer strips using 14-bit MCU pitch messages over IAC. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12** for physical sliders 1–8; the software correctly translates the gaps (CC8 = strip 6, CC9 = strip 7). Each slider uses **soft pickup**: it must cross the host's currently reported position before taking control. Slider 8 (CC12) is locked because MCU strip 8 may address Bus 1.
 
-**MUTE 1–8** and **SOLO 1–8** send MCU notes. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
+**MUTE/SOLO 1–7** send MCU notes (strip 8 is locked by default). LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
 
 ## Scene 2: per-clip gain
 

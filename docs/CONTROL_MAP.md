@@ -110,7 +110,7 @@ SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action
 | 7 | 19 — unassigned | 9 — unassigned |
 | 8 | 20 — unassigned | 12 — unassigned |
 
-This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2 is different:** CC2–CC8 drive real Fairlight mixer strips 1–7 (CC9 / strip 8 is locked); CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
+This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2:** the factory physical slider CCs **2, 3, 4, 5, 6, 8, 9, 12** map to MCU mixer strips 1–8 respectively; the 8th MCU strip (physical CC12) remains locked because it may be Bus 1. CC7 is unused, not slider 6. CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
 
 ## Persistent LED feedback
 
