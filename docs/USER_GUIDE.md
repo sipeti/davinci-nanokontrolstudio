@@ -32,7 +32,7 @@ Scene changes, foreground loss, playhead moves, clip changes or an external gain
 
 ### Project authorization
 
-In Hammerspoon choose **NK JOG → Scene 2: START**, enter the exact project name and explicitly confirm that you have a backup, playback is STOPPED and no gain automation/keyframes affect the target. This is valid for a named non-test project only after the additional confirmation. The session is restricted to that exact project; it stops/rearms rather than blindly modifying a different one.
+In Hammerspoon choose **NK JOG → Scene 2: START**, enter the exact project name and explicitly confirm that you have a backup, playback is STOPPED and no gain automation/keyframes affect the target. This is valid for a named non-test project only after the additional confirmation. Clip-gain writes are restricted to that exact project and are checked on each rotary event. **The MIDI-only Fairlight mixer worker cannot independently identify the Resolve project**, so STOP the session **before** opening or switching projects; it does not automatically block mixer messages on a project change.
 
 **No automatic playback gate exists in low-latency mode.** Do not touch clip knobs during playback, scrubbing, recording or automation. A +30 dB clip change is large: use headphones/monitor levels carefully in a stopped test copy first.
 

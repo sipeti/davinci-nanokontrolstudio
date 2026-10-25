@@ -65,7 +65,7 @@ Finish with **Hammerspoon → Reload Config**. The menu will not start audio wor
 6. Work with Scene 2 sliders, MUTE/SOLO and clip knobs. The log is ~/Library/Logs/nk-scene2-session.log.
 7. Stop with **NK JOG → Scene 2: STOP** before switching Resolve projects or quitting.
 
-**Safety:** a name match and a click are not a substitute for an actual backup. The API cannot authoritatively detect all clip gain automation or verify stopped playback in the low-latency mode. The code does check exact project identity, timeline/playhead/clip identity and the AudioVolume value before each change; it verifies each setter with a fresh readback. Failed setters attempt restoration and halt writes. Mixer strip 8 remains locked.
+**Safety:** a name match and a click are not a substitute for an actual backup. The API cannot authoritatively detect all clip gain automation or verify stopped playback in the low-latency mode. The clip-gain worker checks exact project identity, timeline/playhead/clip identity and AudioVolume before each change; it verifies each setter with fresh readback. The MCU mixer worker receives host MIDI but does not know the project name: **STOP before switching projects**. Failed setters attempt restoration and halt writes. Mixer strip 8 remains locked.
 
 ## 6. Uninstall / rollback
 
