@@ -15,7 +15,7 @@ from scene2_soft_takeover import SoftTakeover, gain_for_cc
 
 CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
 COPY_WORDS = ("test", "copy", "backup", "qa", "teszt", "masolat", "másolat")
-MAX_DELTA_DB = 1.2
+
 IDLE_RESET_SECONDS = 2.0
 POLL_SECONDS = 0.20
 
@@ -77,9 +77,9 @@ class Controller:
         original = before["db"]
         if (type(requested) not in (float, int)
                 or not -100 <= requested <= 30
-                or not 0.055 < abs(requested - original) <= MAX_DELTA_DB):
+                or abs(requested - original) <= 0.055):
             self.engine.reject(track)
-            print("A%d WRITE=BLOCKED; gain step not within 0.055..1.2 dB" %
+            print("A%d WRITE=BLOCKED; invalid absolute gain target or no change" %
                   track, flush=True)
             return "BLOCKED"
         # The fresh setter-bound snapshot must match EVERYTHING including

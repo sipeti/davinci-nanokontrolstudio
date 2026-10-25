@@ -52,3 +52,5 @@ jobs:
         run: |
           luac5.4 -p scene2_clip_gain_bridge.lua tests/test_scene2_mcu_feedback.lua nanokontrol_resolve21.lua
           lua5.4 tests/test_scene2_mcu_feedback.lua
+      - name: Combined Scene 2 two-worker launcher offline tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_combined_bench.py'

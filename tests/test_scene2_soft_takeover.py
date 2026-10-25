@@ -25,18 +25,19 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(self.feed(91).state, 'PICKUP_PENDING')
         self.assertEqual(self.feed(90).state, 'ENGAGED')
 
-    def test_skipped_midi_values_cross_target_without_writing(self):
-        # User's physical log shows occasional 2-4 step CC skips.
-        # For 9 dB, CC90 to CC92 crosses the target even though
-        # the second value is outside the strict 0.55 dB window.
+    def test_skipped_midi_values_cross_target_and_propose_last_gain(self):
         self.assertEqual(self.feed(90, db=9.0).state, 'PICKUP_PENDING')
         result = self.feed(92, db=9.0)
-        self.assertEqual(result.state, 'ENGAGED')
-        self.assertIsNone(result.proposed_db)
+        self.assertEqual(result.state, 'WRITE_INTENT')
+        self.assertEqual(result.proposed_db, gain_for_cc(92))
 
-    def test_unbounded_fast_sweep_does_not_engage(self):
+    def test_fast_full_sweep_crosses_and_proposes_last_gain(self):
         self.assertEqual(self.feed(10, db=9.0).state, 'PICKUP_PENDING')
-        self.assertEqual(self.feed(120, db=9.0).state, 'PICKUP_PENDING')
+        result = self.feed(120, db=9.0)
+        self.assertEqual(result.state, 'WRITE_INTENT')
+        self.assertEqual(result.proposed_db, gain_for_cc(120))
+        self.assertEqual(self.e.state(4), 'AWAIT_ACK')
+        self.assertFalse(self.e.confirm(4, I, G, True))
 
     def test_intent_needs_verified_ack(self):
         self.engage()
@@ -70,9 +71,13 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(self.feed(92).state, 'WRITE_INTENT')
         self.assertEqual(self.feed(93).state, 'DISABLED')
 
-    def test_physical_jump_blocks(self):
+    def test_fast_move_after_pickup_uses_absolute_cc(self):
         self.engage()
-        self.assertEqual(self.feed(120).state, 'DISABLED')
+        result = self.feed(120)
+        self.assertEqual(result.state, 'WRITE_INTENT')
+        self.assertEqual(result.proposed_db, gain_for_cc(120))
+        self.assertTrue(self.e.confirm(4, I, result.proposed_db, True))
+        self.assertEqual(self.e.state(4), 'ENGAGED')
 
     def test_gain_map(self):
         values = [gain_for_cc(i) for i in range(128)]

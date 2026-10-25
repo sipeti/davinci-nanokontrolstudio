@@ -14,7 +14,11 @@ Per-strip physical pickup before any write. New clip, out-of-band
 gain, changed project/timeline/playhead, focus loss or scene switch must
 REARM. Idle gap >20s also rearms. One setter step <=1.2 dB, and the playhead, clip and current
 gain must remain stable over a real 120ms observation before the setter;
-then another fresh snapshot and immediate readback. A failed setter
+then another fresh snapshot and immediate readback. After verified pickup,
+every changed absolute CC maps directly to clip gain (existing -100..+30 dB
+range) without an artificial per-event 1.2 dB cap. Crossing the host gain
+in a fast physical movement can commit the final CC immediately. No
+interpolated gain, stale replay or queued writes. A failed setter
 triggers restoration attempt and HALT (a failed pre-setter stability
 gate halts without attempting a write).
 No gain automation/keyframes. No fader or mixer manipulation.

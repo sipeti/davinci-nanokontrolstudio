@@ -100,6 +100,25 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 2, 127), "IGNORED")
         self.assertEqual(c.writes, 2)
 
+    def test_crossing_pickup_writes_final_real_cc_once(self):
+        c = self.controller(write=True, max_writes=2)
+        item = self.timeline.track_items[4]
+        self.assertEqual(self.feed(c, 1, 16, 10), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 120), "WRITTEN")
+        self.assertEqual(c.writes, 1)
+        self.assertEqual(len(item.calls), 1)
+        self.assertAlmostEqual(item.volume, gain_for_cc(120))
+
+    def test_fast_a5_move_after_pickup_is_not_disabled(self):
+        c = self.controller(write=True, max_writes=2)
+        item = self.timeline.track_items[5]
+        self.assertEqual(self.feed(c, 1, 17, 1), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 17, 48), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 17, 100), "WRITTEN")
+        self.assertEqual(c.writes, 1)
+        self.assertEqual(len(item.calls), 1)
+        self.assertAlmostEqual(item.volume, gain_for_cc(100))
+
     def test_missing_a8_does_not_write_anything(self):
         c = self.controller(write=True)
         self.timeline.track_items[8].GetProperties = lambda: None
@@ -200,9 +219,9 @@ class EightRotaryTest(unittest.TestCase):
         self.assertFalse(c.halted)
         self.assertEqual(c.writes, 0)
         self.assertIn("MIDI_BURST=COALESCED", self.output.getvalue())
-        # Despite an earlier overly-fast sample, the next slow CC input
-        # can still complete pickup and produce a simulated (not real) gain.
-        self.assertEqual(self.feed(c, 1, 16, 97), "ENGAGED")
+        # Read-only always remains write-free, including crossed pickup.
+        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 16, 96), "SIMULATED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
         self.assertEqual(self.output.getvalue().count("MIDI_BURST=COALESCED"), 1)

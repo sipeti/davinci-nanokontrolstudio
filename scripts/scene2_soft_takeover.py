@@ -16,7 +16,7 @@ FIRST_KNOB_CC = 13
 LAST_KNOB_CC = 20
 EPSILON_DB = 0.055
 PICKUP_WINDOW_DB = 0.55
-MAX_SINGLE_MOVE_DB = 1.20
+
 
 
 @dataclass(frozen=True)
@@ -118,25 +118,29 @@ class SoftTakeover:
         if current["state"] == "PICKUP_PENDING":
             before_db, after_db = gain_for_cc(previous_cc), gain_for_cc(value)
             near_target = abs(after_db - observed_db) <= PICKUP_WINDOW_DB
-            # The physical log showed skipped MIDI values on quick turns.
-            # Recognize a bounded crossing even when the CC skips the
-            # pickup window. Crossing only arms; this event NEVER writes.
-            crossed = (min(before_db, after_db) <= observed_db <=
-                       max(before_db, after_db) and
-                       abs(before_db - observed_db) <= MAX_SINGLE_MOVE_DB and
-                       abs(after_db - observed_db) <= MAX_SINGLE_MOVE_DB)
+            # Absolute rotary input may skip the exact pickup point.
+            # A real crossing proves pickup, whatever the movement speed.
+            # If the last sample overshot, that last CC is the requested
+            # clip gain: commit it without waiting for another physical tick.
+            crossed = (previous_cc != value and
+                       min(before_db, after_db) <= observed_db <=
+                       max(before_db, after_db))
             if previous_cc != value and (near_target or crossed):
+                if crossed and not near_target and abs(
+                        after_db - observed_db) > EPSILON_DB:
+                    current["state"] = "AWAIT_ACK"
+                    current["wanted_db"] = after_db
+                    return Decision("WRITE_INTENT", strip, after_db,
+                                    "physical pickup crossing; last CC")
                 current["state"] = "ENGAGED"
-                # Even successful pickup does NOT write on this event.
                 return Decision("ENGAGED", strip, reason="pickup; no write")
             return Decision("PICKUP_PENDING", strip, reason="waiting for pickup")
 
         if previous_cc == value:
             return Decision("ENGAGED", strip, reason="no physical movement")
         wanted_db = gain_for_cc(value)
-        if abs(wanted_db - observed_db) > MAX_SINGLE_MOVE_DB:
-            self.reject(strip)
-            return Decision("DISABLED", strip, reason="excessive volume jump")
+        # After pickup, every changed physical absolute CC is intentional.
+        # The caller still checks the real clip and verifies the write.
         if abs(wanted_db - observed_db) <= EPSILON_DB:
             return Decision("ENGAGED", strip, reason="no gain change")
         current["state"] = "AWAIT_ACK"
