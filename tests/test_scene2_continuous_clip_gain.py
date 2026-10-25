@@ -102,9 +102,10 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(c.track_offset, 8)
         self.assertEqual(c.handle(1, 16, 100), "PICKUP_PENDING")
         self.assertEqual(c.handle(1, 16, 108), "PICKUP_PENDING")
-        self.assertEqual(c.handle(1, 16, 65), "ENGAGED")
+        before, identity, session = driver.snapshot(app, 12)
+        c.session = session
         with mock.patch.object(worker, "FEEDBACK", pathlib.Path("/no-bank-file")):
-            self.assertEqual(c.handle(1, 16, 66), "BLOCKED")
+            self.assertEqual(c._write(12, before, identity, -9.0), "BLOCKED")
         self.assertEqual(timeline.track_items[12].calls, [])
         self.assertEqual(timeline.track_items[4].calls, [])
         self.assertEqual(c.bank_index, 1)
