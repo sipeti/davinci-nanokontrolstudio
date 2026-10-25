@@ -10,6 +10,7 @@ This script never claims to change Fairlight MIXER track faders or mute/solo.
 """
 import argparse
 import fcntl
+import os
 import pathlib
 import sys
 import time
@@ -18,6 +19,7 @@ import scene2_audio_roundtrip_probe as api
 from scene2_clip_gain_8rotary import (
     CONSENT, NAMED_CONSENT, Controller, MidiPoll, process_poll, snapshot,
 )
+from scene2_project_context import ContextPublisher, context_identity
 
 EVENT_PATH = pathlib.Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
 LIVE_LOCK = pathlib.Path.home() / "Library/Caches/nk-scene2-clip-live.lock"
@@ -29,6 +31,7 @@ STARTUP_TIMEOUT = 5.0
 MAX_INPUT_AGE_MS = 1200
 MAX_BATCH_LINES = 2048
 IDLE_REARM_SECONDS = 20.0
+PROJECT_POLL_SECONDS = 0.25
 
 
 def parse_bridge_row(line, now_ms):
@@ -171,6 +174,10 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
         ready = False
         pending = MidiPoll()
         next_poll = started
+        publisher = (ContextPublisher(os.getenv('NK_SCENE2_RUN_ID'))
+                     if controller.follow_active_project else None)
+        previous_context = None
+        next_project_poll = started
         poll_seconds = FAST_POLL_SECONDS if controller.low_latency else POLL_SECONDS
         idle_sleep = FAST_IDLE_SLEEP_SECONDS if controller.low_latency else 0.04
         end_at = started + seconds if seconds else None
@@ -182,6 +189,14 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                int(poll_seconds * 1000), controller.low_latency), flush=True)
         try:
             while end_at is None or clock() < end_at:
+                if publisher and clock() >= next_project_poll:
+                    next_project_poll = clock() + PROJECT_POLL_SECONDS
+                    current_context = context_identity(controller.app)
+                    if (previous_context is not None and
+                            current_context != previous_context):
+                        controller.rearm('Resolve project/timeline changed')
+                    previous_context = current_context
+                    publisher.publish(current_context)
                 try:
                     current = event_path.stat()
                     if ((current.st_dev, current.st_ino) !=
@@ -291,6 +306,8 @@ def main():
                                       args.expected_project):
         parser.error("--follow-active-project cannot be mixed with "
                      "manual project/consent flags")
+    if args.follow_active_project and not os.getenv('NK_SCENE2_RUN_ID'):
+        parser.error('automatic project tracking requires supervisor run ID')
     if args.unlimited_writes:
         if not (args.write_test_copy or args.follow_active_project) or args.seconds != 0:
             parser.error("unlimited writes require a continuous writable mode")
