@@ -193,8 +193,9 @@ class Controller:
             self.engine.reset()
             self.session = session
             print("CONTEXT_CHANGED=RESET; pickup required", flush=True)
-        decision = self.engine.feed(channel, cc, value, identity,
-                                    before["db"], True)
+        decision = self.engine.feed(
+            channel, cc, value, identity, before["db"], True,
+            track_offset=getattr(self, "track_offset", 0))
         if decision.state == "PICKUP_PENDING":
             label = ("PICKUP", track, identity, round(before["db"], 2))
             if label not in self.reported:

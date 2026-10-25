@@ -88,7 +88,7 @@ class SoftTakeover:
         return self._strips.get(strip, {}).get("state", "DISABLED")
 
     def feed(self, channel, cc, value, identity=None, observed_db=None,
-             authority_ok=False):
+             authority_ok=False, track_offset=0):
         """Process exactly one incoming CC event and a FRESH gain snapshot."""
         if type(channel) is not int or channel != SCENE2_CHANNEL:
             # No scene-change event is guaranteed by hardware; invalidate on
@@ -97,7 +97,9 @@ class SoftTakeover:
             return Decision("DISABLED", reason="outside Scene 2")
         if type(cc) is not int or not FIRST_KNOB_CC <= cc <= LAST_KNOB_CC:
             return Decision("IGNORED", reason="not a Scene 2 knob")
-        strip = cc - FIRST_KNOB_CC + 1
+        if type(track_offset) is not int or track_offset not in (0, 8):
+            return Decision("DISABLED", reason="invalid MCU track bank")
+        strip = cc - FIRST_KNOB_CC + 1 + track_offset
         if type(value) is not int or not 0 <= value <= 127:
             self.reject(strip)
             return Decision("DISABLED", strip, reason="invalid MIDI CC value")
