@@ -157,6 +157,18 @@ class LiveMixerTests(unittest.TestCase):
         self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
         self.assertEqual(self.b.sent_faders,1)
 
+    def test_fresh_project_open_positions_override_prior_live_snapshot(self):
+        self.fader_host(0,60)
+        self.b.rearm()  # physical focus reset, keep same-port host state
+        self.fader_host(0,90)  # new Resolve project sends current position
+        self.assertEqual(self.b.host_state.host_faders[0],
+                         mcu.physical_to_mcu(90))
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,90),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,91),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.sent_faders,1)
+
     def test_project_open_snapshot_does_not_expire_after_ten_seconds(self):
         # MCU host initial state is not sent periodically. A recorded
         # position is trustworthy while this *same connected session* runs.
