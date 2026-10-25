@@ -3,8 +3,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    # Stacked research PRs must run CI against their actual target branches.
-    branches: ["main", "research/scene2-audio-readonly-probe", "research/scene2-audio-roundtrip-test", "research/scene2-soft-takeover-offline", "research/scene2-midi-one-shot-roundtrip", "research/scene2-eight-rotary-clip-gain", "feature/scene2-continuous-clip-gain"]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -60,3 +59,10 @@ jobs:
           lua5.4 tests/test_scene2_session_menu.lua
       - name: Scene 2 install script bash syntax
         run: bash -n scripts/install_scene2_menu.sh
+      - name: Product installer and rollback syntax / no-write smoke
+        run: |
+          bash -n scripts/install_scene2_menu.sh scripts/uninstall_scene2.sh scripts/doctor_scene2.sh
+          sh -n install.command uninstall.command doctor.command
+          bash scripts/install_scene2_menu.sh --help
+          bash scripts/uninstall_scene2.sh --help
+          python3 -m unittest discover -s tests -p 'test_product_install.py'
