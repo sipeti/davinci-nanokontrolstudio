@@ -23,7 +23,10 @@ MAX_MESSAGES = 1200
 FADER_PERIOD = 0.03
 TOUCH_HOLD = 0.5
 BUTTON_HOLD = 0.08
-HOST_INITIAL_AGE = 10.0
+# Resolve transmits mixer faders at project load / bank refresh, NOT every
+# 10 seconds. The per-session host snapshot remains authoritative until a
+# newer actual host pitchwheel or a genuine MIDI session invalidation.
+# Focusing another app or changing Korg Scene re-arms physical pickup only.
 HEARTBEAT_TIMEOUT = 2.0
 MIDI_LOCK = pathlib.Path.home() / "Library/Caches/nk-fairlight-live.lock"
 
@@ -208,9 +211,18 @@ class LiveMixer:
             raise RuntimeError("MCU_RELEASE_FAILED: %r; restart Resolve" %
                                failures)
 
-    def rearm(self):
+    def rearm(self, *, invalidate_host=False):
+        """Disarm physical Korg controls without destroying live MCU snapshot.
+
+        Fader pitchwheel arrives only on Resolve project open or mixer
+        changes. Hammerspoon H=0/R events are *not* evidence that a new
+        Resolve project or MCU bank was loaded. Reset physical pickup, but
+        keep the last real host positions received on this open IAC port.
+        A genuine port/session change may explicitly invalidate the cache.
+        """
         self.release_all()
-        self.host_state.rearm()
+        if invalidate_host:
+            self.host_state.rearm()
         self.engaged = [False] * 8
         self.physical = [None] * 8
         self.last_sent_position = [None] * 8
@@ -236,11 +248,15 @@ class LiveMixer:
                 self.blocked += 1
                 return "FADER_WAIT_HOST"
             if not self.engaged[strip]:
-                if self.clock() - host_at > HOST_INITIAL_AGE:
-                    self.blocked += 1
-                    return "FADER_HOST_STALE"
-                if (old is not None and old != goal and
-                        abs(goal - host) <= FADER_PICKUP_TOLERANCE):
+                # An MCU host position is a STATE SNAPSHOT, not a heartbeat:
+                # its timestamp does not expire simply because the mixer
+                # stays at the same position longer than 10 seconds.
+                # The physical CC still MUST move through a genuine host
+                # position to arm, and every subsequent jump is bounded.
+                crossed = (old is not None and old != goal and
+                           min(old, goal) <= host <= max(old, goal))
+                close = abs(goal - host) <= FADER_PICKUP_TOLERANCE
+                if old is not None and old != goal and (crossed or close):
                     self.engaged[strip] = True
                     return "FADER_PICKUP_PASS"
                 return "FADER_PICKUP_PENDING"
@@ -411,6 +427,7 @@ def main():
         host_led_events = Counter()
         host_led_last = {}
         printed = set()
+        soft_rearms = Counter()
         print("MCU_LIVE=START; mode=%s; duration=%ds; "
               "strip8=%s; no auto-start" %
               ("HANDSHAKE_ONLY" if args.handshake_only
@@ -484,11 +501,13 @@ def main():
                     if kind == "H":
                         last_h = now
                         if ready and value == 0:
-                            mixer.rearm()
+                            mixer.rearm()  # soft, keep Fairlight snapshot
+                            soft_rearms["focus_lost"] += 1
                         ready = bool(value)
                     elif kind == "R":
                         ready = False
-                        mixer.rearm()
+                        mixer.rearm()      # Korg Scene change != MCU bank change
+                        soft_rearms["korg_scene"] += 1
                     elif kind == "M" and ready:
                         if args.handshake_only:
                             # Double fence: LiveMixer.write=False as well.
@@ -537,6 +556,13 @@ def main():
             print("MCU_LIVE_STATUSES=" +
                   ",".join("%s:%d" % (k, counters[k])
                            for k in sorted(counters)), flush=True)
+            print("MCU_LIVE_SOFT_REARMS=" +
+                  ",".join("%s:%d" % (k, soft_rearms[k])
+                           for k in sorted(soft_rearms)), flush=True)
+            print("MCU_LIVE_HOST_SNAPSHOT_PRESENT=" +
+                  ",".join(str(i+1) for i,value in
+                           enumerate(mixer.host_state.host_faders)
+                           if value is not None), flush=True)
             print("MCU_LIVE_HOST_RX=" +
                   ",".join("%s:%d" % (k,host_rx[k])
                            for k in sorted(host_rx)), flush=True)
