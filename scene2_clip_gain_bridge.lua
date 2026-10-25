@@ -87,6 +87,17 @@ return function(host, isReady)
           -- observed, 2=unconfirmed. The first bank is the baseline.
           local changed = cc ~= self.bankIndex or value ~= self.bankStatus
           self.bankIndex, self.bankStatus = cc, value
+          if value ~= 1 then
+            -- While bank translation is pending/uncertain, old-bank
+            -- Fairlight MUTE/SOLO LED states must not be shown as current.
+            for ledCC in pairs(self.ledKnown) do
+              if (ledCC >= 21 and ledCC <= 31) or
+                (ledCC >= 33 and ledCC <= 37) then
+                self.ledSender(ledCC, false)
+                self.ledKnown[ledCC] = nil
+              end
+            end
+          end
           for bankCC=52,53 do
             local desired = (value == 1 and
               ((bankCC == 52 and cc == 0) or
