@@ -21,7 +21,7 @@ for arg in "$@"; do
   esac
 done
 [ "$(uname -s)" = Darwin ] || fail "macOS required"
-RUNTIME="fairlight_mcu_bridge.py fairlight_mcu_continuous.py scene2_audio_roundtrip_probe.py scene2_clip_gain_8rotary.py scene2_combined_bench.py scene2_continuous_clip_gain.py scene2_live_pickup_readonly.py scene2_soft_takeover.py"
+RUNTIME="fairlight_mcu_bridge.py fairlight_mcu_continuous.py scene2_audio_roundtrip_probe.py scene2_clip_gain_8rotary.py scene2_combined_bench.py scene2_continuous_clip_gain.py scene2_live_pickup_readonly.py scene2_soft_takeover.py scene2_project_context.py"
 for name in nanokontrol_resolve21.lua scene2_clip_gain_bridge.lua scene2_session_menu.lua; do
   [ -f "$ROOT/$name" ] || fail "missing $name"
 done
@@ -101,5 +101,6 @@ checksum "$HS/init.lua" > "$BACK/after/init.lua.sha256"
 # Only advertise a complete install after every copy succeeded.
 printf '%s\n' "$BACK" > "$BASE/active-backup"
 printf 'NK_INSTALL=PASS\nBACKUP=%s\n' "$BACK"
-echo 'Hammerspoon > Reload Config > NK JOG > Scene 2: START'
-echo 'No Korg relearn, no hardware rewrite, no automatic audio edits.'
+echo 'Hammerspoon > Reload Config. Scene 2 starts automatically with Resolve.'
+echo 'NK JOG > Scene 2: AUTOMATIKUS / SZUNET controls auto-session.'
+echo 'No Korg relearn and no hardware rewrite.'

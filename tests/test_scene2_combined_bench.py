@@ -1,6 +1,7 @@
 """Offline checks for the bounded two-worker supervisor."""
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -64,6 +65,41 @@ class CombinedTest(unittest.TestCase):
         self.assertNotIn("--allow-named-project", specs[0][1])
         with self.assertRaises(SystemExit):
             bench.main(["--allow-named-project", "--seconds", "60"])
+
+    def test_auto_run_creates_two_continuous_workers_with_same_session(self):
+        with tempfile.TemporaryDirectory() as temp:
+            events = Path(temp) / "events.csv"
+            events.write_text("fresh")
+            with mock.patch.object(bench, "EVENTS", events), \
+                 mock.patch.object(bench, "supervise", return_value=0) as run:
+                result = bench.main([
+                    "--auto-run", "--mcu-python", sys.executable,
+                    "--resolve-python", sys.executable
+                ])
+            self.assertEqual(result, 0)
+            specs = run.call_args.args[0]
+            self.assertEqual([name for name, _, _ in specs], ["MCU", "CLIP"])
+            mcu, clip = specs
+            for name, cmd, env in specs:
+                self.assertIn("--seconds", cmd)
+                self.assertEqual(cmd[cmd.index("--seconds") + 1], "0")
+                self.assertEqual(len(env["NK_SCENE2_RUN_ID"]), 16)
+            self.assertEqual(mcu[2]["NK_SCENE2_RUN_ID"],
+                             clip[2]["NK_SCENE2_RUN_ID"])
+            self.assertIn("--continuous", mcu[1])
+            self.assertIn("--enable-output", mcu[1])
+            self.assertIn("--auto-context-guard", mcu[1])
+            self.assertIn("--low-latency", clip[1])
+            self.assertIn("--follow-active-project", clip[1])
+            self.assertIn("--unlimited-writes", clip[1])
+            self.assertNotIn("--expected-project", clip[1])
+            self.assertNotIn("--confirmed-backup", clip[1])
+            self.assertNotIn("--confirmed-no-automation", clip[1])
+
+    def test_auto_run_rejects_incompatible_manual_controls(self):
+        with self.assertRaises(SystemExit) as error:
+            bench.main(["--auto-run", "--expected-project", "wrong"])
+        self.assertEqual(error.exception.code, 2)
 
     def test_missing_write_confirmation_is_rejected_before_start(self):
         with self.assertRaises(SystemExit) as exc:

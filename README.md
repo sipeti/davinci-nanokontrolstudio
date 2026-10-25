@@ -1,6 +1,6 @@
 # Korg nanoKONTROL Studio for DaVinci Resolve 21
 
-**Source release: v1.4.0** — Scene 1 editing + Scene 2 Fairlight mixer/clip gain.
+**Main release: v1.4.0. Draft v1.5 preview:** automatic Scene 2 startup/project following plus shared REC/MARKER controls.
 
 A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain transport and JOG/SHUTTLE; the v1.5 development branch also shares REC/Undo and MARKER buttons across all five scenes.
 
@@ -34,16 +34,14 @@ If upgrading from a previously installed experimental Scene 2 controller, review
 
 **Required one-time MIDI hardware setup:** Scene 2 Assignable, the expected CC numbers, External LED Mode, and two IAC Driver buses connecting Python MCU to the Resolve MIDI Audio Console. Details and diagrams of the routing are in [Installation and MIDI setup](docs/INSTALL.md).
 
-## Daily use
+## Daily use (v1.5 preview)
 
-1. In Resolve, open the project you want to control and create/verify a project backup.
-2. Keep playback stopped; disable/remove clip volume keyframes and automation on targets.
-3. Hammerspoon → **NK JOG → Scene 2: START**.
-4. Enter the **exact** Resolve project name and explicitly confirm the safety conditions.
-5. Select physical **Scene 2**. Mixer sliders and the clip rotary knobs are now independent.
-6. Stop from **NK JOG → Scene 2: STOP** before leaving or changing to another project.
+1. Start Hammerspoon and Resolve. The Scene 2 workers launch automatically when Resolve is ready.
+2. Switch Korg scenes normally. Scene 1 edits, Scene 2 mixes; shared REC/Undo and MARKER controls work in Scenes 1–5.
+3. Change projects normally. The workers refresh the active context, then require fresh physical soft pickup.
+4. **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** pauses or resumes the worker. No project names or confirmation dialogs.
 
-The session is not a login service and does not auto-start at boot. If the project/clip context or Resolve focus changes, pickup is rearmed or writes are refused. Python logs: ~/Library/Logs/nk-scene2-session.log. Hammerspoon logs are available in its Console.
+Clip-level edits still require a valid stopped-playhead clip and no gain automation. The project-following and new startup path are unverified on real hardware until the v1.5 acceptance test. Logs: ~/Library/Logs/nk-scene2-session.log.
 
 ## Uninstall / restore
 
