@@ -40,144 +40,118 @@ class LiveMixerTests(unittest.TestCase):
                            "pitch":mcu.physical_to_mcu(62) - 8192}),
         ])
         self.assertEqual(self.b.sent_faders,1)
-        self.assertEqual(self.b.physical_event(1,2,63),"FADER_RATE_COALESCED")
-        self.now += .04
+        # Same clock tick, no artificial throttling: both physical
+        # positions must be sent immediately (not coalesced/dropped).
+        self.assertEqual(self.b.physical_event(1,2,63),"FADER_LIVE_SENT")
         self.assertEqual(self.b.physical_event(1,2,64),"FADER_LIVE_SENT")
-        self.assertEqual(self.calls[-1][0],"pitchwheel")
-        self.assertEqual(len(self.calls),3)
+        self.assertEqual(self.calls[-1],
+                         ("pitchwheel",{"channel":0,
+                           "pitch":mcu.physical_to_mcu(64)-8192}))
+        self.assertEqual(len(self.calls),4)
         self.now += .49
         self.b.tick()
-        self.assertEqual(len(self.calls),3)
+        self.assertEqual(len(self.calls),4)
         self.now += .02
         self.b.tick()
         self.assertEqual(self.calls[-1],
                          ("note_on",{"channel":0,"note":104,"velocity":0}))
-        self.assertEqual(self.b.sent_faders,2)
+        self.assertEqual(self.b.sent_faders,3)
         self.assertEqual(self.b.touches,{})
 
-    def test_coalesced_last_value_is_sent_without_another_physical_cc(self):
+    def test_all_changed_physical_cc_are_immediately_sent_even_same_clock(self):
+        self.fader_host(0,60)
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
+        for value in (62,63,64,70,78,90,100,117,127):
+            self.assertEqual(self.b.physical_event(1,2,value),
+                             "FADER_LIVE_SENT")
+        sent = [data["pitch"] for kind,data in self.calls
+                if kind=="pitchwheel"]
+        self.assertEqual(sent,
+                         [mcu.physical_to_mcu(v)-8192
+                          for v in (62,63,64,70,78,90,100,117,127)])
+        self.assertEqual(self.b.sent_faders,9)
+        self.assertTrue(self.b.engaged[0])
+        self.assertEqual(self.calls[0],
+                         ("note_on",{"channel":0,"note":104,"velocity":127}))
+        self.assertEqual(len([x for x in self.calls
+                              if x[0]=="note_on" and x[1]["velocity"]==127]),1)
+
+    def test_fast_top_and_bottom_ends_are_sent_without_tick_flush(self):
+        # Actual user problem: the fader could stop halfway during fast
+        # physical movement. Once host pickup succeeds, fast direction
+        # changes and BOTH physical endpoints are legitimate requests.
+        self.fader_host(0,60)
+        self.fader_host(1,60)
+        for cc in (2,3):
+            self.assertEqual(self.b.physical_event(1,cc,60),
+                             "FADER_PICKUP_PENDING")
+            self.assertEqual(self.b.physical_event(1,cc,61),
+                             "FADER_PICKUP_PASS")
+        for cc,values in ((2,(70,100,127)),(3,(50,10,0))):
+            for value in values:
+                self.assertEqual(self.b.physical_event(1,cc,value),
+                                 "FADER_LIVE_SENT")
+        sent = {channel: [] for channel in (0,1)}
+        for kind,data in self.calls:
+            if kind=="pitchwheel":
+                sent[data["channel"]].append(data["pitch"])
+        self.assertEqual(sent[0][-1],mcu.physical_to_mcu(127)-8192)
+        self.assertEqual(sent[1][-1],mcu.physical_to_mcu(0)-8192)
+        self.assertEqual(len(sent[0]),3)
+        self.assertEqual(len(sent[1]),3)
+        self.assertEqual(self.b.sent_faders,6)
+        self.assertEqual(set(self.b.touches),{0,1})
+        self.now += .51
+        self.b.tick()
+        self.assertEqual(self.b.touches,{})
+
+    def test_duplicate_cc_does_not_send_and_tick_never_invents_positions(self):
         self.fader_host(0,60)
         self.b.physical_event(1,2,60)
         self.b.physical_event(1,2,61)
         self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
-        self.now += .005
-        self.assertEqual(self.b.physical_event(1,2,63),"FADER_RATE_COALESCED")
-        self.now += .005
-        self.assertEqual(self.b.physical_event(1,2,64),"FADER_RATE_COALESCED")
-        self.assertEqual(self.b.pending_faders[0][0],mcu.physical_to_mcu(64))
-        self.now += .015
+        self.assertEqual(self.b.physical_event(1,2,62),"FADER_DUPLICATE")
+        self.assertEqual(self.b.sent_faders,1)
+        self.now += .1
         self.b.tick()
-        self.assertEqual(self.b.sent_faders,1,"do not flush inside 30ms")
-        self.now += .007
-        self.b.tick()
-        self.assertEqual(self.b.sent_faders,2)
-        self.assertEqual(self.b.tail_flushed,1)
-        self.assertIsNone(self.b.pending_faders[0])
-        self.assertEqual(self.calls[-1],
-                         ("pitchwheel",{"channel":0,
-                          "pitch":mcu.physical_to_mcu(64)-8192}))
-        self.now += .51
-        self.b.tick()
-        self.assertEqual(self.calls[-1],
-                         ("note_on",{"channel":0,"note":104,"velocity":0}))
-        self.assertEqual(self.b.touches,{})
+        self.assertEqual(self.b.sent_faders,1)
+        self.assertEqual(len([1 for kind,data in self.calls
+                              if kind=="pitchwheel"]),1)
 
-    def test_fast_but_safe_fader_extremes_flush_exact_zero_and_127(self):
-        # The user's actual gap appears at the top/bottom of a quick sweep.
-        # Both strips had already crossed a genuine host position, and
-        # every physical step stays within the existing MCU jump limit.
-        self.fader_host(0,120)
-        self.fader_host(1,7)
-        for cc, start, pickup, first in ((2,120,121,122),(3,7,6,5)):
-            self.assertEqual(self.b.physical_event(1,cc,start),
-                             "FADER_PICKUP_PENDING")
-            self.assertEqual(self.b.physical_event(1,cc,pickup),
-                             "FADER_PICKUP_PASS")
-            self.assertEqual(self.b.physical_event(1,cc,first),
-                             "FADER_LIVE_SENT")
-        for val in range(123,128):
-            self.assertEqual(self.b.physical_event(1,2,val),
-                             "FADER_RATE_COALESCED")
-        for val in range(4,-1,-1):
-            self.assertEqual(self.b.physical_event(1,3,val),
-                             "FADER_RATE_COALESCED")
-        self.now += live.FADER_PERIOD + .001
-        self.b.tick()
-        self.assertEqual(self.b.tail_flushed,2)
-        last_pitch = {
-            data["channel"]:data["pitch"]
-            for kind,data in self.calls if kind=="pitchwheel"
-        }
-        self.assertEqual(last_pitch[0],mcu.physical_to_mcu(127)-8192)
-        self.assertEqual(last_pitch[1],mcu.physical_to_mcu(0)-8192)
-        self.assertEqual(set(self.b.touches),{0,1})
-        self.assertEqual(self.b.sent_faders,4)
-
-    def test_new_physical_cc_supersedes_coalesced_value_without_double_send(self):
+    def test_scene_or_focus_rearm_releases_and_prevents_unauthorized_write(self):
         self.fader_host(0,60)
         self.b.physical_event(1,2,60)
         self.b.physical_event(1,2,61)
         self.b.physical_event(1,2,62)
-        self.b.physical_event(1,2,63)  # pending, not sent yet
-        self.now += .04
-        self.assertEqual(self.b.physical_event(1,2,64),"FADER_LIVE_SENT")
-        self.b.tick()
-        self.assertIsNone(self.b.pending_faders[0])
-        self.assertEqual(self.b.tail_flushed,0)
-        self.assertEqual(self.b.sent_faders,2)
-        self.assertEqual(
-            [x[1]["pitch"] for x in self.calls if x[0]=="pitchwheel"],
-            [mcu.physical_to_mcu(62)-8192,mcu.physical_to_mcu(64)-8192])
-
-    def test_scene_or_focus_rearm_cancels_coalesced_tail_before_write(self):
-        self.fader_host(0,60)
-        self.b.physical_event(1,2,60)
-        self.b.physical_event(1,2,61)
-        self.b.physical_event(1,2,62)
-        self.b.physical_event(1,2,63)
-        self.assertIsNotNone(self.b.pending_faders[0])
+        self.assertEqual(self.b.sent_faders,1)
         self.b.rearm()
-        self.assertIsNone(self.b.pending_faders[0])
-        self.now += .04
+        self.assertEqual(self.b.touches,{})
+        self.assertEqual(self.b.engaged,[False]*8)
+        self.assertEqual(self.b.host_state.host_faders[0],
+                         mcu.physical_to_mcu(60))
+        self.assertEqual(self.b.physical_event(1,2,127),
+                         "FADER_PICKUP_PENDING")
+        self.now += .5
         self.b.tick()
         self.assertEqual(self.b.sent_faders,1)
-        self.assertEqual(self.b.touches,{})
-        self.assertFalse(self.b.engaged[0])
         self.assertEqual(self.calls[-1],
                          ("note_on",{"channel":0,"note":104,"velocity":0}))
 
-    def test_long_stalled_pending_final_is_discarded_not_replayed(self):
+    def test_touch_hold_resets_after_each_real_fader_move(self):
         self.fader_host(0,60)
         self.b.physical_event(1,2,60)
         self.b.physical_event(1,2,61)
         self.b.physical_event(1,2,62)
-        self.b.physical_event(1,2,63)
-        self.now += live.FADER_TAIL_MAX_AGE + .01
+        self.now += .4
+        self.b.physical_event(1,2,100)
+        self.now += .2
         self.b.tick()
-        self.assertEqual(self.b.sent_faders,1)
-        self.assertEqual(self.b.tail_flushed,0)
-        self.assertEqual(self.b.tail_dropped,1)
-        self.assertFalse(self.b.engaged[0])
-        self.assertEqual(self.b.touches,{})
-
-    def test_coalesced_large_total_jump_drops_tail_with_no_blind_gain_write(self):
-        self.fader_host(0,60)
-        self.b.physical_event(1,2,60)
-        self.b.physical_event(1,2,61)
-        self.b.physical_event(1,2,62)
-        # Each legitimate physical step is modest, but the accumulated
-        # 30ms coalescing interval could otherwise create one unsafe jump.
-        for value in (65,70,75):
-            self.assertEqual(self.b.physical_event(1,2,value),
-                             "FADER_RATE_COALESCED")
-        self.now += .04
+        self.assertIn(0,self.b.touches)
+        self.now += .31
         self.b.tick()
-        self.assertEqual(self.b.sent_faders,1)
-        self.assertEqual(self.b.tail_dropped,1)
-        self.assertFalse(self.b.engaged[0])
-        self.assertEqual(self.b.touches,{})
-        self.assertEqual(
-            len([x for x in self.calls if x[0]=="pitchwheel"]),1)
+        self.assertNotIn(0,self.b.touches)
+        self.assertEqual(self.b.sent_faders,2)
 
     def test_fader_partial_press_failure_still_releases_touch(self):
         calls=[]
@@ -332,15 +306,18 @@ class LiveMixerTests(unittest.TestCase):
         self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
         self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
 
-    def test_crossing_host_position_does_not_authorize_large_gain_jump(self):
+    def test_huge_jump_across_host_without_nearby_sample_cannot_pickup(self):
         self.fader_host(0,60)
-        self.assertEqual(self.b.physical_event(1,2,45),"FADER_PICKUP_PENDING")
-        self.assertEqual(self.b.physical_event(1,2,75),"FADER_PICKUP_PASS")
-        # The physical crossing can arm pickup, but a big next movement
-        # cannot send a gain jump far from host position.
-        self.assertEqual(self.b.physical_event(1,2,76),"FADER_DESYNC_REARM")
+        self.assertEqual(self.b.physical_event(1,2,0),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,127),"FADER_PICKUP_PENDING")
+        self.assertFalse(self.b.engaged[0])
         self.assertEqual(self.b.sent_faders,0)
         self.assertEqual(self.calls,[])
+        # Actual physical movement near the real host position earns
+        # control, after which fast movement is intentionally allowed.
+        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,2,127),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.sent_faders,1)
 
     def test_external_mixer_move_disarms_previous_pickup(self):
         self.fader_host(0,60)
@@ -353,15 +330,16 @@ class LiveMixerTests(unittest.TestCase):
         self.assertFalse(self.b.engaged[0])
         self.assertEqual(self.b.physical_event(1,2,63),"FADER_PICKUP_PENDING")
 
-    def test_fast_unsafe_cc_jump_is_rearmed_without_extra_midi(self):
+    def test_large_physical_jump_during_owned_touch_does_not_rearm(self):
         self.fader_host(0,60)
         self.b.physical_event(1,2,60)
         self.b.physical_event(1,2,61)
         self.b.physical_event(1,2,62)
-        self.assertEqual(self.b.physical_event(1,2,110),"FADER_JUMP_REARM")
-        self.assertFalse(self.b.engaged[0])
-        self.assertEqual(self.b.sent_faders,1)
-        self.assertEqual(self.b.touches,{})
+        self.assertEqual(self.b.physical_event(1,2,110),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.physical_event(1,2,127),"FADER_LIVE_SENT")
+        self.assertTrue(self.b.engaged[0])
+        self.assertEqual(self.b.sent_faders,3)
+        self.assertIn(0,self.b.touches)
 
     def test_read_only_never_transmits_but_host_led_is_observed(self):
         sent=[]
