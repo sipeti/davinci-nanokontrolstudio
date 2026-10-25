@@ -829,6 +829,15 @@ menu:setMenu(function()
       "Scene 2: manager nincs telepitve",
       fn=function() if scene2Session then scene2Session:toggle() end end,
       disabled=not scene2Session},
+    {title=scene2Session and
+      ("Scene 2: 8. MCU STRIP PROBA " ..
+        (scene2Session:isStrip8Trial() and "BE (BUS1 IS LEHET!)" or
+          "KI (katt: BE)")) or
+      "Scene 2: 8. MCU strip nem elerheto",
+      fn=function()
+        if scene2Session then scene2Session:toggleStrip8Trial() end
+      end,
+      disabled=not scene2Session or not scene2Session:isEnabled()},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end

@@ -106,4 +106,35 @@ local paused=make({timer=false,autoEnabled=false})
 assert(not paused:isEnabled())
 assert(not paused:ensureRunning())
 paused:shutdown()
+
+-- Eighth MCU strip is OFF by default, can be toggled only in the active
+-- session, restarts the SAME workers, and is never silently persisted.
+ready=true
+runningApp=true
+local trial=make({timer=false})
+assert(trial:isEnabled() and not trial:isStrip8Trial())
+assert(trial:start())
+assert(not table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
+assert(trial:toggleStrip8Trial() and trial:isStrip8Trial())
+assert(not currentTask:isRunning())
+currentTask.done(130, "", "")
+now=now+2
+assert(trial:ensureRunning())
+assert(table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
+assert(trial:toggleStrip8Trial() and not trial:isStrip8Trial())
+currentTask.done(130, "", "")
+now=now+2
+assert(trial:ensureRunning())
+assert(not table.concat(lastArgs," "):find("--enable-strip8-trial",1,true))
+assert(trial:toggleStrip8Trial() and trial:isStrip8Trial())
+assert(trial:pause() and not trial:isStrip8Trial(),
+  "pausing must clear the eighth-strip trial")
+currentTask.done(130, "", "")
+assert(not trial:toggleStrip8Trial(),
+  "trial cannot be enabled while Scene 2 is paused")
+trial:shutdown()
+local fresh=make({timer=false})
+assert(not fresh:isStrip8Trial(),
+  "eighth strip must be OFF after a fresh manager/reload")
+fresh:shutdown()
 print("SCENE2_AUTO_SESSION_TEST=PASS")

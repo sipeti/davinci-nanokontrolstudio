@@ -111,6 +111,25 @@ class CombinedTest(unittest.TestCase):
         self.assertEqual(TOUCH_HOLD, .5)
         self.assertEqual(BUTTON_HOLD, .08)
 
+    def test_eighth_strip_trial_is_opt_in_mcu_only(self):
+        default = bench.parser().parse_args(["--auto-run"])
+        enabled = bench.parser().parse_args([
+            "--auto-run", "--enable-strip8-trial"])
+        base = bench.commands(default, Path("/test/scripts"))
+        trial = bench.commands(enabled, Path("/test/scripts"))
+        self.assertNotIn("--enable-strip8-bus1", base[0][1])
+        self.assertIn("--enable-strip8-bus1", trial[0][1])
+        self.assertEqual(trial[0][1].count("--enable-strip8-bus1"), 1)
+        self.assertEqual(trial[1], base[1], "rotary worker unchanged")
+        self.assertEqual(
+            [arg for arg in trial[0][1] if arg != "--enable-strip8-bus1"],
+            base[0][1], "MCU 1-7 options must remain unchanged")
+
+    def test_eighth_strip_trial_requires_automatic_session(self):
+        with self.assertRaises(SystemExit) as error:
+            bench.main(["--enable-strip8-trial", "--seconds", "60"])
+        self.assertEqual(error.exception.code, 2)
+
     def test_auto_run_rejects_incompatible_manual_controls(self):
         with self.assertRaises(SystemExit) as error:
             bench.main(["--auto-run", "--expected-project", "wrong"])

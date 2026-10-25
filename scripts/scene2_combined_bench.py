@@ -25,6 +25,9 @@ def parser():
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--auto-run", action="store_true",
                    help="normal v1.5: no prompts, follow active Resolve project")
+    p.add_argument("--enable-strip8-trial", action="store_true",
+                   help="one-session experiment: unlock current 8th MCU strip "
+                        "(may be Bus1, not necessarily A8)")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -55,9 +58,11 @@ def commands(args, scripts):
     if args.low_latency:
         clip.append("--low-latency")
     if args.auto_run:
-        # Byte-identical v1.4 MCU worker and launch flags. Do not gate
-        # its already-proven fader/MUTE/SOLO path on the clip worker.
+        # Existing proven MCU faders 1..7 and MUTE/SOLO remain unchanged.
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
+        if args.enable_strip8_trial:
+            # Reuse the MCU worker's existing opt-in, NO new MIDI protocol.
+            mcu.append("--enable-strip8-bus1")
         clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
@@ -136,6 +141,8 @@ def supervise(specs):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
+    if args.enable_strip8_trial and not args.auto_run:
+        p.error("--enable-strip8-trial requires --auto-run")
     if args.auto_run:
         if (args.write_test_copy or args.allow_named_project or
                 args.expected_project or args.confirmed_backup or
@@ -179,11 +186,13 @@ def main(argv=None):
         if not (Path(executable).is_file() and os.access(executable, os.X_OK)):
             p.error("Python executable unavailable: %s" % executable)
     print("SCENE2_COMBINED=START; duration=%s; mode=%s; "
-          "one physical Korg MIDI owner; strip8 LOCKED" %
+          "one physical Korg MIDI owner; strip8 %s" %
           ("until Ctrl+C" if args.run_until_stopped else str(args.seconds)+"s",
            "AUTO_FOLLOW_PROJECT" if args.auto_run else
            "TEST_COPY_WRITE" if args.write_test_copy else
-           "READ_ONLY"), flush=True)
+           "READ_ONLY",
+           "TRIAL (CURRENT MCU BANK)" if args.enable_strip8_trial
+           else "LOCKED"), flush=True)
     return supervise(commands(args, scripts))
 
 
