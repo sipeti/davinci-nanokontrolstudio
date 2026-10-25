@@ -266,13 +266,27 @@ class LiveMixer:
                 self.blocked += 1
                 return "FADER_WAIT_HOST"
             if not self.engaged[strip]:
-                # Soft pickup is the ONE gain jump protection. A sampled
-                # absolute CC must be within ~2 physical steps of the
-                # actual MCU host position AND must have moved. Merely
-                # crossing the host in one huge 0->127 jump is NOT pickup.
-                if (old is not None and old != goal and
-                        abs(goal - host) <= FADER_PICKUP_TOLERANCE):
+                # A non-motorized absolute Korg fader can skip the exact
+                # target while moving fast. If consecutive ACTUAL physical
+                # samples straddle the last authoritative Fairlight value,
+                # the handoff happened even if neither sample is within
+                # the usual ~2-CC tolerance. Requires genuine physical
+                # movement and a real host MCU pitchwheel snapshot.
+                crossed = (old is not None and old != goal and
+                           min(old, goal) <= host <= max(old, goal))
+                close = abs(goal - host) <= FADER_PICKUP_TOLERANCE
+                if old is not None and old != goal and (crossed or close):
                     self.engaged[strip] = True
+                    if crossed and not close:
+                        # Example: host=65, Korg physical 20 -> 80.
+                        # If 80 is the final sample, merely "arming" would
+                        # strand Fairlight at 65 until another CC arrived.
+                        # The explicit overshoot is now the user's physical
+                        # requested gain; send it immediately when writable.
+                        if self.write:
+                            self._send_fader(strip, goal)
+                            return "FADER_PICKUP_CROSS_SENT"
+                        return "FADER_PICKUP_PASS"
                     return "FADER_PICKUP_PASS"
                 return "FADER_PICKUP_PENDING"
             if goal == old:
@@ -507,7 +521,8 @@ def main():
                         result = mixer.physical_event(ch, cc, value)
                         counters[result] += 1
                         marker = (cc, result)
-                        if (result in ("FADER_PICKUP_PASS", "BUTTON_LIVE_SENT") or
+                        if (result in ("FADER_PICKUP_PASS", "FADER_PICKUP_CROSS_SENT",
+                                       "BUTTON_LIVE_SENT") or
                                 (marker not in printed and
                                  result not in ("FADER_LIVE_SENT",
                                                 "BUTTON_RELEASED",
