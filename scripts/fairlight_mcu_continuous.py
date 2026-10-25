@@ -21,6 +21,10 @@ from fairlight_mcu_bridge import (
 MAX_SECONDS = 180
 MAX_MESSAGES = 1200
 FADER_PERIOD = 0.03
+# A coalesced final CC should be delivered shortly after the 30ms window
+# even when the human stops moving the Korg. Never replay an old value
+# after a stalled process, focus loss, scene switch, or unsafe large jump.
+FADER_TAIL_MAX_AGE = 0.25
 TOUCH_HOLD = 0.5
 BUTTON_HOLD = 0.08
 # Resolve transmits mixer faders at project load / bank refresh, NOT every
@@ -138,6 +142,9 @@ class LiveMixer:
         self.physical = [None] * 8
         self.last_sent_position = [None] * 8
         self.last_sent_at = [float("-inf")] * 8
+        self.pending_faders = [None] * 8  # latest (goal, time) per strip
+        self.tail_flushed = 0
+        self.tail_dropped = 0
         self.touches = {}       # strip index -> release time
         self.keys = {}          # MCU note -> release time
         self.physical_down = set()
@@ -186,8 +193,59 @@ class LiveMixer:
         finally:
             self.keys.pop(note, None)
 
+    def _send_fader(self, strip, goal):
+        """Send a bounded, physically requested MCU position with TOUCH.
+
+        The caller must already have validated pickup and gesture safety.
+        Mark TOUCH active before transmitting, so partial-send errors also
+        cause an MCU key-up during cleanup.
+        """
+        try:
+            if strip not in self.touches:
+                self.touches[strip] = self.clock() + TOUCH_HOLD
+                self._send("note_on", channel=0,
+                           note=104 + strip, velocity=127)
+            self._send("pitchwheel", channel=strip, pitch=goal - 8192)
+            self.last_sent_position[strip] = goal
+            self.last_sent_at[strip] = self.clock()
+            self.touches[strip] = self.clock() + TOUCH_HOLD
+            self.sent_faders += 1
+        except BaseException:
+            self.release_all()
+            raise
+
     def tick(self):
         now = self.clock()
+        # Emit the LAST legitimate CC in each completed coalescing window.
+        # This fixes the common case of stopping a fast physical gesture
+        # inside 30ms: the previous code silently dropped its endpoint.
+        # Never flush after a loss of physical ownership or a large jump.
+        for strip, pending in enumerate(self.pending_faders):
+            if pending is None:
+                continue
+            goal, observed_at = pending
+            if now - observed_at > FADER_TAIL_MAX_AGE:
+                self.pending_faders[strip] = None
+                self.engaged[strip] = False
+                self.tail_dropped += 1
+                self._release_touch(strip)
+                continue
+            if now - self.last_sent_at[strip] < FADER_PERIOD:
+                continue
+            self.pending_faders[strip] = None
+            last = self.last_sent_position[strip]
+            if (not self.write or not self.engaged[strip] or
+                    self.physical[strip] != goal or last is None or
+                    self.host_state.host_faders[strip] is None or
+                    (strip == 7 and not self.allow_strip8) or
+                    abs(goal - last) > FADER_STEP_LIMIT):
+                self.engaged[strip] = False
+                self.tail_dropped += 1
+                self._release_touch(strip)
+                continue
+            if goal != last:
+                self._send_fader(strip, goal)
+                self.tail_flushed += 1
         for strip, deadline in tuple(self.touches.items()):
             if now >= deadline:
                 self._release_touch(strip)
@@ -196,6 +254,9 @@ class LiveMixer:
                 self._release_key(note)
 
     def release_all(self):
+        # Never allow an already queued final gain value to be transmitted
+        # after shutdown, fault, focus change, or physical scene change.
+        self.pending_faders = [None] * 8
         failures = []
         for strip in tuple(self.touches):
             try:
@@ -227,6 +288,7 @@ class LiveMixer:
         self.physical = [None] * 8
         self.last_sent_position = [None] * 8
         self.last_sent_at = [float("-inf")] * 8
+        self.pending_faders = [None] * 8
         self.physical_down.clear()
 
     def physical_event(self, ch, cc, value):
@@ -264,37 +326,33 @@ class LiveMixer:
                 return "FADER_DUPLICATE"
             if abs(goal - old) > FADER_STEP_LIMIT:
                 self.engaged[strip] = False
+                self.pending_faders[strip] = None
                 self._release_touch(strip)
                 return "FADER_JUMP_REARM"
             if (strip not in self.touches and
                     self.last_sent_position[strip] is None and
                     abs(goal - host) > FADER_PICKUP_TOLERANCE):
                 self.engaged[strip] = False
+                self.pending_faders[strip] = None
                 return "FADER_DESYNC_REARM"
             if (strip not in self.touches and
                     self.last_sent_position[strip] is not None and
                     abs(goal - self.last_sent_position[strip]) >
                     FADER_STEP_LIMIT):
                 self.engaged[strip] = False
+                self.pending_faders[strip] = None
                 return "FADER_GESTURE_REARM"
             if self.clock() - self.last_sent_at[strip] < FADER_PERIOD:
+                if self.write:
+                    # Latest value wins. The 10ms main loop flushes it once
+                    # the 30ms window ends, without needing another CC.
+                    self.pending_faders[strip] = (goal, self.clock())
                 return "FADER_RATE_COALESCED"
             if not self.write:
                 return "FADER_LIVE_PREVIEW"
-            try:
-                if strip not in self.touches:
-                    self._send("note_on", channel=0,
-                               note=104 + strip, velocity=127)
-                    self.touches[strip] = self.clock() + TOUCH_HOLD
-                self._send("pitchwheel", channel=strip, pitch=goal - 8192)
-                self.last_sent_position[strip] = goal
-                self.last_sent_at[strip] = self.clock()
-                self.touches[strip] = self.clock() + TOUCH_HOLD
-                self.sent_faders += 1
-                return "FADER_LIVE_SENT"
-            except BaseException:
-                self.release_all()
-                raise
+            self.pending_faders[strip] = None
+            self._send_fader(strip, goal)
+            return "FADER_LIVE_SENT"
 
         if 21 <= cc <= 28:
             strip, note = cc - 21, 16 + cc - 21
@@ -556,6 +614,8 @@ def main():
             print("MCU_LIVE_STATUSES=" +
                   ",".join("%s:%d" % (k, counters[k])
                            for k in sorted(counters)), flush=True)
+            print("MCU_LIVE_FADER_TAIL=flushed:%d,dropped:%d" %
+                  (mixer.tail_flushed,mixer.tail_dropped), flush=True)
             print("MCU_LIVE_SOFT_REARMS=" +
                   ",".join("%s:%d" % (k, soft_rearms[k])
                            for k in sorted(soft_rearms)), flush=True)
