@@ -53,11 +53,14 @@ def parse_event(line, now_ms):
     except ValueError:
         return None
     kind = parts[1]
-    if (kind not in ("H", "R", "M") or
+    if (kind not in ("H", "R", "M", "B") or
         timestamp > now_ms or now_ms - timestamp > MAX_AGE_MS or
         not (0 <= ch <= 15 and 0 <= cc <= 127 and 0 <= value <= 127)):
         return None
     if kind == "H" and (ch,cc,value) not in ((0,0,0),(0,0,1)):
+        return None
+    if kind == "B" and not (ch == 1 and cc in (52,53)
+                            and value in (0,127)):
         return None
     return kind, ch, cc, value
 

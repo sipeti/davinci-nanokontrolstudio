@@ -162,7 +162,9 @@ class Controller:
         if not 13 <= cc <= 20:
             return "IGNORED"
         self.other_scene_active = False
-        track = cc - 12
+        # One-shot defaults to 0. Persistent Scene 2 can map the SAME
+        # physical knobs onto A9..A16 after MCU bank confirmation.
+        track = cc - 12 + getattr(self, "track_offset", 0)
         now = self.now()
         if self.last_event is not None and now - self.last_event > IDLE_RESET_SECONDS:
             self.engine.reset()  # silent hardware Scene switches also rearm
@@ -295,7 +297,8 @@ def process_poll(controller, pending):
             controller.high_rate_reported = True
     engaged_ccs = {
         cc for cc in pending.events
-        if controller.engine.state(cc - 12) == "ENGAGED"
+        if controller.engine.state(
+            cc - 12 + getattr(controller, "track_offset", 0)) == "ENGAGED"
     }
     foreign, _, events = pending.take(engaged_ccs=engaged_ccs)
     if foreign is not None:

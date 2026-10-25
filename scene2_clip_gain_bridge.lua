@@ -9,6 +9,7 @@ return function(host, isReady)
     active = false, events = 0, lastScene = nil, lastCC = {},
     file = nil, timer = nil, ready = false,
     ledSender = nil, ledKnown = {}, lastFeedbackHeartbeat = 0,
+    bankIndex = 0, bankStatus = 1, bankListener = nil,
     path = (os.getenv("HOME") or "") ..
       "/Library/Caches/nk-scene2-controller-events.csv",
     feedbackPath = (os.getenv("HOME") or "") ..
@@ -40,6 +41,11 @@ return function(host, isReady)
     self.ledSender = sender
   end
 
+  function bridge:setBankListener(listener)
+    assert(type(listener) == "function")
+    self.bankListener = listener
+  end
+
   function bridge:clearFeedback()
     if self.ledSender then
       for cc in pairs(self.ledKnown) do self.ledSender(cc, false) end
@@ -67,13 +73,32 @@ return function(host, isReady)
     -- Read the full bounded tail so we never miss its newest entries.
     for line in f:lines() do
       local stamp, kind, cc, value =
-        line:match("^(%d+),([HL]),(%d+),(%d+)$")
+        line:match("^(%d+),([HLB]),(%d+),(%d+)$")
       stamp, cc, value = tonumber(stamp), tonumber(cc), tonumber(value)
       if stamp and stamp <= now and now - stamp <= 1800 then
         if kind == "H" and cc == 0 and value == 0 then
           self:clearFeedback()
         elseif kind == "H" and cc == 0 and value == 1 then
           self.lastFeedbackHeartbeat = stamp
+        elseif kind == "B" and (cc == 0 or cc == 1)
+          and (value == 0 or value == 1 or value == 2) then
+          -- B is written by the ACTUAL MCU worker, never inferred
+          -- from a physical SELECT press: 0=pending, 1=8 host faders
+          -- observed, 2=unconfirmed. The first bank is the baseline.
+          local changed = cc ~= self.bankIndex or value ~= self.bankStatus
+          self.bankIndex, self.bankStatus = cc, value
+          for bankCC=52,53 do
+            local desired = (value == 1 and
+              ((bankCC == 52 and cc == 0) or
+               (bankCC == 53 and cc == 1))) and 127 or 0
+            if self.ledKnown[bankCC] ~= desired then
+              self.ledKnown[bankCC] = desired
+              self.ledSender(bankCC, desired == 127)
+            end
+          end
+          if changed and self.bankListener then
+            self.bankListener(cc, value)
+          end
         elseif kind == "L" and cc and value
           and ((21 <= cc and cc <= 28)
             or (cc >= 29 and cc <= 31)
@@ -140,7 +165,8 @@ return function(host, isReady)
     self.events = 0
     self.ledKnown = {}
     self.lastFeedbackHeartbeat = 0
-    self.file:write("# ts_ms,kind,channel,cc,value; H=heartbeat C=clip M=mixer R=reset\n")
+    self.bankIndex, self.bankStatus = 0, 1
+    self.file:write("# ts_ms,kind,channel,cc,value; H=heartbeat C=clip M=mixer B=bank R=reset\n")
     self.file:flush()
     self:heartbeat()
     self.timer = host.timer.doEvery(0.5, function() self:heartbeat() end)
@@ -191,6 +217,8 @@ return function(host, isReady)
     local kind = nil
     if cc >= 13 and cc <= 20 then
       kind = "C" -- proven clip gain rotary mapping
+    elseif cc == 52 or cc == 53 then
+      kind = "B" -- Scene2 SELECT7/8 -> MCU bank left/right
     elseif (cc >= 2 and cc <= 6) or cc == 8 or cc == 9 or cc == 12
       or (cc >= 21 and cc <= 31)
       or (cc >= 33 and cc <= 37) then

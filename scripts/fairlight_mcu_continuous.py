@@ -26,6 +26,10 @@ MAX_MESSAGES = 1200
 # to the matching MCU pitchwheel; the 500ms TOUCH timer is independent.
 TOUCH_HOLD = 0.5
 BUTTON_HOLD = 0.08
+# MCU BANK LEFT/RIGHT (0x2e/0x2f), NOT physical Korg CC52/53.
+BANK_LEFT_NOTE = 46
+BANK_RIGHT_NOTE = 47
+BANK_CONFIRM_SECONDS = 3.0
 # Resolve transmits mixer faders at project load / bank refresh, NOT every
 # 10 seconds. The per-session host snapshot remains authoritative until a
 # newer actual host pitchwheel or a genuine MIDI session invalidation.
@@ -131,11 +135,22 @@ class LiveMixer:
     """A bounded Fairlight MCU state machine with soft pickup and MIDI key-up."""
 
     def __init__(self, send, led, *, write=False, allow_strip8=False,
-                 packet_cap=MAX_MESSAGES, clock=time.monotonic):
+                 bank_enabled=False, packet_cap=MAX_MESSAGES,
+                 clock=time.monotonic):
         self.send = send
         self.write = write
         self.clock = clock
         self.allow_strip8 = allow_strip8
+        self.bank_enabled = bank_enabled
+        # Index 0/1 means the two explicitly tested banks. Bank 0
+        # preserves the original v1.5 startup behavior without extra MIDI.
+        self.bank = 0
+        self.bank_pending = None
+        self.bank_target = 0
+        self.bank_status = 1  # 0=await host, 1=ready, 2=unconfirmed
+        self.bank_seen = set()
+        self.bank_started = None
+        self.bank_pressed = set()
         self.packet_cap = packet_cap
         self.host_state = Bridge(lambda *args, **kw: None, led, clock=clock)
         self.engaged = [False] * 8
@@ -162,6 +177,62 @@ class LiveMixer:
                 # External mixer changes revoke soft takeover.
                 self.engaged[strip] = False
         self.host_state.host(message)
+        if self.bank_enabled and self.bank_pending is not None and (
+                getattr(message, "type", None) == "pitchwheel"):
+            channel = getattr(message, "channel", None)
+            if type(channel) is int and 0 <= channel < 8:
+                self.bank_seen.add(channel)
+                if len(self.bank_seen) == 8:
+                    self.bank = self.bank_pending
+                    self.bank_target = self.bank
+                    self.bank_pending = None
+                    self.bank_status = 1
+                    self.bank_started = None
+
+    def bank_report(self):
+        """Requested/confirmed bank, never a hardcoded per-project A8."""
+        return self.bank_target, self.bank_status
+
+    def bank_event(self, ch, cc, value):
+        if not self.bank_enabled or ch != 1 or cc not in (52, 53):
+            return "IGNORED"
+        if value == 0:
+            self.bank_pressed.discard(cc)
+            return "BANK_RELEASE"
+        if value != 127:
+            return "BANK_INVALID"
+        if cc in self.bank_pressed:
+            return "BANK_DUPLICATE"
+        self.bank_pressed.add(cc)
+        if self.bank_pending is not None:
+            return "BANK_PENDING"
+        if self.bank_status == 2 and cc != 52:
+            return "BANK_UNCONFIRMED_USE_LEFT"
+        direction = -1 if cc == 52 else 1
+        target = (0 if self.bank_status == 2
+                  else self.bank + direction)
+        if target not in (0, 1):
+            return "BANK_EDGE"
+        if not self.write:
+            return "BANK_READ_ONLY"
+        # Release any old touch/solo and revoke *all* former bank pickup
+        # positions. New fader positions must arrive from the real host.
+        self.rearm(invalidate_host=True)
+        self.bank_pending = target
+        self.bank_target = target
+        self.bank_status = 0
+        self.bank_seen.clear()
+        self.bank_started = self.clock()
+        note = BANK_LEFT_NOTE if cc == 52 else BANK_RIGHT_NOTE
+        try:
+            self.keys[note] = self.clock() + BUTTON_HOLD
+            self._send("note_on", channel=0, note=note, velocity=127)
+        except BaseException:
+            self.bank_status = 2
+            self.bank_pending = None
+            self.release_all()
+            raise
+        return "BANK_REQUEST_SENT"
 
     def _send(self, kind, *, release=False, **kw):
         if not self.write:
@@ -210,6 +281,14 @@ class LiveMixer:
 
     def tick(self):
         now = self.clock()
+        if (self.bank_enabled and self.bank_pending is not None
+                and self.bank_started is not None
+                and now - self.bank_started >= BANK_CONFIRM_SECONDS):
+            # The command was transmitted but the host did not return
+            # all eight real fader positions. Never reuse the old bank.
+            self.bank_status = 2
+            self.bank_pending = None
+            self.bank_started = None
         for strip, deadline in tuple(self.touches.items()):
             if now >= deadline:
                 self._release_touch(strip)
@@ -256,6 +335,8 @@ class LiveMixer:
             return "SCENE_REARM"
         if type(cc) is not int or type(value) is not int or not 0 <= value <= 127:
             return "INVALID"
+        if self.bank_enabled and self.bank_status != 1:
+            return "BANK_WAIT_HOST"
         if cc in FADER_CC_TO_STRIP:
             strip = FADER_CC_TO_STRIP[cc]
             if strip == 7 and not self.allow_strip8:
@@ -347,6 +428,9 @@ def main():
                    help="hard fence ALL physical fader/MUTE/SOLO writes during MCU connection trial")
     p.add_argument("--enable-strip8-bus1", action="store_true",
                    help="EXPLICIT option: strip8 follows CURRENT Fairlight bank; not fixed master")
+    p.add_argument("--enable-bank-pages", action="store_true",
+                   help="two 8-strip MCU banks using Scene2 SELECT7/8; "
+                        "requires new host fader feedback before pickup")
     p.add_argument("--consent")
     args = p.parse_args()
     if args.continuous:
@@ -368,6 +452,10 @@ def main():
         p.error("Bus1 enabling is forbidden in MCU handshake-only trial")
     if args.enable_strip8_bus1 and not args.enable_output:
         p.error("strip8 is blocked unless explicit output trial is enabled")
+    if args.enable_bank_pages and not (args.continuous and args.enable_output
+                                       and args.enable_strip8_bus1
+                                       and not args.handshake_only):
+        p.error("bank pages require a continuous eight-strip writing session")
     if args.input_port == args.output_port:
         p.error("IAC MIDI input and output must be different")
     try:
@@ -420,10 +508,12 @@ def main():
             write=physical_mixer_write_authorized(
                 args.enable_output, args.handshake_only),
             allow_strip8=args.enable_strip8_bus1,
+            bank_enabled=args.enable_bank_pages,
             packet_cap=None if args.continuous else MAX_MESSAGES)
         started = time.monotonic()
         last_h = None
         last_feedback_h = float("-inf")
+        last_bank_report = None
         ready = False
         counters = Counter()
         host_rx = Counter()
@@ -460,6 +550,10 @@ def main():
                 if now - last_feedback_h >= 0.5:
                     feedback.write("%d,H,0,1\n" %
                                    int(time.time() * 1000))
+                    if args.enable_bank_pages:
+                        bank, status = mixer.bank_report()
+                        feedback.write("%d,B,%d,%d\n" %
+                                       (int(time.time() * 1000), bank, status))
                     feedback.flush()
                     last_feedback_h = now
                 stat = SOURCE.stat()
@@ -520,6 +614,13 @@ def main():
                         ready = False
                         mixer.rearm()      # Korg Scene change != MCU bank change
                         soft_rearms["korg_scene"] += 1
+                    elif kind == "B" and ready and args.enable_bank_pages:
+                        result = mixer.bank_event(ch, cc, value)
+                        counters[result] += 1
+                        if result not in ("BANK_RELEASE", "BANK_DUPLICATE"):
+                            print("MCU_LIVE %s cc:%d requested_bank:%d" %
+                                  (result, cc, mixer.bank_report()[0] + 1),
+                                  flush=True)
                     elif kind == "M" and ready:
                         if args.handshake_only:
                             # Double fence: LiveMixer.write=False as well.
@@ -540,6 +641,19 @@ def main():
                                   (result, cc, value), flush=True)
                         printed.add(marker)
                 mixer.tick()
+                if args.enable_bank_pages:
+                    report = mixer.bank_report()
+                    if report != last_bank_report:
+                        feedback.write("%d,B,%d,%d\n" %
+                                       (int(time.time() * 1000), *report))
+                        feedback.flush()
+                        label = ("ACTIVE" if report[1] == 1
+                                 else "AWAIT_HOST" if report[1] == 0
+                                 else "UNCONFIRMED")
+                        print("MCU_LIVE_BANK=%s; page=%d; host_faders=%d/8" %
+                              (label, report[0] + 1, len(mixer.bank_seen)),
+                              flush=True)
+                        last_bank_report = report
                 if last_h is None and now - started > 3:
                     raise RuntimeError(
                         "no Hammerspoon heartbeat: launch Hammerspoon, then "

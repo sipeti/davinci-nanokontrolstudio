@@ -28,6 +28,8 @@ def parser():
     p.add_argument("--disable-strip8", action="store_true",
                    help="exclude the eighth MCU bank strip (may be Bus1 "
                         "in projects with fewer than eight audio tracks)")
+    p.add_argument("--enable-bank-pages", action="store_true",
+                   help="two-bank SELECT7/8 preview, up to A16")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -66,6 +68,9 @@ def commands(args, scripts):
         # Allow a simple user override, without touching the MCU protocol.
         if not args.disable_strip8:
             mcu.append("--enable-strip8-bus1")
+        if args.enable_bank_pages:
+            mcu.append("--enable-bank-pages")
+            clip.append("--follow-mcu-bank")
         clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
@@ -146,6 +151,8 @@ def main(argv=None):
     args = p.parse_args(argv)
     if args.disable_strip8 and not args.auto_run:
         p.error("--disable-strip8 requires --auto-run")
+    if args.enable_bank_pages and (not args.auto_run or args.disable_strip8):
+        p.error("--enable-bank-pages needs --auto-run and all 8 MCU strips")
     if args.auto_run:
         if (args.write_test_copy or args.allow_named_project or
                 args.expected_project or args.confirmed_backup or
