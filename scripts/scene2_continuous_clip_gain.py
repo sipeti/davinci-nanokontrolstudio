@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Long-running, opt-in Scene 2 rotary -> Resolve *clip* AudioVolume bridge.
 
-Default READ_ONLY. Writable mode is restricted to an explicitly named,
-backed-up disposable test project without gain keyframes/automation.
+Default READ_ONLY. Writable mode needs an explicitly named project,
+a confirmed backup, stopped playback and no gain keyframes/automation.
+Non-test projects require a separate per-session opt-in.
 Hammerspoon's existing MIDI callback is the sole input owner; its optional
 Scene 2 bridge publishes timestamped local input events and 0.5 s heartbeats.
 This script never claims to change Fairlight MIXER track faders or mute/solo.

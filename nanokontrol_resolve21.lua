@@ -1,4 +1,4 @@
--- nanoKONTROL Studio -> DaVinci Resolve 21 | clean Assignable Mode v1.3
+-- nanoKONTROL Studio -> DaVinci Resolve 21 | v1.4.0 Scene 1 + Scene 2
 -- ONE guided 28-step setup. No MCU/HUI emulation or Resolve scripting.
 -- Shared JOG/SHUTTLE + transport for all five Assignable scenes.
 -- KORG KONTROL Editor: each scene's jog = Sign Magnitude / Const / CC82;

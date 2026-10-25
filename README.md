@@ -1,5 +1,7 @@
 # Korg nanoKONTROL Studio for DaVinci Resolve 21
 
+**Source release: v1.4.0** — Scene 1 editing + Scene 2 Fairlight mixer/clip gain.
+
 A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain the shared transport and JOG/SHUTTLE behavior.
 
 **Physical acceptance:** tested on a Mac with Resolve Studio 21 and nanoKONTROL Studio, including Scene 1 ↔ Scene 2 changes, 189 low-latency clip-gain edits, 1373 Fairlight fader messages and MIDI/LED return. Other Mac/Resolve/Korg combinations still need validation.

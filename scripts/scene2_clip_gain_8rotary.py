@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Scene 2 CC13..20 -> A1..A8 playhead-clip AudioVolume, guarded research.
+"""Scene 2 CC13..20 -> A1..A8 playhead-clip AudioVolume.
 
-Default: read-only pickup and simulated gain intent. Optional test-copy
-writing is bounded, per-strip, explicitly consented and readback-verified.
-This is NOT a mixer fader, MUTE/SOLO, or production controller.
+Default: read-only pickup. Explicit named-project writing is per-strip,
+consent-gated, setter-bound and readback-verified. Never controls
+Fairlight mixer faders, MUTE/SOLO or PAN.
 """
 import argparse
 import sys

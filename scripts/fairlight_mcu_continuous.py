@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Finite, opt-in Scene2 Assignable -> Fairlight MCU bench controller.
+"""Scene 2 Assignable -> Fairlight MCU mixer worker.
 
-One existing Hammerspoon hardware owner, two distinct IAC ports, host-only
-LED authority. Default NO output. No auto-start or production deployment.
-MIDI strip8 is blocked by default because it may be the main Bus 1.
+One Hammerspoon Korg owner, two distinct IAC ports, host-only LED
+authority. Default NO output; continuous operation requires explicit
+operator opt-in. MIDI strip 8 remains blocked (potential Bus 1).
 """
 import argparse
 from collections import Counter

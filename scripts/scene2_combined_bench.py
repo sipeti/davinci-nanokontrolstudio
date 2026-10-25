@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Single-command, finite Scene 2 bench: MCU mixer + Resolve clip gain.
+"""Manually armed Scene 2 runtime: MCU mixer + Resolve clip gain.
 
-Both workers tail the SAME Hammerspoon event file. Hammerspoon alone owns
-physical Korg MIDI. This launcher opens no MIDI device and modifies no
-Scene 1 / Hammerspoon configuration. No production auto-start.
+Two independent workers tail one Hammerspoon event file. Hammerspoon
+remains the only physical Korg listener. No implicit audio writes or
+auto-start: the caller must explicitly select an exact approved project.
 """
 import argparse
 import os
