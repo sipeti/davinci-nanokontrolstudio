@@ -153,6 +153,32 @@ class LiveMixerTests(unittest.TestCase):
         self.assertNotIn(0,self.b.touches)
         self.assertEqual(self.b.sent_faders,2)
 
+    def test_epoch_rearm_keeps_only_fresh_real_host_pitchwheels(self):
+        self.fader_host(0, 45)
+        self.now += .65
+        self.fader_host(1, 60)   # actual new host bank just arrived
+        self.b.physical_event(1, 3, 60)
+        self.b.rearm(invalidate_host=True, preserve_recent_seconds=.45)
+        self.assertIsNone(self.b.host_state.host_faders[0])
+        self.assertEqual(self.b.host_state.host_faders[1],
+                         mcu.physical_to_mcu(60))
+        self.assertEqual(self.b.engaged, [False] * 8)
+        self.assertEqual(self.b.physical_event(1, 2, 45), "FADER_WAIT_HOST")
+        self.assertEqual(self.b.physical_event(1, 3, 60),
+                         "FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1, 3, 61),
+                         "FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1, 3, 62),
+                         "FADER_LIVE_SENT")
+
+    def test_epoch_rearm_without_new_feedback_remains_blocked(self):
+        self.fader_host(0, 50)
+        self.now += 5.0
+        self.b.rearm(invalidate_host=True, preserve_recent_seconds=.45)
+        self.assertEqual(self.b.physical_event(1, 2, 50),
+                         "FADER_WAIT_HOST")
+        self.assertFalse(self.b.host_state.host_faders[0] is not None)
+
     def test_fader_partial_press_failure_still_releases_touch(self):
         calls=[]
         def fail(kind,**kw):

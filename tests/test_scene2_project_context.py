@@ -16,8 +16,9 @@ OTHER_RUN = "fedcba9876543210"
 class Mixer:
     def __init__(self):
         self.invalidations = 0
-    def rearm(self, *, invalidate_host=False):
+    def rearm(self, *, invalidate_host=False, preserve_recent_seconds=0.0):
         self.invalidations += int(invalidate_host)
+        self.last_preserve = preserve_recent_seconds
 
 
 class Timeline:
@@ -69,6 +70,7 @@ class ContextTests(unittest.TestCase):
             self.assertEqual(pub.publish(("p2", "t1")), (2, True))
             self.assertTrue(gate.check(mix, 1700000001000))
             self.assertEqual(mix.invalidations, 1)
+            self.assertEqual(mix.last_preserve, .45)
             current[0] += .5
             self.assertEqual(pub.publish(None), (3, False))
             self.assertFalse(gate.check(mix, 1700000001500))

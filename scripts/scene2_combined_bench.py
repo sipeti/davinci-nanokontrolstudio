@@ -57,7 +57,7 @@ def commands(args, scripts):
         clip.append("--low-latency")
     if args.auto_run:
         mcu += ["--enable-output", "--consent", MCU_CONSENT,
-                "--auto-context-guard"]
+                "--auto-context-guard", "--init-mcu-session"]
         clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]

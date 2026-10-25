@@ -94,7 +94,12 @@ class ContextGate:
         if self.generation is None:
             self.generation = generation
         else:
-            if generation != self.generation or (not available and self.ready):
+            if generation != self.generation:
+                # Only keep a recently received *real* host pitchwheel; the
+                # new project's bank can precede this epoch observation.
+                # Never retain a stale position from a previous project.
+                mixer.rearm(invalidate_host=True, preserve_recent_seconds=0.45)
+            elif not available and self.ready:
                 mixer.rearm(invalidate_host=True)
             self.generation = generation
         self.ready = available

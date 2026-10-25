@@ -234,7 +234,7 @@ class LiveMixer:
             raise RuntimeError("MCU_RELEASE_FAILED: %r; restart Resolve" %
                                failures)
 
-    def rearm(self, *, invalidate_host=False):
+    def rearm(self, *, invalidate_host=False, preserve_recent_seconds=0.0):
         """Disarm physical Korg controls without destroying live MCU snapshot.
 
         Fader pitchwheel arrives only on Resolve project open or mixer
@@ -245,7 +245,24 @@ class LiveMixer:
         """
         self.release_all()
         if invalidate_host:
+            # Resolve may emit its NEW project bank a fraction of a second
+            # BEFORE the Python clip worker publishes the project epoch.
+            # A blind rearm discarded those genuine new pitchwheel messages
+            # and permanently stranded every physical fader at WAIT_HOST.
+            # Preserve only very recent, actually RECEIVED MCU positions.
+            now = self.clock()
+            recent = [
+                (value, stamp) if (stamp is not None and
+                                   0 <= now - stamp <= preserve_recent_seconds)
+                else (None, None)
+                for value, stamp in zip(self.host_state.host_faders,
+                                        self.host_state.host_fader_time)
+            ]
             self.host_state.rearm()
+            for strip, (value, stamp) in enumerate(recent):
+                if value is not None:
+                    self.host_state.host_faders[strip] = value
+                    self.host_state.host_fader_time[strip] = stamp
         self.engaged = [False] * 8
         self.physical = [None] * 8
         self.last_sent_position = [None] * 8
@@ -467,7 +484,23 @@ def main():
             while args.continuous or time.monotonic() - started < args.seconds:
                 now = time.monotonic()
                 if context_gate and now - last_context_check >= 0.1:
+                    last_generation = context_gate.generation
                     context_gate.check(mixer, int(time.time() * 1000))
+                    if (last_generation is not None and
+                            context_gate.generation != last_generation):
+                        print("MCU_LIVE_CONTEXT=NEW_EPOCH; generation:%d; "
+                              "host_faders_retained:%d; physical_pickup_reset" %
+                              (context_gate.generation,
+                               sum(v is not None for v in
+                                   mixer.host_state.host_faders)), flush=True)
+                        if args.init_mcu_session:
+                            # Existing bounded MCU device-session query:
+                            # may elicit a new Fairlight host bank snapshot.
+                            # No mixer fader/note command is sent here.
+                            output.send(mido.Message(
+                                "sysex", data=MCU_SESSION_QUERY))
+                            print("MCU_LIVE_SESSION=REQUERY_AFTER_EPOCH",
+                                  flush=True)
                     last_context_check = now
                 if now - last_feedback_h >= 0.5:
                     feedback.write("%d,H,0,1\n" %

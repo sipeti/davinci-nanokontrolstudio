@@ -89,6 +89,7 @@ class CombinedTest(unittest.TestCase):
             self.assertIn("--continuous", mcu[1])
             self.assertIn("--enable-output", mcu[1])
             self.assertIn("--auto-context-guard", mcu[1])
+            self.assertIn("--init-mcu-session", mcu[1])
             self.assertIn("--low-latency", clip[1])
             self.assertIn("--follow-active-project", clip[1])
             self.assertIn("--unlimited-writes", clip[1])
