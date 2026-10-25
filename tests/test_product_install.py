@@ -48,5 +48,73 @@ class PackageInstallTest(unittest.TestCase):
             self.assertEqual(list(home.iterdir()), [])
 
 
+    def test_install_restore_and_modified_file_protection(self):
+        # Fake only macOS detection and Python dependency commands. Test
+        # actual copying, manifest, hash guard and reversal in a temp HOME.
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / "home"
+            mockbin = Path(temp) / "mockbin"
+            home.mkdir()
+            mockbin.mkdir()
+            uname = mockbin / "uname"
+            uname.write_text("#!/bin/sh\necho Darwin\n")
+            uname.chmod(0o755)
+            python = mockbin / "fakepython"
+            python.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then\n'
+                '  mkdir -p "$3/bin"\n'
+                '  cp "$0" "$3/bin/python3"\n'
+                '  exit 0\n'
+                'fi\n'
+                'exit 0\n'
+            )
+            python.chmod(0o755)
+            env = dict(os.environ, HOME=str(home),
+                       NK_RESOLVE_PYTHON=str(python),
+                       PATH=str(mockbin) + os.pathsep + os.environ.get("PATH", ""))
+            hs = home / ".hammerspoon"
+            hs.mkdir()
+            original = "-- existing user config\nprint('keep me')\n"
+            (hs / "init.lua").write_text(original)
+            # Deliberately modified controller: must not be clobbered.
+            (hs / "nanokontrol_resolve21.lua").write_text("-- custom controller\n")
+            blocked = subprocess.run(["bash", str(INSTALL)],
+                env=env, capture_output=True, text=True)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("modified", blocked.stderr.lower()) if "modified" in blocked.stderr.lower() else self.assertIn("differs", blocked.stderr)
+            self.assertEqual((hs / "nanokontrol_resolve21.lua").read_text(),
+                             "-- custom controller\n")
+            ok = subprocess.run(["bash", str(INSTALL), "--force"],
+                                env=env, capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertIn("NK_INSTALL=PASS", ok.stdout)
+            self.assertIn("require(\"nanokontrol_resolve21\")",
+                          (hs / "init.lua").read_text())
+            base = home / "Library/Application Support/NK Scene2"
+            self.assertTrue((base / "scripts/scene2_combined_bench.py").exists())
+            self.assertTrue((base / "active-backup").exists())
+            # Uninstall fails safely if the user changed any tracked file.
+            (hs / "init.lua").write_text("-- changed after install\n")
+            refused = subprocess.run(["bash", str(REMOVE)],
+                env=env, capture_output=True, text=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("user-modified", refused.stderr)
+            # Restore the exact installed init.lua from the saved checksum.
+            (hs / "init.lua").write_text(
+                original + '\n-- Korg nanoKONTROL Studio / DaVinci Resolve\n'
+                'require("nanokontrol_resolve21")\n')
+            undone = subprocess.run(["bash", str(REMOVE)],
+                env=env, capture_output=True, text=True)
+            self.assertEqual(undone.returncode, 0, undone.stderr)
+            self.assertIn("NK_UNINSTALL=PASS", undone.stdout)
+            self.assertEqual((hs / "init.lua").read_text(), original)
+            self.assertEqual((hs / "nanokontrol_resolve21.lua").read_text(),
+                             "-- custom controller\n")
+            self.assertFalse((hs / "scene2_session_menu.lua").exists())
+            self.assertFalse((base / "active-backup").exists())
+            self.assertTrue((base / "venv/bin/python3").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
