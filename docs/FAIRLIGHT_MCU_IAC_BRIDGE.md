@@ -506,6 +506,42 @@ fader1 should cross its host position, producing
 move A1 in Fairlight. Do not repeat device identity/host handshake
 experiments: the Resolve startup behavior is already established.
 
+### October 25: continuous Fairlight hardware PASS and trailing fader refinement
+
+The operator's latest 180s integrated Scene2 Fairlight bench **physically
+confirmed working A1 and other tested fader movement**, MUTE/SOLO control,
+and hardware LED feedback with the corrected 4096-byte bounded Lua tail.
+The entire MCU host startup snapshot had all eight fader positions.
+Summary: `FADER_LIVE_SENT:188`, `FADER_PICKUP_PASS:3`,
+`BUTTON_LIVE_SENT:20`, `FADER_RATE_COALESCED:503`,
+`pitchwheel RX:238`, `HOST_SNAPSHOT_PRESENT=1,2,3,4,5,6,7,8`;
+`blocked:473` was generated while physical faders moved before the
+project-open host state arrived. The test showed no new FADER_DESYNC
+or GESTURE_REARM events after pickup.
+
+**Trailing-edge deficiency (Draft-only fix):** the previous 30ms rate
+limiter returned `FADER_RATE_COALESCED` and discarded the intermediate
+CC. If the user's LAST fast physical CC was coalesced, Fairlight could
+stay one or more hardware steps short. The continuous Python script
+now retains only the latest value per strip during each 30ms window
+and flushes that final physical value from `tick()` even when the
+gesture ends without another CC. It does not flush unknown host gains,
+unengaged or strip8-locked controls, an expired queued value (>250ms),
+or any total jump beyond `FADER_STEP_LIMIT`; it also drops queued
+values on focus/scene rearm, shutdown and faults. It preserves the
+already working MUTE/SOLO/host LED Lua code. `MCU_LIVE_FADER_TAIL`
+reports how many final endpoints were flushed/dropped.
+
+Offline tests cover a single quick coalesced gesture, exact CC0 and
+CC127 endpoints across two faders, no duplicate output on newer
+physical events, stale queued data, unsafe aggregate jumps, focus/
+scene loss, and a partial MCU TOUCH failure with immediate release.
+This is a targeted improvement to smooth *safe* fast gestures, **not a
+license to bypass the deliberate large-jump safety guard**. The new
+physical feel is pending user observation during ordinary use.
+Keep the PR Draft, no production autostart/main merge, and do not
+replace live files without verified backup.
+
 ## Source refs
 
 - Blackmagic Resolve 21 manual: third-party HUI/MCU consoles:
