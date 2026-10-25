@@ -96,3 +96,42 @@ requires explicit user approval after review/backups. Never rewrite
 start is for the exact named test copy only: do NOT use it on a production
 project. On a change of project, stop the session first. To seed mixer
 faders, make Resolve emit a new MCU bank/project snapshot after startup.
+
+
+## Operator-approved Mac installation (25 October 2026)
+
+Stage into a temporary folder. Stop any existing terminal combined session
+with Ctrl+C first. This installer refuses unknown local Hammerspoon main
+code, mismatched optional bridge, active workers, missing dependencies or
+failing Python unit tests. It DOES NOT start a worker, merge the Draft PR,
+or change any `hs.settings` calibration.
+
+```sh
+cd ~/Projects/davinci-nanokontrolstudio
+git fetch origin feature/scene2-mcu-fairlight-bridge
+mkdir -p /tmp/nk-scene2-install
+git archive FETCH_HEAD nanokontrol_resolve21.lua scene2_clip_gain_bridge.lua \
+  scene2_session_menu.lua scripts tests | tar -x -C /tmp/nk-scene2-install
+bash /tmp/nk-scene2-install/scripts/install_scene2_menu.sh
+```
+
+The installer creates a persistent MCU venv under
+`~/Library/Application Support/NK Scene2/venv/`, preserving versions
+from the tested `/tmp/nk-mcu-venv` when available; otherwise it installs
+`mido` and `python-rtmidi`. Installed scripts go to the adjacent
+`scripts/` directory. It creates timestamped backups under `backups/`
+and prints the exact backup path. The Hammerspoon `init.lua`, hardware
+Assignable scenes, stored 28/28 calibration, and Scene1 actions are never
+overwritten. After a successful install, use Hammerspoon's **Reload Config**,
+then NK JOG > **Scene 2 TEST: START**, confirm and return to Resolve.
+
+To undo the menu install, stop the menu session, copy the backed-up
+`nanokontrol_resolve21.lua` and `scene2_clip_gain_bridge.lua` into
+`~/.hammerspoon/`, and remove the menu helper only if the backup folder
+contains `session_menu_was_absent`. Reload Hammerspoon. Never delete the
+backup folder until the rollback has been verified.
+
+The menu is still intentionally **test-project-only**: it authorizes
+`hajoagyu_261022 testing`. The project-name and no-automation guard
+remain. Production projects require a separate, explicit approval of the
+project-specific write policy; do not silently remove that restriction.
