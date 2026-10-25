@@ -306,18 +306,48 @@ class LiveMixerTests(unittest.TestCase):
         self.assertEqual(self.b.physical_event(1,2,61),"FADER_PICKUP_PASS")
         self.assertEqual(self.b.physical_event(1,2,62),"FADER_LIVE_SENT")
 
-    def test_huge_jump_across_host_without_nearby_sample_cannot_pickup(self):
-        self.fader_host(0,60)
-        self.assertEqual(self.b.physical_event(1,2,0),"FADER_PICKUP_PENDING")
-        self.assertEqual(self.b.physical_event(1,2,127),"FADER_PICKUP_PENDING")
-        self.assertFalse(self.b.engaged[0])
-        self.assertEqual(self.b.sent_faders,0)
+    def test_crossed_pickup_sends_last_physical_position(self):
+        self.fader_host(0,65)
+        for value in (20,30,40,50,60):
+            self.assertEqual(self.b.physical_event(1,2,value),
+                             "FADER_PICKUP_PENDING")
         self.assertEqual(self.calls,[])
-        # Actual physical movement near the real host position earns
-        # control, after which fast movement is intentionally allowed.
-        self.assertEqual(self.b.physical_event(1,2,60),"FADER_PICKUP_PASS")
-        self.assertEqual(self.b.physical_event(1,2,127),"FADER_LIVE_SENT")
+        self.assertEqual(self.b.physical_event(1,2,80),
+                         "FADER_PICKUP_CROSS_SENT")
+        self.assertTrue(self.b.engaged[0])
         self.assertEqual(self.b.sent_faders,1)
+        self.assertEqual(self.calls[-1],
+                         ("pitchwheel",{"channel":0,
+                             "pitch":mcu.physical_to_mcu(80)-8192}))
+        self.assertEqual(self.b.physical_event(1,2,127),"FADER_LIVE_SENT")
+
+    def test_reverse_crossed_pickup_sends_without_extra_cc(self):
+        self.fader_host(0,65)
+        self.assertEqual(self.b.physical_event(1,2,110),"FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1,2,30),
+                         "FADER_PICKUP_CROSS_SENT")
+        self.assertEqual(self.b.sent_faders,1)
+        self.assertEqual(self.calls[-1],
+                         ("pitchwheel",{"channel":0,
+                             "pitch":mcu.physical_to_mcu(30)-8192}))
+
+    def test_crossed_pickup_requires_real_host(self):
+        self.assertEqual(self.b.physical_event(1,2,20),"FADER_WAIT_HOST")
+        self.assertEqual(self.b.physical_event(1,2,80),"FADER_WAIT_HOST")
+        self.assertEqual(self.calls,[])
+        self.fader_host(0,65)
+        self.b.rearm()
+        self.assertEqual(self.b.physical_event(1,2,80),"FADER_PICKUP_PENDING")
+
+    def test_read_only_crossed_pickup_sends_nothing(self):
+        sent=[]
+        b=live.LiveMixer(lambda kind,**kw:sent.append((kind,kw)),
+                         lambda cc,v:None,write=False,clock=lambda:self.now)
+        b.host(msg("pitchwheel",channel=0,
+                   pitch=mcu.physical_to_mcu(65)-8192))
+        b.physical_event(1,2,20)
+        self.assertEqual(b.physical_event(1,2,80),"FADER_PICKUP_PASS")
+        self.assertEqual(sent,[])
 
     def test_external_mixer_move_disarms_previous_pickup(self):
         self.fader_host(0,60)
