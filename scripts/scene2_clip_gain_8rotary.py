@@ -48,10 +48,12 @@ class Controller:
     def __init__(self, app, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False, max_writes=8,
                  now=time.monotonic, max_writes_limit=16,
-                 allow_unlimited=False, allow_named_project=False):
+                 allow_unlimited=False, allow_named_project=False,
+                 follow_active_project=False):
         self.app = app
         self.write = write
         self.expected_project = expected_project
+        self.follow_active_project = (follow_active_project is True)
         self.max_writes = max_writes
         self.now = now
         self.engine = SoftTakeover()
@@ -62,9 +64,10 @@ class Controller:
         self.reported = set()
         self.other_scene_active = False
         self.high_rate_reported = False
-        if write and not approved_copy(expected_project, confirmation,
-                                       automation_confirmed,
-                                       allow_named_project=allow_named_project):
+        if (write and not self.follow_active_project
+                and not approved_copy(expected_project, confirmation,
+                                      automation_confirmed,
+                                      allow_named_project=allow_named_project)):
             raise ValueError("exact approved project name, backup, stopped "
                              "playback, consent and no-automation confirmation "
                              "required; non-test projects need explicit "
@@ -183,11 +186,11 @@ class Controller:
         elif self.session != session:
             # In write mode a moved playhead, project or timeline ends
             # the entire test session. Read-only mode may rearm on change.
-            if self.write:
+            if self.write and not self.follow_active_project:
                 return self._halt("project, timeline or playhead moved")
             self.engine.reset()
             self.session = session
-            print("CONTEXT_CHANGED=RESET; WRITES=0", flush=True)
+            print("CONTEXT_CHANGED=RESET; pickup required", flush=True)
         decision = self.engine.feed(channel, cc, value, identity,
                                     before["db"], True)
         if decision.state == "PICKUP_PENDING":
