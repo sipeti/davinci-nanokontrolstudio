@@ -66,6 +66,7 @@ class ContinuousController(Controller):
             confirmation=confirmation,
             automation_confirmed=automation_confirmed,
             max_writes=max_writes, max_writes_limit=256, now=now,
+            allow_unlimited=(max_writes == 0),
         )
         self.pause_reason = None
         self.stability_wait = stability_wait
@@ -211,7 +212,8 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                         if process_poll(controller, pending) == "HALTED":
                             print("SCENE2_CONTINUOUS=STOPPED; VERIFIED_WRITES=%d" %
                                   controller.writes, flush=True)
-                            return 0 if (controller.writes ==
+                            return 0 if (controller.max_writes != 0 and
+                                         controller.writes ==
                                          controller.max_writes) else 1
                         pending = MidiPoll()
                     elif not ready:
@@ -237,10 +239,17 @@ def main():
     parser.add_argument("--consent")
     parser.add_argument("--max-writes", type=int, default=256,
                         help="1..256 verified edits across all eight knobs")
+    parser.add_argument("--unlimited-writes", action="store_true",
+                        help="Requires --seconds 0 and explicit test-copy consent")
     args = parser.parse_args()
     if args.seconds != 0 and not 5 <= args.seconds <= 3600:
         parser.error("--seconds must be 0 or 5..3600")
-    if not 1 <= args.max_writes <= 256:
+    if args.unlimited_writes:
+        if not args.write_test_copy or args.seconds != 0:
+            parser.error("unlimited writes require --seconds 0 and explicit "
+                         "--write-test-copy consent")
+        args.max_writes = 0
+    elif not 1 <= args.max_writes <= 256:
         parser.error("--max-writes must be 1..256")
     try:
         import DaVinciResolveScript as dvr

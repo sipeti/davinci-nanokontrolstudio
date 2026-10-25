@@ -67,10 +67,21 @@ class ContinuousTest(unittest.TestCase):
 
     def test_readonly_default_no_setters(self):
         c = self.controller()
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
-        self.assertEqual(self.feed(c, 1, 16, 97), "SIMULATED")
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "SIMULATED")
         self.assertFalse(self.timeline.track_items[4].calls)
+
+    def test_unlimited_test_copy_writes_repeatedly(self):
+        c = self.controller(write=True, max_writes=0)
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
+        self.assertEqual(self.feed(c, 1, 16, 106), "WRITTEN")
+        self.assertFalse(c.halted)
+        self.assertEqual(c.writes, 2)
+        with self.assertRaises(ValueError):
+            self.controller(write=False, max_writes=0)
 
     def test_256_writes_allowed_only_by_explicit_continuous_constructor(self):
         c = self.controller(write=True, max_writes=256)
@@ -85,57 +96,57 @@ class ContinuousTest(unittest.TestCase):
 
     def test_verified_write_remains_applied_after_good_cc(self):
         c = self.controller(write=True)
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
-        self.assertEqual(self.feed(c, 1, 16, 97), "WRITTEN")
-        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.811)
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.684)
         self.assertEqual(c.writes, 1)
 
     def test_scene_switch_and_return_requires_fresh_pickup(self):
         c = self.controller(write=True)
-        self.feed(c, 1, 16, 90)
-        self.feed(c, 1, 16, 98)
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
         self.assertEqual(self.feed(c, 0, 16, 45), "RESET")
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(c.writes, 0)
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.assertFalse(self.timeline.track_items[4].calls)
 
     def test_playhead_move_rearms_without_stale_write(self):
         c = self.controller(write=True)
-        self.feed(c, 1, 16, 90)
-        self.feed(c, 1, 16, 98)
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
         self.timeline.tc = "01:00:05:01"
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(c.writes, 0)
         self.assertFalse(self.timeline.track_items[4].calls)
 
     def test_clip_switch_rearms_and_external_edit_rearms(self):
         c = self.controller(write=True)
-        self.feed(c, 1, 16, 90)
-        self.feed(c, 1, 16, 98)
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
         self.timeline.track_items[4].uid = "another-a4-clip"
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(c.writes, 0)
         self.timeline.track_items[4].volume = 5.0
-        self.assertEqual(self.feed(c, 1, 16, 96), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 106), "PICKUP_PENDING")
         self.assertFalse(self.timeline.track_items[4].calls)
 
     def test_idle_2_seconds_does_not_rearm_but_20_seconds_does(self):
         c = self.controller(write=True)
-        self.feed(c, 1, 16, 90)
+        self.feed(c, 1, 16, 100)
         self.now += 2.5
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.now += 20.1
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertFalse(self.timeline.track_items[4].calls)
 
     def test_wrong_project_fails_closed_on_new_target(self):
         c = self.controller(write=True)
-        self.feed(c, 1, 16, 90)
+        self.feed(c, 1, 16, 100)
         self.project.uid = "switched-to-other-project"
         self.project.GetName = lambda: "PRODUCTION"
-        self.assertEqual(self.feed(c, 1, 16, 98), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 108), "HALTED")
         self.assertFalse(self.timeline.track_items[4].calls)
 
     def test_playhead_move_during_120ms_write_stability_gate_blocks_setter(self):
@@ -146,9 +157,9 @@ class ContinuousTest(unittest.TestCase):
             expected_project="Audio QA backup",
             confirmation=CONSENT, automation_confirmed=True,
             now=lambda: self.now, stability_wait=move_playhead)
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
-        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
         self.assertEqual(c.writes, 0)
         self.assertFalse(self.timeline.track_items[4].calls)
         self.assertIn("during stability window", self.output.getvalue())
@@ -161,9 +172,9 @@ class ContinuousTest(unittest.TestCase):
             expected_project="Audio QA backup",
             confirmation=CONSENT, automation_confirmed=True,
             now=lambda: self.now, stability_wait=external_adjust)
-        self.feed(c, 1, 16, 90)
-        self.feed(c, 1, 16, 98)
-        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
+        self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
         self.assertEqual(c.writes, 0)
         self.assertFalse(self.timeline.track_items[4].calls)
 
@@ -194,13 +205,13 @@ class ContinuousTest(unittest.TestCase):
             path.write_text("# ts_ms,kind,channel,cc,value\n")
             clock = FakeClock(path)
             clock.add(.04, "H", 0, 0, 1)
-            clock.add(.08, "C", 1, 16, 90)
-            clock.add(.28, "C", 1, 16, 98)
+            clock.add(.08, "C", 1, 16, 100)
+            clock.add(.28, "C", 1, 16, 108)
             if scene_reset:
                 clock.add(.40, "R", 0, 16, 15)
             if focus_loss:
                 clock.add(.40, "H", 0, 0, 0)
-            clock.add(.56, "C", 1, 16, 97)
+            clock.add(.56, "C", 1, 16, 107)
             clock.add(.60, "H", 0, 0, 1)
             c = worker.ContinuousController(
                 self.app, write=write, max_writes=max_writes,
@@ -226,7 +237,7 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(code, 0, logs)
         self.assertIn("A4 AUDIO_WRITE_READBACK=PASS", logs)
         self.assertEqual(c.writes, 1)
-        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.811)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.684)
 
     def test_switching_scene_prevents_pending_write_intent(self):
         code, c, logs = self.stream(write=True, max_writes=1,

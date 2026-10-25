@@ -43,7 +43,8 @@ def snapshot(app, track):
 class Controller:
     def __init__(self, app, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False, max_writes=8,
-                 now=time.monotonic, max_writes_limit=16):
+                 now=time.monotonic, max_writes_limit=16,
+                 allow_unlimited=False):
         self.app = app
         self.write = write
         self.expected_project = expected_project
@@ -63,8 +64,12 @@ class Controller:
         if (type(max_writes_limit) is not int or
                 max_writes_limit not in (16, 256)):
             raise ValueError("max_writes_limit must be 16 or 256")
-        if type(max_writes) is not int or not 1 <= max_writes <= max_writes_limit:
-            raise ValueError("max_writes must be in 1..%d" % max_writes_limit)
+        unlimited = (allow_unlimited is True and max_writes == 0 and
+                     max_writes_limit == 256 and write)
+        if type(max_writes) is not int or not (
+                1 <= max_writes <= max_writes_limit or unlimited):
+            raise ValueError("max_writes must be 1..%d, or 0 in explicit "
+                             "continuous writable mode" % max_writes_limit)
 
     def _halt(self, reason):
         self.halted = True
@@ -76,7 +81,7 @@ class Controller:
         item = before["item"]
         original = before["db"]
         if (type(requested) not in (float, int)
-                or not -100 <= requested <= 30
+                or not gain_for_cc(0) <= requested <= gain_for_cc(127)
                 or abs(requested - original) <= 0.055):
             self.engine.reject(track)
             print("A%d WRITE=BLOCKED; invalid absolute gain target or no change" %
@@ -104,10 +109,11 @@ class Controller:
             if not self.engine.confirm(track, identity, after["db"], True):
                 raise api.ProbeBlocked("pickup confirmation mismatch")
             self.writes += 1
-            print("A%d AUDIO_WRITE_READBACK=PASS; %.3f -> %.3f dB; WRITES=%d/%d" %
-                  (track, original, after["db"], self.writes, self.max_writes),
+            print("A%d AUDIO_WRITE_READBACK=PASS; %.3f -> %.3f dB; WRITES=%d/%s" %
+                  (track, original, after["db"], self.writes,
+                   "UNLIMITED" if self.max_writes == 0 else str(self.max_writes)),
                   flush=True)
-            if self.writes >= self.max_writes:
+            if self.max_writes and self.writes >= self.max_writes:
                 return self._halt("session write cap reached")
             return "WRITTEN"
         except Exception as exc:

@@ -26,10 +26,10 @@ class TestPickup(unittest.TestCase):
         self.assertEqual(self.feed(90).state, 'ENGAGED')
 
     def test_skipped_midi_values_cross_target_and_propose_last_gain(self):
-        self.assertEqual(self.feed(90, db=9.0).state, 'PICKUP_PENDING')
-        result = self.feed(92, db=9.0)
+        self.assertEqual(self.feed(98, db=9.0).state, 'PICKUP_PENDING')
+        result = self.feed(100, db=9.0)
         self.assertEqual(result.state, 'WRITE_INTENT')
-        self.assertEqual(result.proposed_db, gain_for_cc(92))
+        self.assertEqual(result.proposed_db, gain_for_cc(100))
 
     def test_fast_full_sweep_crosses_and_proposes_last_gain(self):
         self.assertEqual(self.feed(10, db=9.0).state, 'PICKUP_PENDING')
@@ -81,8 +81,14 @@ class TestPickup(unittest.TestCase):
 
     def test_gain_map(self):
         values = [gain_for_cc(i) for i in range(128)]
-        self.assertEqual((values[0], values[-1]), (-100, 30))
+        self.assertEqual((values[0], values[70], values[-1]), (-60, 0, 18))
         self.assertEqual(values, sorted(values))
+
+    def test_clip_outside_rotary_range_cannot_pick_up(self):
+        result = self.feed(100, db=30.0)
+        self.assertEqual(result.state, 'DISABLED')
+        self.assertIn('outside -60..+18', result.reason)
+        self.assertEqual(self.e.state(4), 'DISABLED')
 
 
 if __name__ == '__main__':

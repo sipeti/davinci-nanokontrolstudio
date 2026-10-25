@@ -28,15 +28,15 @@ class Decision:
 
 
 def gain_for_cc(value):
-    """Monotonic -100..+30 dB map; ~0.44 dB/step from -24 to +18."""
+    """Continuous -60..+18 dB curve: CC70=0 dB, finer near unity."""
     if type(value) is not int or not 0 <= value <= 127:
         raise ValueError("MIDI value must be a CC integer in 0..127")
     if value <= 16:
-        gain = -100.0 + (76.0 * value / 16.0)
-    elif value <= 111:
-        gain = -24.0 + (42.0 * (value - 16) / 95.0)
+        gain = -60.0 + 36.0 * value / 16.0
+    elif value <= 70:
+        gain = -24.0 + 24.0 * (value - 16) / 54.0
     else:
-        gain = 18.0 + (12.0 * (value - 111) / 16.0)
+        gain = 18.0 * (value - 70) / 57.0
     return round(gain, 3)
 
 
@@ -98,6 +98,12 @@ class SoftTakeover:
                 not _valid_db(observed_db)):
             self.reject(strip)
             return Decision("DISABLED", strip, reason="missing trusted snapshot")
+        # Never move an existing clip outside the rotary's supported range.
+        if not (gain_for_cc(0) - PICKUP_WINDOW_DB <= observed_db <=
+                gain_for_cc(127) + PICKUP_WINDOW_DB):
+            self.reject(strip)
+            return Decision("DISABLED", strip,
+                            reason="clip gain outside -60..+18 dB pickup range")
         current = self._strips.get(strip)
         if current is None or current["identity"] != identity or abs(
                 current["expected_db"] - observed_db) > EPSILON_DB:

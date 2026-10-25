@@ -52,15 +52,15 @@ class EightRotaryTest(unittest.TestCase):
             return controller.handle(ch, cc, value)
 
     def pickup_a4(self, c):
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
 
     def test_default_read_only_is_safe_even_with_valid_pickup(self):
         c = self.controller(write=False)
         self.pickup_a4(c)
-        self.assertEqual(self.feed(c, 1, 16, 97), "SIMULATED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "SIMULATED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
-        self.assertIn("SIMULATED_GAIN=11.811", self.output.getvalue())
+        self.assertIn("SIMULATED_GAIN=8.526", self.output.getvalue())
 
     def test_real_writes_require_explicit_test_copy_and_no_automation(self):
         for name, phrase, no_auto in [
@@ -77,9 +77,9 @@ class EightRotaryTest(unittest.TestCase):
         c = self.controller(write=True, max_writes=2)
         item = self.timeline.track_items[4]
         self.pickup_a4(c)
-        self.assertEqual(self.feed(c, 1, 16, 97), "WRITTEN")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
         self.assertAlmostEqual(item.volume, gain_for_cc(97))
-        self.assertEqual(self.feed(c, 1, 16, 96), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 106), "HALTED")
         self.assertEqual(len(item.calls), 2)
         self.assertAlmostEqual(item.calls[1]["AudioVolume"], gain_for_cc(96))
         self.assertEqual(c.writes, 2)
@@ -87,14 +87,14 @@ class EightRotaryTest(unittest.TestCase):
 
     def test_eight_independent_strips_and_no_fader_actions(self):
         c = self.controller(write=True)
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
         self.assertEqual(self.feed(c, 1, 17, 1), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 17, 48), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 17, 47), "WRITTEN")
         self.assertEqual(len(self.timeline.track_items[5].calls), 1)
         self.assertEqual(len(self.timeline.track_items[4].calls), 0)
-        self.assertEqual(self.feed(c, 1, 16, 97), "WRITTEN")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
         self.assertEqual(len(self.timeline.track_items[4].calls), 1)
         self.assertEqual(c.writes, 2)
         self.assertEqual(self.feed(c, 1, 2, 127), "IGNORED")
@@ -124,7 +124,7 @@ class EightRotaryTest(unittest.TestCase):
         self.timeline.track_items[8].GetProperties = lambda: None
         self.assertEqual(self.feed(c, 1, 20, 40), "DISABLED")
         self.assertEqual(self.timeline.track_items[8].calls, [])
-        self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
 
     def test_readonly_scene_change_requires_new_pickup(self):
         c = self.controller(write=False)
@@ -133,16 +133,16 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 0, 82, 1), "RESET")
         self.assertEqual(self.output.getvalue().count("OTHER_SCENE_INPUT=RESET"), 1)
         item = self.timeline.track_items[4]
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(item.calls, [])
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.assertEqual(item.calls, [])
 
     def test_writable_scene_change_halts_instead_of_rearming(self):
         c = self.controller(write=True)
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 0, 82, 1), "HALTED")
-        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
         self.assertEqual(c.writes, 0)
         self.assertIn("non-Scene-2 MIDI channel", self.output.getvalue())
@@ -220,9 +220,9 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(c.writes, 0)
         self.assertIn("MIDI_BURST=COALESCED", self.output.getvalue())
         # Read-only always remains write-free, including crossed pickup.
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 16, 98), "ENGAGED")
-        self.assertEqual(self.feed(c, 1, 16, 96), "SIMULATED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 106), "SIMULATED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
         self.assertEqual(self.output.getvalue().count("MIDI_BURST=COALESCED"), 1)
 
@@ -253,14 +253,14 @@ class EightRotaryTest(unittest.TestCase):
         c = self.controller(write=True)
         self.pickup_a4(c)
         self.clock += 2.1
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(self.timeline.track_items[4].calls, [])
 
     def test_external_edit_rearms_without_overwriting(self):
         c = self.controller(write=True)
         self.pickup_a4(c)
         self.timeline.track_items[4].volume = 5.0
-        self.assertEqual(self.feed(c, 1, 16, 97), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 107), "PICKUP_PENDING")
         self.assertEqual(self.timeline.track_items[4].calls, [])
 
     def test_project_timeline_or_playhead_move_halts_write_mode(self):
@@ -270,16 +270,16 @@ class EightRotaryTest(unittest.TestCase):
             (self.timeline, "tc", "01:00:05:01"),
         ):
             c = self.controller(write=True)
-            self.assertEqual(self.feed(c, 1, 16, 90), "PICKUP_PENDING")
+            self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
             old = getattr(owner, field)
             setattr(owner, field, value)
-            self.assertEqual(self.feed(c, 1, 16, 98), "HALTED")
+            self.assertEqual(self.feed(c, 1, 16, 108), "HALTED")
             self.assertEqual(self.timeline.track_items[4].calls, [])
             setattr(owner, field, old)
 
     def test_wrong_project_name_halts_even_before_pickup(self):
         c = self.controller(write=True, expected_project="Wrong QA backup")
-        self.assertEqual(self.feed(c, 1, 16, 90), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 100), "HALTED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
 
     def test_setter_failure_rolls_back_and_halts(self):
@@ -293,7 +293,7 @@ class EightRotaryTest(unittest.TestCase):
 
         item.SetProperties = write_and_reject
         self.pickup_a4(c)
-        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
         self.assertEqual(item.volume, 12.0)
         self.assertEqual(len(item.calls), 2)
         self.assertIn("ROLLBACK_VERIFIED=True", self.output.getvalue())
@@ -310,7 +310,7 @@ class EightRotaryTest(unittest.TestCase):
 
         item.SetProperties = no_restore
         self.pickup_a4(c)
-        self.assertEqual(self.feed(c, 1, 16, 97), "WRITTEN")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
         # A successful intentional edit should remain until the operator
         # changes it or discards the disposable test project.
         self.assertEqual(len(item.calls), 1)
@@ -329,7 +329,7 @@ class EightRotaryTest(unittest.TestCase):
 
         item.SetProperties = partial_failure
         self.pickup_a4(c)
-        self.assertEqual(self.feed(c, 1, 16, 97), "HALTED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
         self.assertAlmostEqual(item.volume, gain_for_cc(97))
         self.assertEqual(c.writes, 0)
         self.assertTrue(c.halted)
