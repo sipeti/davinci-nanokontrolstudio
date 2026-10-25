@@ -1,12 +1,15 @@
 # Scene 2 - optional one-click TEST operation (Draft PR #15)
 
-**Not deployed.** Only a named, backed-up test project may be written.
+**Operator-approved for menu installation, not yet deployed on the user's Mac.**
+Only a named, backed-up test project may be written.
 The existing Hammerspoon Scene 1 bindings, Korg mode and 28/28
 calibration are unchanged. No automatic startup or production approval.
 
-Hardware A4 and A5 clip-gain AudioVolume writes passed. Mixer faders
-and MCU host LED packets passed, but physical LED illumination and all
-eight channels in the combined mode still need the operator's check.
+The operator accepted combined Scene1/Scene2 switching and low-latency
+rotaries on 25 October 2026: 189 verified writes (A4/A5/A6/A7),
+1373 mixer fader sends, 6 MUTE/SOLO key presses, host-sourced LED
+feedback and clean Ctrl+C release. This does not verify clips on A1-A3/A8
+or actual illumination of every physical Korg LED.
 
 ## Clip gain scale
 
@@ -73,9 +76,12 @@ shows a confirmation prompt naming the test project, writes diagnostics to
 output, so a long-running task cannot fill OS pipes. A second click
 sends SIGINT to the parent supervisor, which stops both children.
 
-The menu helper expects the scripts at
-`~/Library/Application Support/NK Scene2/scripts/` and
-`/opt/homebrew/bin/python3`. Stage after review:
+The menu helper starts the **accepted --low-latency mode** and expects:
+`~/Library/Application Support/NK Scene2/scripts/`,
+`~/Library/Application Support/NK Scene2/venv/bin/python3` (mido +
+python-rtmidi), and `/opt/homebrew/bin/python3` (Resolve API).
+The durable venv must be created by the operator before enabling START.
+Stage after review:
 
 ```sh
 cd ~/Projects/davinci-nanokontrolstudio

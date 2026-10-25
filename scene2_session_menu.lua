@@ -7,6 +7,9 @@ return function(host, bridge, options)
   local runner = options.runner or
     (home .. "/Library/Application Support/NK Scene2/scripts/scene2_combined_bench.py")
   local python = options.python or "/opt/homebrew/bin/python3"
+  -- Durable MCU dependencies. /tmp/nk-mcu-venv disappears after reboot.
+  local mcuPython = options.mcuPython or
+    (home .. "/Library/Application Support/NK Scene2/venv/bin/python3")
   local logPath = options.logPath or (home .. "/Library/Logs/nk-scene2-session.log")
   local project = options.project or "hajoagyu_261022 testing"
   local self = {task = nil, log = nil, stopping = false}
@@ -30,6 +33,12 @@ return function(host, bridge, options)
       return false
     end
     file:close()
+    local venv = io.open(mcuPython, "r")
+    if not venv then
+      host.alert.show("Scene 2 MCU Python hianyzik: telepitsd a tartos venv-et", 6)
+      return false
+    end
+    venv:close()
     local choice = host.dialog.blockAlert(
       "Scene 2 TEST: kliphangero + Fairlight mixer",
       "Csak a mentett '" .. project ..
@@ -48,8 +57,9 @@ return function(host, bridge, options)
     end
     self.stopping = false
     local args = {
-      runner, "--run-until-stopped", "--write-test-copy",
-      "--expected-project", project,
+      runner, "--run-until-stopped", "--low-latency",
+      "--mcu-python", mcuPython,
+      "--write-test-copy", "--expected-project", project,
       "--confirmed-backup", "--confirmed-no-automation",
       "--max-clip-writes", "0"
     }

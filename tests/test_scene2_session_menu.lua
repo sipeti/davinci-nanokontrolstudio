@@ -21,7 +21,8 @@ local host = {
   end}
 }
 local bridge = {active=false, start=function(self) self.active=true; return true end}
-local s = factory(host, bridge, {runner="/dev/null", logPath="/dev/null"})
+local s = factory(host, bridge, {runner="/dev/null",
+  mcuPython="/dev/null", logPath="/dev/null"})
 assert(s:isRunning() == false)
 assert(s:start() == false) -- user cancelled
 assert(started == 0 and bridge.active == false)
@@ -30,6 +31,8 @@ assert(s:start() == true)
 assert(s:isRunning() == true and bridge.active == true)
 assert(started == 1)
 assert(table.concat(argv, " "):find("--run-until-stopped",1,true))
+assert(table.concat(argv, " "):find("--low-latency",1,true))
+assert(table.concat(argv, " "):find("--mcu-python /dev/null",1,true))
 assert(table.concat(argv, " "):find("--max-clip-writes 0",1,true))
 assert(s:toggle() == true and stopped == 1)
 assert(s:isRunning() == false)

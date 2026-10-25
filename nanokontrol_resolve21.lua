@@ -803,7 +803,8 @@ menu:setMenu(function()
         if scene2Bridge.active then scene2Bridge:stop()
         else scene2Bridge:start() end
       end,
-      disabled=not scene2Bridge or not device or not cfg or learning},
+      disabled=not scene2Bridge or not device or not cfg or learning or
+        (scene2Session and scene2Session:isRunning())},
     {title=scene2Session and
       (scene2Session:isRunning() and "Scene 2 TEST: STOP" or
         "Scene 2 TEST: START (IRAS! csak tesztprojekt)") or
