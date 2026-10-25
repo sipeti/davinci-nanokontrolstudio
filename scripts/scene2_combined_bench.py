@@ -7,6 +7,7 @@ auto-start: the caller must explicitly select an exact approved project.
 """
 import argparse
 import os
+import secrets
 from pathlib import Path
 import signal
 import subprocess
@@ -23,6 +24,8 @@ NAMED_CONSENT = "YES, BACKUP EXISTS, PLAYHEAD STOPPED, NO GAIN AUTOMATION"
 def parser():
     p = argparse.ArgumentParser(description="Finite combined Scene 2 hardware bench")
     p.add_argument("--seconds", type=int, default=90)
+    p.add_argument("--auto-run", action="store_true",
+                   help="normal v1.5: no prompts, follow active Resolve project")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -52,6 +55,10 @@ def commands(args, scripts):
             "--seconds", str(args.seconds)]
     if args.low_latency:
         clip.append("--low-latency")
+    if args.auto_run:
+        mcu += ["--enable-output", "--consent", MCU_CONSENT,
+                "--auto-context-guard"]
+        clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
         clip += ["--write-approved-project", "--expected-project", args.expected_project,
@@ -66,7 +73,13 @@ def commands(args, scripts):
     env = os.environ.copy()
     env["PYTHONPATH"] = MODULES + (os.pathsep + env["PYTHONPATH"]
                                     if env.get("PYTHONPATH") else "")
-    return [("MCU", mcu, None), ("CLIP", clip, env)]
+    mcu_env = None
+    if args.auto_run:
+        run_id = secrets.token_hex(8)
+        env["NK_SCENE2_RUN_ID"] = run_id
+        mcu_env = os.environ.copy()
+        mcu_env["NK_SCENE2_RUN_ID"] = run_id
+    return [("MCU", mcu, mcu_env), ("CLIP", clip, env)]
 
 
 def stop_running(processes):
@@ -129,18 +142,28 @@ def supervise(specs):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
-    if args.run_until_stopped:
+    if args.auto_run:
+        if (args.write_test_copy or args.allow_named_project or
+                args.expected_project or args.confirmed_backup or
+                args.confirmed_no_automation or args.max_clip_writes is not None or
+                args.run_until_stopped or args.seconds != 90):
+            p.error("--auto-run cannot be mixed with manual test controls")
+        args.run_until_stopped = True
+        args.low_latency = True
+        args.max_clip_writes = 0
+        args.seconds = 0
+    if args.run_until_stopped and not args.auto_run:
         if args.seconds != 90:
             p.error("--run-until-stopped cannot be combined with --seconds")
         args.seconds = 0
-    elif not 5 <= args.seconds <= 180:
+    elif not args.auto_run and not 5 <= args.seconds <= 180:
         p.error("--seconds must be 5..180 (bounded MCU bench)")
     if args.max_clip_writes is None:
         args.max_clip_writes = (0 if args.run_until_stopped and
                                args.write_test_copy else 12)
     if not (1 <= args.max_clip_writes <= 256 or
             args.max_clip_writes == 0 and args.run_until_stopped
-            and args.write_test_copy):
+            and (args.write_test_copy or args.auto_run)):
         p.error("clip writes: 1..256, or 0 only for a continuous test copy")
     if args.allow_named_project and not args.write_test_copy:
         p.error("--allow-named-project requires --write-approved-project")
@@ -154,7 +177,8 @@ def main(argv=None):
     scripts = Path(__file__).resolve().parent
     for filename in ("fairlight_mcu_continuous.py", "fairlight_mcu_bridge.py",
                      "scene2_continuous_clip_gain.py", "scene2_clip_gain_8rotary.py",
-                     "scene2_soft_takeover.py", "scene2_live_pickup_readonly.py",
+                     "scene2_soft_takeover.py", "scene2_project_context.py",
+                     "scene2_live_pickup_readonly.py",
                      "scene2_audio_roundtrip_probe.py"):
         if not (scripts / filename).is_file():
             p.error("staged script missing: %s" % filename)
@@ -164,8 +188,9 @@ def main(argv=None):
     print("SCENE2_COMBINED=START; duration=%s; mode=%s; "
           "one physical Korg MIDI owner; strip8 LOCKED" %
           ("until Ctrl+C" if args.run_until_stopped else str(args.seconds)+"s",
-           "TEST_COPY_WRITE" if args.write_test_copy
-           else "READ_ONLY"), flush=True)
+           "AUTO_FOLLOW_PROJECT" if args.auto_run else
+           "TEST_COPY_WRITE" if args.write_test_copy else
+           "READ_ONLY"), flush=True)
     return supervise(commands(args, scripts))
 
 
