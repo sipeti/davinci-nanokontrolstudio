@@ -6,7 +6,16 @@ return function(host, bridge, options)
   local home = os.getenv("HOME") or ""
   local runner = options.runner or
     (home .. "/Library/Application Support/NK Scene2/scripts/scene2_combined_bench.py")
-  local python = options.python or "/opt/homebrew/bin/python3"
+  local python = options.python
+  if not python then
+    local saved = io.open(
+      home .. "/Library/Application Support/NK Scene2/resolve-python.path", "r")
+    if saved then
+      python = saved:read("*l")
+      saved:close()
+    end
+    if not python or python == "" then python = "/opt/homebrew/bin/python3" end
+  end
   local mcuPython = options.mcuPython or
     (home .. "/Library/Application Support/NK Scene2/venv/bin/python3")
   local logPath = options.logPath or (home .. "/Library/Logs/nk-scene2-session.log")

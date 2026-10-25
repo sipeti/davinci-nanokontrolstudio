@@ -806,9 +806,9 @@ menu:setMenu(function()
       disabled=not scene2Bridge or not device or not cfg or learning or
         (scene2Session and scene2Session:isRunning())},
     {title=scene2Session and
-      (scene2Session:isRunning() and "Scene 2 TEST: STOP" or
-        "Scene 2 TEST: START (IRAS! csak tesztprojekt)") or
-      "Scene 2 TEST: manager nincs telepitve",
+      (scene2Session:isRunning() and "Scene 2: STOP" or
+        "Scene 2: START (projekt valasztas)") or
+      "Scene 2: manager nincs telepitve",
       fn=function() if scene2Session then scene2Session:toggle() end end,
       disabled=not scene2Session or learning or
         (not device and not (scene2Session and scene2Session:isRunning()))},
