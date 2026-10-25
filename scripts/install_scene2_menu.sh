@@ -21,7 +21,7 @@ for arg in "$@"; do
   esac
 done
 [ "$(uname -s)" = Darwin ] || fail "macOS required"
-RUNTIME="fairlight_mcu_bridge.py fairlight_mcu_continuous.py scene2_audio_roundtrip_probe.py scene2_clip_gain_8rotary.py scene2_combined_bench.py scene2_continuous_clip_gain.py scene2_live_pickup_readonly.py scene2_soft_takeover.py scene2_project_context.py"
+RUNTIME="fairlight_mcu_bridge.py fairlight_mcu_continuous.py scene2_audio_roundtrip_probe.py scene2_clip_gain_8rotary.py scene2_combined_bench.py scene2_continuous_clip_gain.py scene2_live_pickup_readonly.py scene2_soft_takeover.py"
 for name in nanokontrol_resolve21.lua scene2_clip_gain_bridge.lua scene2_session_menu.lua; do
   [ -f "$ROOT/$name" ] || fail "missing $name"
 done

@@ -32,13 +32,13 @@ Scene changes, foreground loss, playhead moves, clip changes or an external gain
 
 ### Project authorization
 
-In Hammerspoon choose **NK JOG → Scene 2: START**, enter the exact project name and explicitly confirm that you have a backup, playback is STOPPED and no gain automation/keyframes affect the target. This is valid for a named non-test project only after the additional confirmation. Clip-gain writes are restricted to that exact project and are checked on each rotary event. **The MIDI-only Fairlight mixer worker cannot independently identify the Resolve project**, so STOP the session **before** opening or switching projects; it does not automatically block mixer messages on a project change.
+In v1.5, Hammerspoon starts Scene 2 automatically while Resolve is active. No project name or confirmation dialog is needed. The rotary worker follows the current Resolve project and validates the clip at every write. The **mixer retains exactly the working v1.4 Fairlight MCU implementation**: no project token, additional gate, or new MIDI handshake.
 
 **No automatic playback gate exists in low-latency mode.** Do not touch clip knobs during playback, scrubbing, recording or automation. A +30 dB clip change is large: use headphones/monitor levels carefully in a stopped test copy first.
 
 ### Stop, logs and troubleshooting
 
-Use **NK JOG → Scene 2: STOP** before changing projects or quitting. The parent process sends SIGINT to both workers; MCU TOUCH and button releases are handled during shutdown. The menu is manually invoked, never started on login.
+Use **NK JOG → Scene 2: SZÜNET** to pause automatic operation, and **FOLYTATÁS** to resume. The parent process releases MCU TOUCH and buttons during shutdown; Hammerspoon starts the workers quietly when Resolve is ready.
 
 Logs: ~/Library/Logs/nk-scene2-session.log. To inspect the latest events safely:
 

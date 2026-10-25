@@ -60,11 +60,11 @@ Finish with **Hammerspoon → Reload Config**. With Resolve ready and frontmost,
 1. Use **sh ./doctor.command** (read-only) to inspect dependencies and the two IAC buses.
 2. In Resolve, **back up the current project**, STOP playback and scrubbing, and ensure the targeted audio clips have no gain keyframes or gain automation.
 3. Hammerspoon → **Reload Config**; Scene 2 workers start in the background when Resolve is ready and frontmost.
-4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. When changing Resolve projects, both clip and mixer pickup states are invalidated and must be reacquired.
+4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. Clip knobs follow the active project; the mixer uses the **unchanged, hardware-accepted v1.4 MCU worker** with its original host-feedback soft pickup.
 5. Use **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** to pause or resume. Session logs are at ~/Library/Logs/nk-scene2-session.log.
-6. For v1.5 physical acceptance, first switch between two backed-up disposable projects and confirm the faders never reuse a previous project's pickup. The Lua menu keeps the simple pause control.
+6. For v1.5 physical acceptance, verify the mixer faders, MUTE/SOLO and LED feedback work just like v1.4, then try Scene 1/2 switching and clip gain on two disposable projects.
 
-**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. A separate short-lived context epoch invalidates MCU fader pickup across project switches. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. Mixer strip 8 (potential Bus 1) remains locked.
+**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. Mixer strip 8 (potential Bus 1) remains locked.
 
 ## 6. Uninstall / rollback
 

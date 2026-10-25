@@ -7,7 +7,6 @@ auto-start: the caller must explicitly select an exact approved project.
 """
 import argparse
 import os
-import secrets
 from pathlib import Path
 import signal
 import subprocess
@@ -56,8 +55,9 @@ def commands(args, scripts):
     if args.low_latency:
         clip.append("--low-latency")
     if args.auto_run:
-        mcu += ["--enable-output", "--consent", MCU_CONSENT,
-                "--auto-context-guard", "--init-mcu-session"]
+        # Byte-identical v1.4 MCU worker and launch flags. Do not gate
+        # its already-proven fader/MUTE/SOLO path on the clip worker.
+        mcu += ["--enable-output", "--consent", MCU_CONSENT]
         clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
@@ -73,13 +73,7 @@ def commands(args, scripts):
     env = os.environ.copy()
     env["PYTHONPATH"] = MODULES + (os.pathsep + env["PYTHONPATH"]
                                     if env.get("PYTHONPATH") else "")
-    mcu_env = None
-    if args.auto_run:
-        run_id = secrets.token_hex(8)
-        env["NK_SCENE2_RUN_ID"] = run_id
-        mcu_env = os.environ.copy()
-        mcu_env["NK_SCENE2_RUN_ID"] = run_id
-    return [("MCU", mcu, mcu_env), ("CLIP", clip, env)]
+    return [("MCU", mcu, None), ("CLIP", clip, env)]
 
 
 def stop_running(processes):
@@ -177,8 +171,7 @@ def main(argv=None):
     scripts = Path(__file__).resolve().parent
     for filename in ("fairlight_mcu_continuous.py", "fairlight_mcu_bridge.py",
                      "scene2_continuous_clip_gain.py", "scene2_clip_gain_8rotary.py",
-                     "scene2_soft_takeover.py", "scene2_project_context.py",
-                     "scene2_live_pickup_readonly.py",
+                     "scene2_soft_takeover.py", "scene2_live_pickup_readonly.py",
                      "scene2_audio_roundtrip_probe.py"):
         if not (scripts / filename).is_file():
             p.error("staged script missing: %s" % filename)

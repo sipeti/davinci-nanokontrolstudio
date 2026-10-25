@@ -1,5 +1,6 @@
 """Offline checks for the bounded two-worker supervisor."""
 from pathlib import Path
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -66,7 +67,7 @@ class CombinedTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bench.main(["--allow-named-project", "--seconds", "60"])
 
-    def test_auto_run_creates_two_continuous_workers_with_same_session(self):
+    def test_auto_run_preserves_the_exact_v14_mcu_command(self):
         with tempfile.TemporaryDirectory() as temp:
             events = Path(temp) / "events.csv"
             events.write_text("fresh")
@@ -74,28 +75,42 @@ class CombinedTest(unittest.TestCase):
                  mock.patch.object(bench, "supervise", return_value=0) as run:
                 result = bench.main([
                     "--auto-run", "--mcu-python", sys.executable,
-                    "--resolve-python", sys.executable
-                ])
+                    "--resolve-python", sys.executable])
             self.assertEqual(result, 0)
-            specs = run.call_args.args[0]
-            self.assertEqual([name for name, _, _ in specs], ["MCU", "CLIP"])
-            mcu, clip = specs
-            for name, cmd, env in specs:
-                self.assertIn("--seconds", cmd)
-                self.assertEqual(cmd[cmd.index("--seconds") + 1], "0")
-                self.assertEqual(len(env["NK_SCENE2_RUN_ID"]), 16)
-            self.assertEqual(mcu[2]["NK_SCENE2_RUN_ID"],
-                             clip[2]["NK_SCENE2_RUN_ID"])
-            self.assertIn("--continuous", mcu[1])
+            auto_specs = run.call_args.args[0]
+            self.assertEqual([name for name, _, _ in auto_specs], ["MCU", "CLIP"])
+            mcu, clip = auto_specs
+
+            # The v1.5 auto-run must launch the identical working MCU
+            # command as the already accepted v1.4 manual writing mode.
+            manual = bench.parser().parse_args([
+                "--run-until-stopped", "--write-test-copy",
+                "--expected-project", "testing",
+                "--confirmed-backup", "--confirmed-no-automation",
+                "--max-clip-writes", "0",
+                "--mcu-python", sys.executable,
+                "--resolve-python", sys.executable])
+            manual.seconds = 0
+            manual_specs = bench.commands(
+                manual, Path(__file__).resolve().parents[1] / "scripts")
+            self.assertEqual(mcu, manual_specs[0])
+            self.assertIsNone(mcu[2])
+            self.assertNotIn("--auto-context-guard", mcu[1])
+            self.assertNotIn("--init-mcu-session", mcu[1])
             self.assertIn("--enable-output", mcu[1])
-            self.assertIn("--auto-context-guard", mcu[1])
-            self.assertIn("--init-mcu-session", mcu[1])
             self.assertIn("--low-latency", clip[1])
             self.assertIn("--follow-active-project", clip[1])
             self.assertIn("--unlimited-writes", clip[1])
             self.assertNotIn("--expected-project", clip[1])
-            self.assertNotIn("--confirmed-backup", clip[1])
-            self.assertNotIn("--confirmed-no-automation", clip[1])
+
+    def test_v14_mcu_source_kept_byte_identical(self):
+        path = (Path(__file__).resolve().parents[1] / "scripts"
+                / "fairlight_mcu_continuous.py")
+        data = path.read_bytes()
+        sha = hashlib.sha1(
+            b"blob " + str(len(data)).encode("ascii") + b"\x00" + data
+        ).hexdigest()
+        self.assertEqual(sha, "b621df3f50feddb86dbcaf73b8f5cf567f729faf")
 
     def test_auto_run_rejects_incompatible_manual_controls(self):
         with self.assertRaises(SystemExit) as error:

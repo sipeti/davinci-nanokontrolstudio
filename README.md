@@ -38,7 +38,7 @@ If upgrading from a previously installed experimental Scene 2 controller, review
 
 1. Start Hammerspoon and Resolve. The Scene 2 workers launch automatically when Resolve is ready.
 2. Switch Korg scenes normally. Scene 1 edits, Scene 2 mixes; shared REC/Undo and MARKER controls work in Scenes 1–5.
-3. Change projects normally. The workers refresh the active context, then require fresh physical soft pickup.
+3. Change projects normally. Clip knobs refresh the current clip/project and rearm; the mixer preserves its v1.4 host-feedback and soft pickup behavior.
 4. **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** pauses or resumes the worker. No project names or confirmation dialogs.
 
 Clip-level edits still require a valid stopped-playhead clip and no gain automation. The project-following and new startup path are unverified on real hardware until the v1.5 acceptance test. Logs: ~/Library/Logs/nk-scene2-session.log.
