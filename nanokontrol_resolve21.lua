@@ -127,6 +127,22 @@ if hs.configdir then
   end
 end
 
+-- Optional one-click TEST session manager (never starts automatically).
+-- Installed helper manages only Python subprocesses; no second MIDI listener.
+local scene2Session = nil
+if scene2Bridge and hs.configdir then
+  local path = hs.configdir .. "/scene2_session_menu.lua"
+  local ok, factory = pcall(dofile, path)
+  if ok and type(factory) == "function" then
+    local built, instance = pcall(factory, hs, scene2Bridge)
+    if built and type(instance) == "table" and
+      type(instance.toggle) == "function" and
+      type(instance.isRunning) == "function" then
+      scene2Session = instance
+    end
+  end
+end
+
 local function key(k, mods)
   if syntheticKeyUntil[k] ~= nil and (not mods or #mods == 0) then
     -- The 10ms keyStroke can be observed by our event tap synchronously or
@@ -788,6 +804,13 @@ menu:setMenu(function()
         else scene2Bridge:start() end
       end,
       disabled=not scene2Bridge or not device or not cfg or learning},
+    {title=scene2Session and
+      (scene2Session:isRunning() and "Scene 2 TEST: STOP" or
+        "Scene 2 TEST: START (IRAS! csak tesztprojekt)") or
+      "Scene 2 TEST: manager nincs telepitve",
+      fn=function() if scene2Session then scene2Session:toggle() end end,
+      disabled=not scene2Session or learning or
+        (not device and not (scene2Session and scene2Session:isRunning()))},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
@@ -798,6 +821,13 @@ menu:setMenu(function()
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
+if scene2Session then
+  local previousShutdown = hs.shutdownCallback
+  hs.shutdownCallback = function()
+    scene2Session:stop()
+    if type(previousShutdown) == "function" then previousShutdown() end
+  end
+end
 -- The hardware SCENE button can blank locally-held External LEDs without
 -- emitting any MIDI event. Reassert PLAY/STOP/REW/FF/CYCLE every 0.5 s
 -- on all five output routes. Scenes 3-5 still need physical LED testing.
