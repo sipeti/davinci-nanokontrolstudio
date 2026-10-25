@@ -445,6 +445,67 @@ MUTE1/SOLO1 both switch Fairlight, and their hardware LEDs reflect host
 state for as long as the bridge is running. Do not claim pass before
 the operator sees it; leave Draft until then.
 
+## October 25: verified Resolve MCU snapshot and physical rearm bug
+
+**Operator evidence (definitive):** without changing any Korg MIDI calibration,
+Resolve sent a complete MCU mixer snapshot after **Close Project / Open
+Project** (all eight `pitchwheel` strips, `note_on` for MUTE/SOLO,
+`control_change` and LCD SysEx), and again when the **Python IAC MIDI
+receiver was already listening before launching Resolve**. The 25-second
+`--init-mcu-session --handshake-only` run emitted a Query but got no
+matching Reply/Confirmation; nevertheless Close/Open Project caused
+`MCU_LIVE_HOST_FADERS=strip1:10,...,strip8:5` and the initial LEDs
+to arrive. A separate 180-second READ_ONLY-before-Resolve test recorded
+`pitchwheel:45` for all 8 strips, and the current MUTE/SOLO states.
+**Conclusion: host feedback is supported, the old proprietary handshake
+is not needed to trigger the project-open snapshot.** Do not claim
+the host connection Query caused that snapshot.
+
+**Bridge bug located in actual code:** despite printing
+`MCU_LIVE_HOST_FADER_SEEDED`, the old continuous LiveMixer
+`rearm()` called `Bridge.rearm()` on any Hammerspoon focus-loss
+heartbeat `H=0` or Korg scene-change event `R`. That function erased
+all eight genuinely received `host_faders`, and later moving any
+physical Korg slider returned `FADER_WAIT_HOST`. A second independent
+defect was an arbitrary 10-second expiration in
+`LiveMixer.physical_event`, while an unchanged MCU fader value is
+a snapshot and does NOT arrive every 10 seconds.
+
+**Draft correction:** `LiveMixer.rearm()` now releases active MCU
+touches/button keys and resets physical pickup and gesture state but
+**retains** actual in-session Fairlight host `pitchwheel` positions
+and authoritative host MUTE/SOLO states. An explicit
+`rearm(invalidate_host=True)` remains available for a genuinely
+invalidated MIDI session; no state is persisted across Python process
+restarts. Once received in the active MIDI session, a host position
+is not artificially expired after 10 seconds, and newer Resolve
+project-open/host fader feedback overwrites it. Every Korg fader still
+requires physical movement and soft pickup at the actual host position,
+with bounded incremental sends. The script additionally prints
+`MCU_LIVE_SOFT_REARMS` and `MCU_LIVE_HOST_SNAPSHOT_PRESENT` at shutdown
+to distinguish received feedback from subsequent loss.
+
+**Scope / limitation:** the software does not have an independently
+verified Resolve project identity or bank identifier. Therefore this
+is still a **finite, explicitly consented bench**, not a claim of
+production-safe persistence across arbitrary silent project/bank
+changes. A change of project that sends the observed full snapshot
+refreshes the positions; if it fails to send one, do not assume the
+old mixer mapping is valid. The correct long-term answer is a reliable
+project/session epoch or separately verified state API, not storing
+cross-project gains indefinitely or forcing guessed SysEx exchanges.
+
+**Next integrated acceptance:** the existing Hammerspoon Scene2 bridge
+remains enabled, and the verified temporary continuous Python file is
+updated without any `hs.reload()`. Start the 90s finite bench
+on the backed-up disposable project, with Resolve fully stopped or
+project closed, then Open Project while Python is listening. It must
+receive all eight `pitchwheel` positions; afterward physical Korg
+fader1 should cross its host position, producing
+`FADER_PICKUP_PASS` then `FADER_LIVE_SENT`, and should visibly
+move A1 in Fairlight. Do not repeat device identity/host handshake
+experiments: the Resolve startup behavior is already established.
+
 ## Source refs
 
 - Blackmagic Resolve 21 manual: third-party HUI/MCU consoles:
