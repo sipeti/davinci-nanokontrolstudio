@@ -1,4 +1,4 @@
--- nanoKONTROL Studio -> DaVinci Resolve 21 | clean Assignable Mode v1.3
+-- nanoKONTROL Studio -> DaVinci Resolve 21 | v1.4.0 Scene 1 + Scene 2
 -- ONE guided 28-step setup. No MCU/HUI emulation or Resolve scripting.
 -- Shared JOG/SHUTTLE + transport for all five Assignable scenes.
 -- KORG KONTROL Editor: each scene's jog = Sign Magnitude / Const / CC82;
@@ -103,6 +103,46 @@ local function resolveApp()
     or bundle:find("davinciresolve", 1, true) then return app end
   return nil
 end
+
+-- Optional Scene 2 clip-gain *input* bridge. One hs.midi callback retains
+-- ownership; the passive bridge never sends MIDI or calls the Resolve API.
+-- Opt-in through NK JOG menu, and only when the companion Lua file has
+-- been explicitly installed. Old Scene 1 setup/calibration is untouched.
+local scene2Bridge = nil
+if hs.configdir then
+  local bridgePath = hs.configdir .. "/scene2_clip_gain_bridge.lua"
+  local ok, factory = pcall(dofile, bridgePath)
+  if ok and type(factory) == "function" then
+    local initialized, instance = pcall(factory, hs, function()
+      return enabled and cfg ~= nil and not learning and resolveApp() ~= nil
+    end)
+    if initialized and type(instance) == "table"
+      and type(instance.publish) == "function"
+      and type(instance.start) == "function"
+      and type(instance.stop) == "function" then
+      scene2Bridge = instance
+    else
+      hs.printf("[NK SCENE2] Optional input bridge unavailable; Scene 1 unaffected")
+    end
+  end
+end
+
+-- Optional one-click TEST session manager (never starts automatically).
+-- Installed helper manages only Python subprocesses; no second MIDI listener.
+local scene2Session = nil
+if scene2Bridge and hs.configdir then
+  local path = hs.configdir .. "/scene2_session_menu.lua"
+  local ok, factory = pcall(dofile, path)
+  if ok and type(factory) == "function" then
+    local built, instance = pcall(factory, hs, scene2Bridge)
+    if built and type(instance) == "table" and
+      type(instance.toggle) == "function" and
+      type(instance.isRunning) == "function" then
+      scene2Session = instance
+    end
+  end
+end
+
 local function key(k, mods)
   if syntheticKeyUntil[k] ~= nil and (not mods or #mods == 0) then
     -- The 10ms keyStroke can be observed by our event tap synchronously or
@@ -159,6 +199,30 @@ local function sendLED(cc, on, force, outputChannel)
   ledOutputStatus = "API OK / Scenes 1-2 verified; 3-5 unverified"
   return true
 end
+-- Only Fairlight's genuine MCU note feedback drives Scene2 mixer LEDs,
+-- never the physical button input. Prior physical Korg probe lit MUTE1
+-- on one of the two tested output routes but did not isolate which.
+-- Send the SAME idempotent CC state through both possible Korg channels,
+-- ONLY while physical Scene2 is active. Source Scene1 editing remains
+-- unchanged; no unverified transport or calibration commands.
+local scene2LedReported = {}
+if scene2Bridge and type(scene2Bridge.setLedSender) == "function" then
+  scene2Bridge:setLedSender(function(cc, on)
+    if enabled and cfg and ledEnabled and device
+      and scene2Bridge.lastScene == 1
+      and ((scene2Bridge.active and scene2Bridge.ready) or not on) then
+      local broadcast = sendLED(cc, on, true, 0)
+      local scene2 = sendLED(cc, on, true, 1)
+      if scene2LedReported[cc] ~= on then
+        scene2LedReported[cc] = on
+        hs.printf("[NK SCENE2 LED TX] host_cc=%d state=%s ch0=%s ch1=%s",
+          cc, tostring(on), tostring(broadcast), tostring(scene2))
+      end
+      return broadcast or scene2
+    end
+    return false
+  end)
+end
 local function resetLEDs()
   if not device or not cfg then return end
   pressedLEDs, ledOutputState = {}, {}
@@ -197,8 +261,12 @@ local function refreshStateLEDs(force)
 end
 local function inputLED(command, meta, signal, value)
   if not cfg or not ledEnabled or command ~= "controlChange" then return end
-  local cc = sceneCC(signal)
+  local cc, channel = sceneCC(signal)
   if not cc or not LED_BUTTON_SET[cc] then return end
+  if scene2Bridge and scene2Bridge.active and channel == 1
+    and ((cc >= 21 and cc <= 31) or (cc >= 33 and cc <= 37)) then
+    return -- Scene2 mixer LEDs always use Fairlight's response, not input echo
+  end
   if value ~= 0 and value ~= 127 then return end
   -- Transport LEDs are persistent shared state, never momentary echoes.
   -- A release must NOT turn STOP/REW/FF off again.
@@ -603,11 +671,31 @@ end
 local function midiCallback(_,_,command,_,meta)
   local signal,value = midiSignal(command,meta)
   if not signal then return end
+  if scene2Bridge and scene2Bridge.active then
+    -- Same existing callback, even when Scene 2 is selected. No second
+    -- listener, no copied Scene 1 action or Korg MIDI echo.
+    scene2Bridge:publish(command,meta)
+  end
   lastMidi = signal .. "=" .. tostring(value)
   if learning then
     logLearnMidi(command,meta,signal,value)
     learn(command,meta)
     return
+  end
+  -- A Korg scene switch itself is silent. The first incoming MIDI CC
+  -- from another scene must revoke a previously armed Scene1 *absolute*
+  -- shuttle fader and stale held trim without stopping shared transport.
+  -- Returning to Scene1 requires the fader to pass through neutral again.
+  if command == "controlChange" then
+    local _, incomingScene = sceneCC(signal)
+    local scene1 = sceneInputChannel()
+    if incomingScene and scene1 and incomingScene ~= scene1 then
+      if faderArmed or faderActive then
+        hs.printf("[NK FADER] other scene input; rearm at Scene 1 neutral before shuttle fader use")
+      end
+      faderArmed, faderActive = false, false
+      trimHeld = false
+    end
   end
   -- Echo physical CC to its own LED, independent of the learned action.
   -- When another app has focus, acknowledge the key but do not edit Resolve.
@@ -708,6 +796,22 @@ menu:setMenu(function()
       disabled=not cfg or not device},
     {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
     {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
+    {title="Scene 2 clip gain MIDI bridge: " ..
+      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or "NINCS TELEPITVE"),
+      fn=function()
+        if not scene2Bridge then return end
+        if scene2Bridge.active then scene2Bridge:stop()
+        else scene2Bridge:start() end
+      end,
+      disabled=not scene2Bridge or not device or not cfg or learning or
+        (scene2Session and scene2Session:isRunning())},
+    {title=scene2Session and
+      (scene2Session:isRunning() and "Scene 2: STOP" or
+        "Scene 2: START (projekt valasztas)") or
+      "Scene 2: manager nincs telepitve",
+      fn=function() if scene2Session then scene2Session:toggle() end end,
+      disabled=not scene2Session or learning or
+        (not device and not (scene2Session and scene2Session:isRunning()))},
     {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
@@ -718,6 +822,13 @@ menu:setMenu(function()
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
+if scene2Session then
+  local previousShutdown = hs.shutdownCallback
+  hs.shutdownCallback = function()
+    scene2Session:stop()
+    if type(previousShutdown) == "function" then previousShutdown() end
+  end
+end
 -- The hardware SCENE button can blank locally-held External LEDs without
 -- emitting any MIDI event. Reassert PLAY/STOP/REW/FF/CYCLE every 0.5 s
 -- on all five output routes. Scenes 3-5 still need physical LED testing.

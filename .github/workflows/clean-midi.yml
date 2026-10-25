@@ -19,3 +19,50 @@ jobs:
         run: luac5.4 -p nanokontrol_resolve21.lua tests/clean_controller.lua
       - name: Simulated hardware
         run: lua5.4 tests/clean_controller.lua
+      - name: Read-only Scene 2 audio probe checks
+        run: python3 -m unittest discover -s tests -p 'test_audio_readonly_probe.py'
+      - name: Guarded Scene 2 audio round-trip offline tests
+        run: python3 -m unittest discover -s tests -p 'test_audio_roundtrip_probe.py'
+      - name: Write-free Scene 2 soft takeover tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_soft_takeover.py'
+      - name: Passive Scene 2 physical MIDI logger tests
+        run: |
+          luac5.4 -p scripts/scene2_midi_readonly.lua tests/test_scene2_midi_readonly.lua
+          lua5.4 tests/test_scene2_midi_readonly.lua
+      - name: Consent-gated one-shot MIDI gain write/restore unit tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_midi_one_shot_roundtrip.py'
+      - name: Eight rotary clip volume safety regression tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_clip_gain_8rotary.py'
+      - name: Timestamped Scene 1 and Scene 2 raw MIDI event regression
+        run: |
+          luac5.4 -p scripts/scene2_timestamped_midi_probe.lua tests/test_scene2_timestamped_midi_probe.lua
+          lua5.4 tests/test_scene2_timestamped_midi_probe.lua
+      - name: Persistent Scene 2 Hammerspoon bridge tests
+        run: |
+          luac5.4 -p scene2_clip_gain_bridge.lua tests/test_scene2_continuous_bridge.lua nanokontrol_resolve21.lua
+          lua5.4 tests/test_scene2_continuous_bridge.lua
+      - name: Continuous Scene 2 Python worker offline safety tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_continuous_clip_gain.py'
+      - name: Fairlight MCU 8-fader and mute/solo protocol safety
+        run: python3 -m unittest discover -s tests -p 'test_fairlight_mcu_bridge.py'
+      - name: Finite Scene2 MCU continuous mixer safety tests
+        run: python3 -m unittest discover -s tests -p 'test_fairlight_mcu_continuous.py'
+      - name: Scene 2 Fairlight host-authoritative LED feedback
+        run: |
+          luac5.4 -p scene2_clip_gain_bridge.lua tests/test_scene2_mcu_feedback.lua nanokontrol_resolve21.lua
+          lua5.4 tests/test_scene2_mcu_feedback.lua
+      - name: Combined Scene 2 two-worker launcher offline tests
+        run: python3 -m unittest discover -s tests -p 'test_scene2_combined_bench.py'
+      - name: Optional Scene 2 one-click menu safety tests
+        run: |
+          luac5.4 -p scene2_session_menu.lua tests/test_scene2_session_menu.lua nanokontrol_resolve21.lua
+          lua5.4 tests/test_scene2_session_menu.lua
+      - name: Scene 2 install script bash syntax
+        run: bash -n scripts/install_scene2_menu.sh
+      - name: Product installer and rollback syntax / no-write smoke
+        run: |
+          bash -n scripts/install_scene2_menu.sh scripts/uninstall_scene2.sh scripts/doctor_scene2.sh
+          sh -n install.command uninstall.command doctor.command
+          bash scripts/install_scene2_menu.sh --help
+          bash scripts/uninstall_scene2.sh --help
+          python3 -m unittest discover -s tests -p 'test_product_install.py'
