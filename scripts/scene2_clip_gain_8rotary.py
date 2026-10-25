@@ -14,20 +14,24 @@ from scene2_live_pickup_readonly import EVENT_FILE, parse_event
 from scene2_soft_takeover import SoftTakeover, gain_for_cc
 
 CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
+NAMED_CONSENT = "YES, BACKUP EXISTS, PLAYHEAD STOPPED, NO GAIN AUTOMATION"
 COPY_WORDS = ("test", "copy", "backup", "qa", "teszt", "masolat", "másolat")
 
 IDLE_RESET_SECONDS = 2.0
 POLL_SECONDS = 0.20
 
 
-def approved_copy(project_name, confirmation, automation_confirmed):
-    return (
-        isinstance(project_name, str)
-        and project_name.strip() != ""
-        and any(word in project_name.casefold() for word in COPY_WORDS)
-        and confirmation == CONSENT
-        and automation_confirmed is True
-    )
+def approved_copy(project_name, confirmation, automation_confirmed,
+                  allow_named_project=False):
+    if (not isinstance(project_name, str) or not project_name.strip()
+            or automation_confirmed is not True):
+        return False
+    if allow_named_project is True:
+        # Explicit per-session project name and a different consent string;
+        # project-name equality is still checked before every write.
+        return confirmation == NAMED_CONSENT
+    return (any(word in project_name.casefold() for word in COPY_WORDS)
+            and confirmation == CONSENT)
 
 
 def snapshot(app, track):
@@ -44,7 +48,7 @@ class Controller:
     def __init__(self, app, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False, max_writes=8,
                  now=time.monotonic, max_writes_limit=16,
-                 allow_unlimited=False):
+                 allow_unlimited=False, allow_named_project=False):
         self.app = app
         self.write = write
         self.expected_project = expected_project
@@ -59,8 +63,12 @@ class Controller:
         self.other_scene_active = False
         self.high_rate_reported = False
         if write and not approved_copy(expected_project, confirmation,
-                                       automation_confirmed):
-            raise ValueError("a backed-up exact test project, consent and no-automation confirmation are mandatory")
+                                       automation_confirmed,
+                                       allow_named_project=allow_named_project):
+            raise ValueError("exact approved project name, backup, stopped "
+                             "playback, consent and no-automation confirmation "
+                             "required; non-test projects need explicit "
+                             "allow_named_project")
         if (type(max_writes_limit) is not int or
                 max_writes_limit not in (16, 256)):
             raise ValueError("max_writes_limit must be 16 or 256")

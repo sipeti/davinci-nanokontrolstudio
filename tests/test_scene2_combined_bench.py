@@ -49,6 +49,22 @@ class CombinedTest(unittest.TestCase):
         self.assertNotIn("--low-latency", specs[0][1])
         self.assertNotIn("--enable-output", specs[0][1])
 
+    def test_named_project_authorization_forwarding_requires_opt_in(self):
+        a = bench.parser().parse_args([
+            "--write-approved-project", "--allow-named-project",
+            "--expected-project", "Real Production Project",
+            "--confirmed-backup", "--confirmed-no-automation",
+            "--run-until-stopped", "--low-latency"])
+        a.seconds = 0
+        a.max_clip_writes = 0
+        specs = bench.commands(a, Path("/test/scripts"))
+        self.assertIn("--allow-named-project", specs[1][1])
+        self.assertIn(bench.NAMED_CONSENT, specs[1][1])
+        self.assertIn("--write-approved-project", specs[1][1])
+        self.assertNotIn("--allow-named-project", specs[0][1])
+        with self.assertRaises(SystemExit):
+            bench.main(["--allow-named-project", "--seconds", "60"])
+
     def test_missing_write_confirmation_is_rejected_before_start(self):
         with self.assertRaises(SystemExit) as exc:
             bench.main(["--write-test-copy", "--expected-project", "testing"])

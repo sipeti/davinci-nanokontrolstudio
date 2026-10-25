@@ -15,7 +15,7 @@ import time
 
 import scene2_audio_roundtrip_probe as api
 from scene2_clip_gain_8rotary import (
-    CONSENT, Controller, MidiPoll, process_poll, snapshot,
+    CONSENT, NAMED_CONSENT, Controller, MidiPoll, process_poll, snapshot,
 )
 
 EVENT_PATH = pathlib.Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
@@ -64,13 +64,15 @@ class ContinuousController(Controller):
     def __init__(self, app, *, write=False, expected_project=None,
                  confirmation=None, automation_confirmed=False,
                  max_writes=256, now=time.monotonic,
-                 stability_wait=time.sleep, low_latency=False):
+                 stability_wait=time.sleep, low_latency=False,
+                 allow_named_project=False):
         super().__init__(
             app, write=write, expected_project=expected_project,
             confirmation=confirmation,
             automation_confirmed=automation_confirmed,
             max_writes=max_writes, max_writes_limit=256, now=now,
             allow_unlimited=(max_writes == 0),
+            allow_named_project=allow_named_project,
         )
         self.pause_reason = None
         self.stability_wait = stability_wait
@@ -250,7 +252,11 @@ def main():
         description="Continuous Scene 2 clip gain; READ_ONLY by default")
     parser.add_argument("--seconds", type=int, default=0,
                         help="0 = until Ctrl+C; otherwise 5..3600")
-    parser.add_argument("--write-test-copy", action="store_true")
+    parser.add_argument("--write-approved-project", "--write-test-copy",
+                        dest="write_test_copy", action="store_true")
+    parser.add_argument("--allow-named-project", action="store_true",
+                        help="explicit per-session authorization for a "
+                             "backed-up non-test project")
     parser.add_argument("--low-latency", action="store_true",
                         help="test mode: 20ms event polling; skip the 120ms "
                              "extra wait but keep setter-bound snapshots")
@@ -264,6 +270,8 @@ def main():
     args = parser.parse_args()
     if args.seconds != 0 and not 5 <= args.seconds <= 3600:
         parser.error("--seconds must be 0 or 5..3600")
+    if args.allow_named_project and not args.write_test_copy:
+        parser.error("--allow-named-project needs --write-approved-project")
     if args.unlimited_writes:
         if not args.write_test_copy or args.seconds != 0:
             parser.error("unlimited writes require --seconds 0 and explicit "
@@ -288,6 +296,7 @@ def main():
             automation_confirmed=args.confirmed_no_automation,
             max_writes=args.max_writes,
             low_latency=args.low_latency,
+            allow_named_project=args.allow_named_project,
         )
     except ValueError as exc:
         print("SCENE2_CONTINUOUS=BLOCKED; %s; WRITES=0" % exc)

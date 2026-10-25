@@ -73,6 +73,27 @@ class EightRotaryTest(unittest.TestCase):
                 self.controller(write=True, expected_project=name,
                                 consent=phrase, automation_confirmed=no_auto)
 
+    def test_named_non_test_project_requires_explicit_stronger_consent(self):
+        self.assertFalse(driver.approved_copy(
+            "Production 2026", driver.CONSENT, True))
+        self.assertFalse(driver.approved_copy(
+            "Production 2026", driver.NAMED_CONSENT, False, True))
+        self.assertFalse(driver.approved_copy(
+            "Production 2026", driver.CONSENT, True, True))
+        self.assertTrue(driver.approved_copy(
+            "Production 2026", driver.NAMED_CONSENT, True, True))
+        with self.assertRaises(ValueError):
+            driver.Controller(self.app, write=True,
+                expected_project="Production 2026",
+                confirmation=driver.CONSENT, automation_confirmed=True,
+                allow_named_project=True)
+        c = driver.Controller(self.app, write=True,
+            expected_project="Production 2026",
+            confirmation=driver.NAMED_CONSENT, automation_confirmed=True,
+            allow_named_project=True)
+        self.assertTrue(c.write)
+        self.assertEqual(c.expected_project, "Production 2026")
+
     def test_a4_hardware_pickup_then_two_verified_writes_to_same_clip(self):
         c = self.controller(write=True, max_writes=2)
         item = self.timeline.track_items[4]

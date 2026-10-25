@@ -17,6 +17,7 @@ EVENTS = Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
 MODULES = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"
 MCU_CONSENT = "I CONFIRMED A BACKED-UP DISPOSABLE FAIRLIGHT PROJECT"
 CLIP_CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
+NAMED_CONSENT = "YES, BACKUP EXISTS, PLAYHEAD STOPPED, NO GAIN AUTOMATION"
 
 
 def parser():
@@ -24,8 +25,11 @@ def parser():
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
-    p.add_argument("--write-test-copy", action="store_true",
-                   help="Allow both MCU mixer and per-clip gain writes in disposable project")
+    p.add_argument("--write-approved-project", "--write-test-copy",
+                   dest="write_test_copy", action="store_true",
+                   help="Enable mixer and clip writes for one exact project")
+    p.add_argument("--allow-named-project", action="store_true",
+                   help="Explicitly permit a named non-test project with backup")
     p.add_argument("--expected-project")
     p.add_argument("--confirmed-backup", action="store_true")
     p.add_argument("--confirmed-no-automation", action="store_true")
@@ -50,8 +54,11 @@ def commands(args, scripts):
         clip.append("--low-latency")
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
-        clip += ["--write-test-copy", "--expected-project", args.expected_project,
-                 "--confirmed-no-automation", "--consent", CLIP_CONSENT]
+        clip += ["--write-approved-project", "--expected-project", args.expected_project,
+                 "--confirmed-no-automation", "--consent",
+                 NAMED_CONSENT if args.allow_named_project else CLIP_CONSENT]
+        if args.allow_named_project:
+            clip.append("--allow-named-project")
         if args.max_clip_writes == 0:
             clip.append("--unlimited-writes")
         else:
@@ -135,6 +142,8 @@ def main(argv=None):
             args.max_clip_writes == 0 and args.run_until_stopped
             and args.write_test_copy):
         p.error("clip writes: 1..256, or 0 only for a continuous test copy")
+    if args.allow_named_project and not args.write_test_copy:
+        p.error("--allow-named-project requires --write-approved-project")
     if args.write_test_copy and (not args.expected_project or
                                  not args.confirmed_backup or
                                  not args.confirmed_no_automation):
