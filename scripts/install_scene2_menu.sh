@@ -93,7 +93,8 @@ checksum "$BASE/resolve-python.path" > "$BACK/after/resolve-python.path.sha256"
 LINE='require("nanokontrol_resolve21")'
 if [ ! -f "$HS/init.lua" ]; then
   printf '%s\n' "$LINE" > "$HS/init.lua"
-elif ! grep -Fq "$LINE" "$HS/init.lua"; then
+elif ! grep -Fq "$LINE" "$HS/init.lua" &&
+     ! grep -Fq "require('nanokontrol_resolve21')" "$HS/init.lua"; then
   printf '\n-- Korg nanoKONTROL Studio / DaVinci Resolve\n%s\n' "$LINE" >> "$HS/init.lua"
 fi
 checksum "$HS/init.lua" > "$BACK/after/init.lua.sha256"

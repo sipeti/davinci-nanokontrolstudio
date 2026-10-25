@@ -9,14 +9,14 @@ This document describes the **current implemented mapping**, not potential futur
 | Scene | Incoming MIDI channel reported by Hammerspoon | Available actions |
 | --- | ---: | --- |
 | 1 | 0 | Scene 1 editing + JOG/SHUTTLE + Slider 1 + transport |
-| 2 | 1 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
+| 2 | 1 | **Fairlight mixer sliders 1–7, MUTE/SOLO and A1–A8 clip gain knobs** + shared JOG/transport |
 | 3 | 2 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 | 4 | 3 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 | 5 | 4 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 
 The five Korg scene configurations share the **same transport CC numbers** but use successive MIDI channels. SCENE switching is performed on the controller itself. The Lua controller does not need a MIDI scene-change event to restore the common transport LEDs.
 
-**All five scenes use one JOG/SHUTTLE decoder** when their wheels send **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127 on their respective MIDI channels. Scenes 2–5 in the earlier Korg setup used **Continuous / CC86**; this signal is **deliberately ignored** until the hardware is reconfigured and written. A one-time `[NK JOG]` Console warning identifies old CC86 scenes. The 28-step calibration is still Scene 1-only, and other scene wheels reuse its learned CC82 mapping. Other scenes' gain, mute, marker trim, faders and knobs remain unassigned.
+**All five scenes use one JOG/SHUTTLE decoder** when their wheels send **CC82 / Sign Magnitude / Const**, with clockwise values 1–64 and counterclockwise values 65–127 on their respective MIDI channels. Scenes 2–5 in the earlier Korg setup used **Continuous / CC86**; this signal is **deliberately ignored** until the hardware is reconfigured and written. A one-time `[NK JOG]` Console warning identifies old CC86 scenes. The 28-step calibration is still Scene 1-only, and other scene wheels reuse its learned CC82 mapping. Scenes 3–5 have no additional gain, mixer mute, marker trim, fader or rotary mappings.
 
 **MIDI channels:** Korg Scenes 1–5 must retain their corresponding Global MIDI Channels **1–5** (incoming Hammerspoon callback channels **0–4**). Each Jog Wheel's MIDI Channel should be **Global**. LED output 0 lights Scene 1 and output 1 lights Scene 2 (both verified on the actual device); shared status CCs also go to outputs **2–4** for Scenes 3–5, pending physical testing.
 
@@ -110,7 +110,7 @@ SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action
 | 7 | 19 — unassigned | 9 — unassigned |
 | 8 | 20 — unassigned | 12 — unassigned |
 
-Unassigned controls may still send MIDI data to Hammerspoon; the current Lua simply does not associate them with a Resolve action. **There is no Scene 2 gain control or actual track mute implementation yet.**
+This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2 is different:** CC2–CC8 drive real Fairlight mixer strips 1–7 (CC9 / strip 8 is locked); CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
 
 ## Persistent LED feedback
 

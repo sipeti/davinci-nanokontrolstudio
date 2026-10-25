@@ -18,7 +18,7 @@ Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tes
 | Physical controls | MIDI CC |
 | --- | --- |
 | Eight rotary knobs | 13–20, in order |
-| Eight sliders/faders | 2, 3, 4, 5, 6, 8, 9, 12 (observed hardware configuration; bus strip 8 locked) |
+| Eight sliders/faders | **2–9**, in order. Slider 8 (CC9) deliberately locked to protect potential Bus 1 |
 | MUTE 1–8 | 21–28 |
 | SOLO 1–8 | 29, 30, 31, 33, 34, 35, 36, 37 |
 | Scene 2 JOG wheel | **CC82 / Sign Magnitude / Const** |
