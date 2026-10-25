@@ -26,7 +26,7 @@ The five Korg scene configurations share the **same transport CC numbers** but u
 | --- | --- | --- |
 | Main JOG wheel, **Scenes 1–5** | **82** | In JOG mode: one frame right/left per MIDI pulse; keeps the last known PLAY/STOP/REW/FF status LEDs intact |
 | Main JOG wheel, **Scenes 1–5**, CYCLE = SHUTTLE | **82** | One pulse = one **shared** signed speed step, limited to −4…+4 |
-| Hold MARKER SET + JOG, **Scene 1 only** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
+| Hold MARKER SET + JOG, **all Scenes 1–5** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
 | Slider/Fader 1, **Scene 1 only** | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
 | CYCLE, **Scenes 1–5** | 54 | Toggle the shared JOG/SHUTTLE mode; stop while changing modes |
 
@@ -69,9 +69,9 @@ The software tracks **requested/observed commands**, not the actual Resolve tran
 | TRACK ◀ | 60 | `Up` — previous edit |
 | TRACK ▶ | 61 | `Down` — next edit |
 
-The following Scene 1 marker buttons are **not** global across the other scenes:
+From v1.5, these editing controls are **shared across Scenes 1–5** (configure the same CC in every Korg Scene and use Write Scene Data):
 
-| Scene 1 button | CC | Shortcut / action |
+| Button (Scenes 1–5) | CC | Shortcut / action |
 | --- | ---: | --- |
 | Large transport REC | 81 | `Cmd+Z` — Undo |
 | MARKER SET | 55 | `V` edit-point selection; hold for JOG trim |

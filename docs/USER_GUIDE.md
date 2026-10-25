@@ -1,6 +1,6 @@
 # User guide: editing Scene 1 and audio Scene 2
 
-The Korg must stay in **Assignable Mode**. A hardware SCENE switch does not restart the Python workers or erase Scene 1 calibration. **JOG/SHUTTLE and the common transport controls work across all five scenes** if the wheels use CC82 Sign Magnitude / Const.
+The Korg must stay in **Assignable Mode**. A hardware SCENE switch does not restart the Python workers or erase Scene 1 calibration. **JOG/SHUTTLE, transport, large REC/Undo (CC81) and MARKER CC55–57 work across all five scenes** if the wheels use CC82 Sign Magnitude / Const and the buttons retain their Scene 1 CC assignments. Holding MARKER SET makes JOG trim within that same scene; release or a scene switch clears the modifier. **Write Scene Data** after configuring each Korg scene.
 
 ## Scene 1: editing
 
@@ -48,4 +48,4 @@ tail -n 60 "$HOME/Library/Logs/nk-scene2-session.log"
 
 Typical messages: PICKUP_PENDING (waiting for a real crossing), PICKUP=PASS (armed), AUDIO_WRITE_READBACK=PASS (actual clip setter verified), REARM (focus/scene/playhead changed) and BUS1_STRIP8_LOCKED (deliberate safety lock). The diagnostic command **sh ./doctor.command** does not send MIDI or alter projects.
 
-**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip is locked; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport only and their external LED output routes need physical verification.
+**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip is locked; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport and the four REC/MARKER editing keys; their external LED output routes still need physical verification.
