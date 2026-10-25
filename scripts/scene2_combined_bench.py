@@ -22,12 +22,14 @@ CLIP_CONSENT = "YES, THIS IS A BACKED-UP TEST PROJECT"
 def parser():
     p = argparse.ArgumentParser(description="Finite combined Scene 2 hardware bench")
     p.add_argument("--seconds", type=int, default=90)
+    p.add_argument("--run-until-stopped", action="store_true",
+                   help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-test-copy", action="store_true",
                    help="Allow both MCU mixer and per-clip gain writes in disposable project")
     p.add_argument("--expected-project")
     p.add_argument("--confirmed-backup", action="store_true")
     p.add_argument("--confirmed-no-automation", action="store_true")
-    p.add_argument("--max-clip-writes", type=int, default=12)
+    p.add_argument("--max-clip-writes", type=int, default=None)
     p.add_argument("--mcu-python", default="/tmp/nk-mcu-venv/bin/python3")
     p.add_argument("--resolve-python", default="/opt/homebrew/bin/python3")
     return p
@@ -38,13 +40,18 @@ def commands(args, scripts):
            "--input-port", "IAC Driver NK FL From Resolve",
            "--output-port", "IAC Driver NK FL To Resolve",
            "--seconds", str(args.seconds)]
+    if args.run_until_stopped:
+        mcu.append("--continuous")
     clip = [args.resolve_python, str(scripts / "scene2_continuous_clip_gain.py"),
             "--seconds", str(args.seconds)]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
         clip += ["--write-test-copy", "--expected-project", args.expected_project,
-                 "--confirmed-no-automation", "--max-writes",
-                 str(args.max_clip_writes), "--consent", CLIP_CONSENT]
+                 "--confirmed-no-automation", "--consent", CLIP_CONSENT]
+        if args.max_clip_writes == 0:
+            clip.append("--unlimited-writes")
+        else:
+            clip.extend(["--max-writes", str(args.max_clip_writes)])
     env = os.environ.copy()
     env["PYTHONPATH"] = MODULES + (os.pathsep + env["PYTHONPATH"]
                                     if env.get("PYTHONPATH") else "")
@@ -111,10 +118,18 @@ def supervise(specs):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
-    if not 5 <= args.seconds <= 180:
+    if args.run_until_stopped:
+        if args.seconds != 90:
+            p.error("--run-until-stopped cannot be combined with --seconds")
+        args.seconds = 0
+    elif not 5 <= args.seconds <= 180:
         p.error("--seconds must be 5..180 (bounded MCU bench)")
-    if not 1 <= args.max_clip_writes <= 256:
-        p.error("--max-clip-writes must be 1..256")
+    if args.max_clip_writes is None:
+        args.max_clip_writes = 0 if args.run_until_stopped else 12
+    if not (1 <= args.max_clip_writes <= 256 or
+            args.max_clip_writes == 0 and args.run_until_stopped
+            and args.write_test_copy):
+        p.error("clip writes: 1..256, or 0 only for a continuous test copy")
     if args.write_test_copy and (not args.expected_project or
                                  not args.confirmed_backup or
                                  not args.confirmed_no_automation):
@@ -132,9 +147,10 @@ def main(argv=None):
     for executable in (args.mcu_python, args.resolve_python):
         if not (Path(executable).is_file() and os.access(executable, os.X_OK)):
             p.error("Python executable unavailable: %s" % executable)
-    print("SCENE2_COMBINED=START; duration=%ds; mode=%s; "
+    print("SCENE2_COMBINED=START; duration=%s; mode=%s; "
           "one physical Korg MIDI owner; strip8 LOCKED" %
-          (args.seconds, "TEST_COPY_WRITE" if args.write_test_copy
+          ("until Ctrl+C" if args.run_until_stopped else str(args.seconds)+"s",
+           "TEST_COPY_WRITE" if args.write_test_copy
            else "READ_ONLY"), flush=True)
     return supervise(commands(args, scripts))
 

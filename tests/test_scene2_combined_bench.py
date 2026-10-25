@@ -29,6 +29,19 @@ class CombinedTest(unittest.TestCase):
         self.assertIn("hajoagyu_261022 testing", specs[1][1])
         self.assertEqual(specs[1][1][specs[1][1].index("--max-writes") + 1], "6")
 
+    def test_continuous_command_has_both_workers_uncapped(self):
+        a = bench.parser().parse_args([
+            "--run-until-stopped", "--write-test-copy",
+            "--expected-project", "hajoagyu_261022 testing",
+            "--confirmed-backup", "--confirmed-no-automation"])
+        a.seconds = 0
+        a.max_clip_writes = 0
+        specs = bench.commands(a, Path("/test/scripts"))
+        self.assertIn("--continuous", specs[0][1])
+        self.assertEqual(specs[0][1][specs[0][1].index("--seconds")+1], "0")
+        self.assertIn("--unlimited-writes", specs[1][1])
+        self.assertNotIn("--max-writes", specs[1][1])
+
     def test_missing_write_confirmation_is_rejected_before_start(self):
         with self.assertRaises(SystemExit) as exc:
             bench.main(["--write-test-copy", "--expected-project", "testing"])

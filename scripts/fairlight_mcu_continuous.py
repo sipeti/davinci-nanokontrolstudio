@@ -130,11 +130,12 @@ class LiveMixer:
     """A bounded Fairlight MCU state machine with soft pickup and MIDI key-up."""
 
     def __init__(self, send, led, *, write=False, allow_strip8=False,
-                 clock=time.monotonic):
+                 packet_cap=MAX_MESSAGES, clock=time.monotonic):
         self.send = send
         self.write = write
         self.clock = clock
         self.allow_strip8 = allow_strip8
+        self.packet_cap = packet_cap
         self.host_state = Bridge(lambda *args, **kw: None, led, clock=clock)
         self.engaged = [False] * 8
         self.physical = [None] * 8
@@ -164,7 +165,7 @@ class LiveMixer:
     def _send(self, kind, *, release=False, **kw):
         if not self.write:
             raise RuntimeError("READ_ONLY must never transmit MIDI")
-        if not release and self.sent >= MAX_MESSAGES:
+        if not release and self.packet_cap is not None and self.sent >= self.packet_cap:
             raise RuntimeError("MIDI_OUTPUT_CAP_REACHED")
         self.send(kind, **kw)
         self.sent += 1
@@ -334,6 +335,8 @@ def main():
     p.add_argument("--input-port", required=True)
     p.add_argument("--output-port", required=True)
     p.add_argument("--seconds", type=int, default=90)
+    p.add_argument("--continuous", action="store_true",
+                   help="explicit Ctrl+C session; disables bench packet cap")
     p.add_argument("--enable-output", action="store_true")
     p.add_argument("--reply-mcu-identity", action="store_true",
                    help="experimental MIDI Universal Identity Reply; alone did NOT seed host faders")
@@ -345,7 +348,10 @@ def main():
                    help="EXPLICIT option: strip8 follows CURRENT Fairlight bank; not fixed master")
     p.add_argument("--consent")
     args = p.parse_args()
-    if not 1 <= args.seconds <= MAX_SECONDS:
+    if args.continuous:
+        if args.seconds != 0:
+            p.error("--continuous requires --seconds 0")
+    elif not 1 <= args.seconds <= MAX_SECONDS:
         p.error("bench session must last 1..180 seconds")
     if args.enable_output and args.consent != CONSENT:
         p.error("backed-up disposable Fairlight test project consent required")
@@ -412,7 +418,8 @@ def main():
             send, led,
             write=physical_mixer_write_authorized(
                 args.enable_output, args.handshake_only),
-            allow_strip8=args.enable_strip8_bus1)
+            allow_strip8=args.enable_strip8_bus1,
+            packet_cap=None if args.continuous else MAX_MESSAGES)
         started = time.monotonic()
         last_h = None
         last_feedback_h = float("-inf")
@@ -431,11 +438,12 @@ def main():
         host_led_last = {}
         printed = set()
         soft_rearms = Counter()
-        print("MCU_LIVE=START; mode=%s; duration=%ds; "
+        print("MCU_LIVE=START; mode=%s; duration=%s; "
               "strip8=%s; no auto-start" %
               ("HANDSHAKE_ONLY" if args.handshake_only
                else "BENCH_OUTPUT" if args.enable_output else "READ_ONLY",
-               args.seconds, "explicitly_enabled" if args.enable_strip8_bus1
+               "until Ctrl+C" if args.continuous else str(args.seconds) + "s",
+               "explicitly_enabled" if args.enable_strip8_bus1
                else "LOCKED"), flush=True)
         try:
             if args.init_mcu_session:
@@ -446,7 +454,7 @@ def main():
                 print("MCU_LIVE_SESSION=QUERY_SENT; "
                       "awaiting host challenge reply; no mixer write",
                       flush=True)
-            while time.monotonic() - started < args.seconds:
+            while args.continuous or time.monotonic() - started < args.seconds:
                 now = time.monotonic()
                 if now - last_feedback_h >= 0.5:
                     feedback.write("%d,H,0,1\n" %

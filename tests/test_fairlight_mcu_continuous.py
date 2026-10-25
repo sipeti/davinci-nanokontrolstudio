@@ -535,6 +535,19 @@ class LiveMixerTests(unittest.TestCase):
         self.assertFalse(live.LiveMixer(lambda *a, **kw:None,
                                          lambda *a, **kw:None).write)
 
+    def test_normal_packet_cap_stays_and_continuous_can_send_past_it(self):
+        b = live.LiveMixer(lambda *args, **kw: self.calls.append((args, kw)),
+                           lambda cc, val: None, write=True)
+        b.sent = live.MAX_MESSAGES
+        with self.assertRaisesRegex(RuntimeError, "MIDI_OUTPUT_CAP_REACHED"):
+            b._send("pitchwheel", channel=0, pitch=0)
+        c = live.LiveMixer(lambda *args, **kw: self.calls.append((args, kw)),
+                           lambda cc, val: None, write=True, packet_cap=None)
+        c.sent = live.MAX_MESSAGES
+        c._send("pitchwheel", channel=0, pitch=0)
+        self.assertEqual(c.sent, live.MAX_MESSAGES + 1)
+        self.assertEqual(self.calls[-1][0], ("pitchwheel",))
+
 
 if __name__ == "__main__":
     unittest.main()
