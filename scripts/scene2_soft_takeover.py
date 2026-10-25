@@ -28,15 +28,23 @@ class Decision:
 
 
 def gain_for_cc(value):
-    """Continuous -60..+18 dB curve: CC70=0 dB, finer near unity."""
+    """Absolute rotary: left -100dB, centre CC64 0dB, right +30dB.
+
+    Piecewise linear audio taper has smaller steps around 0dB without
+    changing the hardware scene or requiring calibration.
+    """
     if type(value) is not int or not 0 <= value <= 127:
         raise ValueError("MIDI value must be a CC integer in 0..127")
     if value <= 16:
-        gain = -60.0 + 36.0 * value / 16.0
-    elif value <= 70:
-        gain = -24.0 + 24.0 * (value - 16) / 54.0
+        gain = -100.0 + 64.0 * value / 16.0
+    elif value <= 40:
+        gain = -36.0 + (value - 16)
+    elif value <= 64:
+        gain = -12.0 + 0.5 * (value - 40)
+    elif value <= 108:
+        gain = 12.0 * (value - 64) / 44.0
     else:
-        gain = 18.0 * (value - 70) / 57.0
+        gain = 12.0 + 18.0 * (value - 108) / 19.0
     return round(gain, 3)
 
 
@@ -98,12 +106,6 @@ class SoftTakeover:
                 not _valid_db(observed_db)):
             self.reject(strip)
             return Decision("DISABLED", strip, reason="missing trusted snapshot")
-        # Never move an existing clip outside the rotary's supported range.
-        if not (gain_for_cc(0) - PICKUP_WINDOW_DB <= observed_db <=
-                gain_for_cc(127) + PICKUP_WINDOW_DB):
-            self.reject(strip)
-            return Decision("DISABLED", strip,
-                            reason="clip gain outside -60..+18 dB pickup range")
         current = self._strips.get(strip)
         if current is None or current["identity"] != identity or abs(
                 current["expected_db"] - observed_db) > EPSILON_DB:

@@ -60,7 +60,7 @@ class EightRotaryTest(unittest.TestCase):
         self.pickup_a4(c)
         self.assertEqual(self.feed(c, 1, 16, 107), "SIMULATED")
         self.assertEqual(self.timeline.track_items[4].calls, [])
-        self.assertIn("SIMULATED_GAIN=11.684", self.output.getvalue())
+        self.assertIn("SIMULATED_GAIN=11.727", self.output.getvalue())
 
     def test_real_writes_require_explicit_test_copy_and_no_automation(self):
         for name, phrase, no_auto in [
@@ -90,7 +90,7 @@ class EightRotaryTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
         self.assertEqual(self.feed(c, 1, 17, 1), "PICKUP_PENDING")
         self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
-        self.assertEqual(self.feed(c, 1, 17, 48), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 17, 44), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 17, 47), "WRITTEN")
         self.assertEqual(len(self.timeline.track_items[5].calls), 1)
         self.assertEqual(len(self.timeline.track_items[4].calls), 0)
@@ -113,7 +113,7 @@ class EightRotaryTest(unittest.TestCase):
         c = self.controller(write=True, max_writes=2)
         item = self.timeline.track_items[5]
         self.assertEqual(self.feed(c, 1, 17, 1), "PICKUP_PENDING")
-        self.assertEqual(self.feed(c, 1, 17, 48), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 17, 44), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 17, 100), "WRITTEN")
         self.assertEqual(c.writes, 1)
         self.assertEqual(len(item.calls), 1)

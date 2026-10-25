@@ -12,12 +12,12 @@ eight channels in the combined mode still need the operator's check.
 
 The new gain curve uses all 128 physical rotary positions:
 
-- CC0: -60 dB; CC16: -24 dB; CC70: 0 dB; CC127: +18 dB.
-- Greater precision around 0 dB (roughly 0.32-0.44 dB per CC).
-- A clip already ABOVE +18 dB or BELOW -60 dB will not be picked up:
-  manually bring it into range in Inspector first. No silent clamp, jump
-  or overwrite. This changes pickup position for ALL existing clips,
-  so fresh physical pickup is required on first use.
+- Fully left (CC0): **-100 dB**.
+- Physical centre (CC64): **0 dB**.
+- Fully right (CC127): **+30 dB**.
+- Fine control near centre: CC63=-0.5 dB, CC65=+0.273 dB.
+- This changes pickup positions from the previous experimental curve:
+  a new physical pickup is required on first use.
 
 ## Continuous session
 

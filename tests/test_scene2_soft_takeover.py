@@ -81,14 +81,19 @@ class TestPickup(unittest.TestCase):
 
     def test_gain_map(self):
         values = [gain_for_cc(i) for i in range(128)]
-        self.assertEqual((values[0], values[70], values[-1]), (-60, 0, 18))
+        self.assertEqual((values[0], values[64], values[-1]), (-100, 0, 30))
         self.assertEqual(values, sorted(values))
+        self.assertLess(values[63], 0)
+        self.assertGreater(values[65], 0)
+        self.assertAlmostEqual(values[63], -0.5)
+        self.assertAlmostEqual(values[65], 0.273)
 
-    def test_clip_outside_rotary_range_cannot_pick_up(self):
-        result = self.feed(100, db=30.0)
-        self.assertEqual(result.state, 'DISABLED')
-        self.assertIn('outside -60..+18', result.reason)
-        self.assertEqual(self.e.state(4), 'DISABLED')
+    def test_full_existing_clip_range_can_be_picked_up(self):
+        self.assertEqual(self.feed(126, db=30.0).state, 'PICKUP_PENDING')
+        self.assertEqual(self.feed(127, db=30.0).state, 'ENGAGED')
+        self.e.reset()
+        self.assertEqual(self.feed(1, db=-100.0).state, 'PICKUP_PENDING')
+        self.assertEqual(self.feed(0, db=-100.0).state, 'ENGAGED')
 
 
 if __name__ == '__main__':

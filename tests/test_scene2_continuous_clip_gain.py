@@ -99,7 +99,7 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
         self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
         self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
-        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.684)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.727)
         self.assertEqual(c.writes, 1)
 
     def test_scene_switch_and_return_requires_fresh_pickup(self):
@@ -237,7 +237,7 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(code, 0, logs)
         self.assertIn("A4 AUDIO_WRITE_READBACK=PASS", logs)
         self.assertEqual(c.writes, 1)
-        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.684)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 11.727)
 
     def test_switching_scene_prevents_pending_write_intent(self):
         code, c, logs = self.stream(write=True, max_writes=1,
