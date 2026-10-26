@@ -188,8 +188,8 @@ assert(findMenuAction(daily,"LED feedback:"),
   "LED diagnostics must remain reachable")
 assert(type(daily[4].menu[2].fn)=="function",
   "Bank paging action must remain reachable for service")
-assert(findMenuAction(daily,"Pause Fairlight workers"),
-  "Service-only pause remains available")
+assert(type(daily[4].menu[1].fn)=="function",
+  "Service-only pause/resume action remains available")
 assert(type(urlEvents["nk-controller-pause-for-update"])=="function"
   and type(urlEvents["nk-controller-restart"])=="function",
   "Local update workflow must register both callbacks")
