@@ -9,7 +9,7 @@ This document describes the **current implemented mapping**, not potential futur
 | Scene | Incoming MIDI channel reported by Hammerspoon | Available actions |
 | --- | ---: | --- |
 | 1 | 0 | Scene 1 editing + JOG/SHUTTLE + Slider 1 + transport |
-| 2 | 1 | **Fairlight mixer sliders 1–7, MUTE/SOLO and A1–A8 clip gain knobs** + shared JOG/transport |
+| 2 | 1 | **Fairlight mixer sliders 1–8, MUTE/SOLO and A1–A8 clip gain knobs** + shared JOG/transport |
 | 3 | 2 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 | 4 | 3 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
 | 5 | 4 | **JOG/SHUTTLE wheel** (after CC82 configuration) + shared transport |
@@ -26,7 +26,7 @@ The five Korg scene configurations share the **same transport CC numbers** but u
 | --- | --- | --- |
 | Main JOG wheel, **Scenes 1–5** | **82** | In JOG mode: one frame right/left per MIDI pulse; keeps the last known PLAY/STOP/REW/FF status LEDs intact |
 | Main JOG wheel, **Scenes 1–5**, CYCLE = SHUTTLE | **82** | One pulse = one **shared** signed speed step, limited to −4…+4 |
-| Hold MARKER SET + JOG, **Scene 1 only** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
+| Hold MARKER SET + JOG, **all Scenes 1–5** | 55 held, then 82 | Enter edit-point selection (`V`) and nudge with `,` / `.` |
 | Slider/Fader 1, **Scene 1 only** | 2 | Center-zero SHUTTLE; center CC60–68 = STOP; requires center to arm |
 | CYCLE, **Scenes 1–5** | 54 | Toggle the shared JOG/SHUTTLE mode; stop while changing modes |
 
@@ -69,9 +69,9 @@ The software tracks **requested/observed commands**, not the actual Resolve tran
 | TRACK ◀ | 60 | `Up` — previous edit |
 | TRACK ▶ | 61 | `Down` — next edit |
 
-The following Scene 1 marker buttons are **not** global across the other scenes:
+From v1.5, these editing controls are **shared across Scenes 1–5** (configure the same CC in every Korg Scene and use Write Scene Data):
 
-| Scene 1 button | CC | Shortcut / action |
+| Button (Scenes 1–5) | CC | Shortcut / action |
 | --- | ---: | --- |
 | Large transport REC | 81 | `Cmd+Z` — Undo |
 | MARKER SET | 55 | `V` edit-point selection; hold for JOG trim |
@@ -110,7 +110,7 @@ SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action
 | 7 | 19 — unassigned | 9 — unassigned |
 | 8 | 20 — unassigned | 12 — unassigned |
 
-This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2 is different:** CC2–CC8 drive real Fairlight mixer strips 1–7 (CC9 / strip 8 is locked); CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
+This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2:** the factory physical slider CCs **2, 3, 4, 5, 6, 8, 9, 12** map to MCU mixer strips 1–8 respectively; the 8th MCU strip (physical CC12) was physically verified as A8 in the eight-audio-track project and is enabled by default. In other Resolve banks it may instead be Bus1, so the NK JOG menu allows disabling the eighth strip (including MUTE8/SOLO8). CC7 is unused, not slider 6. CC13–CC20 adjust clip gain on audio tracks A1–A8 at a STOPPED playhead. Physical MUTE CC21–28 and SOLO CC29,30,31,33,34,35,36,37 drive Fairlight MCU notes, with host-authoritative LED feedback. The Scene 2 knobs have CC0=−100 dB, CC64=0 dB and CC127=+30 dB. See [Scene 2 user guide](USER_GUIDE.md).
 
 ## Persistent LED feedback
 

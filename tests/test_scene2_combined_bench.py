@@ -1,6 +1,7 @@
 """Offline checks for the bounded two-worker supervisor."""
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -64,6 +65,78 @@ class CombinedTest(unittest.TestCase):
         self.assertNotIn("--allow-named-project", specs[0][1])
         with self.assertRaises(SystemExit):
             bench.main(["--allow-named-project", "--seconds", "60"])
+
+    def test_auto_run_preserves_the_exact_v14_mcu_command(self):
+        with tempfile.TemporaryDirectory() as temp:
+            events = Path(temp) / "events.csv"
+            events.write_text("fresh")
+            with mock.patch.object(bench, "EVENTS", events), \
+                 mock.patch.object(bench, "supervise", return_value=0) as run:
+                result = bench.main([
+                    "--auto-run", "--mcu-python", sys.executable,
+                    "--resolve-python", sys.executable])
+            self.assertEqual(result, 0)
+            auto_specs = run.call_args.args[0]
+            self.assertEqual([name for name, _, _ in auto_specs], ["MCU", "CLIP"])
+            mcu, clip = auto_specs
+
+            # The v1.5 auto-run must launch the identical working MCU
+            # command as the already accepted v1.4 manual writing mode.
+            manual = bench.parser().parse_args([
+                "--run-until-stopped", "--write-test-copy",
+                "--expected-project", "testing",
+                "--confirmed-backup", "--confirmed-no-automation",
+                "--max-clip-writes", "0",
+                "--mcu-python", sys.executable,
+                "--resolve-python", sys.executable])
+            manual.seconds = 0
+            manual_specs = bench.commands(
+                manual, Path(__file__).resolve().parents[1] / "scripts")
+            self.assertEqual(mcu[0], manual_specs[0][0])
+            self.assertEqual(
+                [flag for flag in mcu[1] if flag != "--enable-strip8-bus1"],
+                manual_specs[0][1], "MCU 1-7 launch flags unchanged")
+            self.assertEqual(mcu[2], manual_specs[0][2])
+            self.assertNotIn("--auto-context-guard", mcu[1])
+            self.assertNotIn("--init-mcu-session", mcu[1])
+            self.assertIn("--enable-output", mcu[1])
+            self.assertIn("--low-latency", clip[1])
+            self.assertIn("--follow-active-project", clip[1])
+            self.assertIn("--unlimited-writes", clip[1])
+            self.assertNotIn("--expected-project", clip[1])
+
+    def test_v15_only_reinterprets_factory_fader_cc_not_mcu_protocol(self):
+        from fairlight_mcu_bridge import FADER_CCS, FADER_CC_TO_STRIP, SOLO_CC
+        from fairlight_mcu_continuous import TOUCH_HOLD, BUTTON_HOLD
+        self.assertEqual(FADER_CCS, (2, 3, 4, 5, 6, 8, 9, 12))
+        self.assertEqual(tuple(FADER_CC_TO_STRIP.values()), tuple(range(8)))
+        self.assertEqual(SOLO_CC, (29, 30, 31, 33, 34, 35, 36, 37))
+        self.assertEqual(TOUCH_HOLD, .5)
+        self.assertEqual(BUTTON_HOLD, .08)
+
+    def test_eighth_strip_enabled_by_default_opt_out_mcu_only(self):
+        default = bench.parser().parse_args(["--auto-run"])
+        disabled = bench.parser().parse_args([
+            "--auto-run", "--disable-strip8"])
+        base = bench.commands(default, Path("/test/scripts"))
+        off = bench.commands(disabled, Path("/test/scripts"))
+        self.assertIn("--enable-strip8-bus1", base[0][1])
+        self.assertNotIn("--enable-strip8-bus1", off[0][1])
+        self.assertEqual(base[0][1].count("--enable-strip8-bus1"), 1)
+        self.assertEqual(base[1], off[1], "rotary worker unchanged")
+        self.assertEqual(
+            [arg for arg in base[0][1] if arg != "--enable-strip8-bus1"],
+            off[0][1], "MCU 1-7 options must remain unchanged")
+
+    def test_eighth_strip_disable_requires_automatic_session(self):
+        with self.assertRaises(SystemExit) as error:
+            bench.main(["--disable-strip8", "--seconds", "60"])
+        self.assertEqual(error.exception.code, 2)
+
+    def test_auto_run_rejects_incompatible_manual_controls(self):
+        with self.assertRaises(SystemExit) as error:
+            bench.main(["--auto-run", "--expected-project", "wrong"])
+        self.assertEqual(error.exception.code, 2)
 
     def test_missing_write_confirmation_is_rejected_before_start(self):
         with self.assertRaises(SystemExit) as exc:

@@ -13,6 +13,7 @@ local enabled, mode, speed = true, "JOG", 0
 local device, deviceName = nil, nil
 local learning, draft, pending, step = false, nil, nil, 0
 local trimHeld, faderArmed, faderActive = false, false, false
+local trimSceneChannel = nil
 -- 1 jog tick = 1 shuttle gear. Coalesce small MIDI bursts before one J/K/L
 -- restart so quick turns cannot repeatedly cancel the pending L/J presses.
 local SHUTTLE_WHEEL_BATCH_SECONDS = 0.045
@@ -38,9 +39,10 @@ local LED_BUTTONS = {21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,
   54,55,56,57,58,59,60,61,62,63,80,81}
 local LED_BUTTON_SET = {}
 for _, cc in ipairs(LED_BUTTONS) do LED_BUTTON_SET[cc] = true end
--- Shared transport/navigation across the five Korg scenes. Other buttons
--- remain Scene 1-only until a future scene-specific mapping is agreed.
-local GLOBAL_TRANSPORT = {"cycle","begin","rew","ff","stop","play","trackPrev","trackNext"}
+-- Shared across all five scenes. The four additional editing buttons
+-- preserve their Scene 1 meanings, while mixer MUTE/SOLO stays independent.
+local GLOBAL_ACTIONS = {"cycle","begin","rew","ff","stop","play",
+  "trackPrev","trackNext","undo","trimLeft","trimRight"}
 local SCENE_COUNT = 5
 local LED_HEARTBEAT_SECONDS = 0.5
 -- Scene 1 output 0 and Scene 2 output 1 were verified on real hardware.
@@ -127,14 +129,24 @@ if hs.configdir then
   end
 end
 
--- Optional one-click TEST session manager (never starts automatically).
--- Installed helper manages only Python subprocesses; no second MIDI listener.
+-- Scene 2 automatic session manager. Starts only when Resolve is ready.
+-- No second hardware MIDI listener is created.
 local scene2Session = nil
 if scene2Bridge and hs.configdir then
   local path = hs.configdir .. "/scene2_session_menu.lua"
   local ok, factory = pcall(dofile, path)
   if ok and type(factory) == "function" then
-    local built, instance = pcall(factory, hs, scene2Bridge)
+    local built, instance = pcall(factory, hs, scene2Bridge, {
+      ready=function()
+        return enabled and device ~= nil and cfg ~= nil
+          and not learning and resolveApp() ~= nil
+      end,
+      appRunning=function()
+        if not hs.application.get then return true end
+        return hs.application.get("DaVinci Resolve") ~= nil or
+          hs.application.get("Resolve") ~= nil
+      end,
+    })
     if built and type(instance) == "table" and
       type(instance.toggle) == "function" and
       type(instance.isRunning) == "function" then
@@ -410,12 +422,12 @@ local function fader(value)
     shuttle(target,"fader")
   end
 end
-local function wheel(value, scene1Wheel)
-  -- Only CC82 Sign Magnitude is admitted, and all scenes share the SAME
-  -- mode and shuttle speed. MARKER SET trim is Scene 1-specific.
+local function wheel(value, inputChannel)
+  -- Only CC82 Sign Magnitude is admitted. MARKER SET+JOG trims within
+  -- the SAME scene that received MARKER SET; no cross-scene stuck trim.
   if type(value) ~= "number" or value < 1 or value > 127 or faderActive then return end
   local direction = value <= 64 and 1 or -1
-  if trimHeld and scene1Wheel then
+  if trimHeld and trimSceneChannel == inputChannel then
     key(direction > 0 and "." or ",")
   elseif mode == "JOG" then
     -- Frame nudging is navigation, not an explicit transport command.
@@ -584,6 +596,7 @@ local function finishLearn()
   transportIntent, transportDirection, transportGear = "stopped", 0, 0
   learning, draft, pending, step = false,nil,nil,0
   faderArmed, faderActive, trimHeld = false,false,false
+  trimSceneChannel = nil
   mode, speed = "JOG",0
   refreshStateLEDs()
   title()
@@ -694,16 +707,22 @@ local function midiCallback(_,_,command,_,meta)
         hs.printf("[NK FADER] other scene input; rearm at Scene 1 neutral before shuttle fader use")
       end
       faderArmed, faderActive = false, false
-      trimHeld = false
+    end
+    if incomingScene and trimHeld and trimSceneChannel ~= incomingScene then
+      trimHeld, trimSceneChannel = false, nil
     end
   end
   -- Echo physical CC to its own LED, independent of the learned action.
   -- When another app has focus, acknowledge the key but do not edit Resolve.
   inputLED(command,meta,signal,value)
   if not enabled or not cfg then return end
-  if signal == cfg.buttons.editSelect and buttonRelease(command,value) then
-    trimHeld = false
-    title()
+  local actionCC, actionChannel = sceneCC(signal)
+  local markerCC = ccFromSignal(cfg.buttons.editSelect)
+  if actionCC == markerCC and buttonRelease(command,value) then
+    if trimHeld and trimSceneChannel == actionChannel then
+      trimHeld, trimSceneChannel = false, nil
+      title()
+    end
     return
   end
   if not resolveApp() then
@@ -719,7 +738,7 @@ local function midiCallback(_,_,command,_,meta)
     if wheelCC and wheelCC == ccFromSignal(cfg.wheel) then
       -- A scene's wheel must be configured to exactly the learned Scene 1
       -- CC82 Sign Magnitude format. No implicit CC86 Continuous decoder.
-      wheel(value, channel == sceneInputChannel())
+      wheel(value, channel)
       return
     end
     if wheelCC == 86 and channel ~= sceneInputChannel()
@@ -730,25 +749,24 @@ local function midiCallback(_,_,command,_,meta)
     end
   end
   if not buttonPress(command,value) then return end
-  -- Every Scene keeps the same CC numbers for the physical transport strip,
-  -- but switches incoming MIDI channel (Scene 1: ch0, Scene 2: ch1, ...).
-  -- Share transport and navigation only; scene-specific functions remain
-  -- untouched and require the exact Scene 1 learned binding.
-  local cc,channel = sceneCC(signal)
+  -- Same physical CC in every Assignable scene, with MIDI channel
+  -- changing from Scene 1 ch0 through Scene 5 ch4.
+  local cc,channel = actionCC,actionChannel
+  if cc and cc == markerCC then
+    if speed ~= 0 then stop() end
+    key("v")
+    trimHeld = true
+    trimSceneChannel = channel
+    title()
+    return
+  end
   if cc and channel ~= sceneInputChannel() then
-    for _,name in ipairs(GLOBAL_TRANSPORT) do
+    for _,name in ipairs(GLOBAL_ACTIONS) do
       if cc == ccFromSignal(cfg.buttons[name]) then
         action(name)
         return
       end
     end
-    return
-  end
-  if signal == cfg.buttons.editSelect then
-    if speed ~= 0 then stop() end
-    key("v")
-    trimHeld = true
-    title()
     return
   end
   for name,binding in pairs(cfg.buttons) do
@@ -785,47 +803,79 @@ local function attach()
 end
 
 menu:setMenu(function()
-  return {
-    {title="Eszkoz: "..(deviceName or "nem csatlakozik").." | Scene 1 / Assignable",disabled=true},
-    {title=cfg and "Kalibracio: 28/28 OK" or "Kalibracio: TELJES BETANITAS SZUKSEGES",disabled=true},
+  -- Daily menu is deliberately small. Calibration and raw MIDI state are
+  -- still accessible, but they must not crowd the working mixer controls.
+  local diagnostics = {
+    {title="Eszkoz: "..(deviceName or "nem csatlakozik")..
+      " | Assignable", disabled=true},
+    {title=cfg and "Kalibracio: 28/28 OK" or
+      "Kalibracio: TELJES BETANITAS SZUKSEGES", disabled=true},
     {title=learning and "Betanitas: "..step.."/28 | utolso MIDI: "..lastMidi or
-      "JOG: "..mode.." | utolso MIDI: "..lastMidi,disabled=true},
-    {title="LED (Scene 1 External): "..(ledEnabled and "BE" or "KI")
-      .." | MIDI kimenet: "..ledOutputStatus,disabled=true},
-    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",fn=toggleLEDFeedback,
-      disabled=not cfg or not device},
-    {title="TELJES UJRABETANITAS (28 lepes)",fn=beginLearn,disabled=not device},
-    {title="Betanitas MEGSZAKITASA",fn=cancelLearn,disabled=not learning},
-    {title="Scene 2 clip gain MIDI bridge: " ..
-      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or "NINCS TELEPITVE"),
+      "JOG: "..mode.." | utolso MIDI: "..lastMidi, disabled=true},
+    {title="LED (External): "..(ledEnabled and "BE" or "KI")..
+      " | MIDI kimenet: "..ledOutputStatus, disabled=true},
+    {title="Scene 2 MIDI bridge: " ..
+      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or
+        "NINCS TELEPITVE"),
       fn=function()
-        if not scene2Bridge then return end
+        -- Manual legacy bridge operation only when no session manager exists.
+        if not scene2Bridge or scene2Session then return end
         if scene2Bridge.active then scene2Bridge:stop()
         else scene2Bridge:start() end
       end,
-      disabled=not scene2Bridge or not device or not cfg or learning or
-        (scene2Session and scene2Session:isRunning())},
+      disabled=not scene2Bridge or scene2Session ~= nil or
+        not device or not cfg or learning},
+    {title="-"},
+    {title="TELJES UJRABETANITAS (28 lepes)", fn=beginLearn,
+      disabled=not device},
+    {title="Betanitas MEGSZAKITASA", fn=cancelLearn,
+      disabled=not learning},
+  }
+  local settings = {
     {title=scene2Session and
-      (scene2Session:isRunning() and "Scene 2: STOP" or
-        "Scene 2: START (projekt valasztas)") or
-      "Scene 2: manager nincs telepitve",
-      fn=function() if scene2Session then scene2Session:toggle() end end,
-      disabled=not scene2Session or learning or
-        (not device and not (scene2Session and scene2Session:isRunning()))},
-    {title=enabled and "Vezerles SZUNETELTETESE" or "Vezerles BEKAPCSOLASA",
+      ("8. MCU csatorna: " ..
+        (scene2Session:isStrip8Enabled() and "BE (katt: KI)" or
+          "KI (katt: BE)")) or
+      "8. MCU csatorna: nem elerheto",
+      fn=function()
+        if scene2Session then scene2Session:toggleStrip8() end
+      end,
+      disabled=not scene2Session or not scene2Session:isEnabled()},
+    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",
+      fn=toggleLEDFeedback, disabled=not cfg or not device},
+    {title=enabled and "Vezerles SZUNETELTETESE" or
+      "Vezerles BEKAPCSOLASA",
       fn=function()
         if enabled then stop() end
         enabled = not enabled
         title()
       end},
+    {title="-"},
+    {title="Diagnosztika es kalibracio", menu=diagnostics},
   }
+  return {
+    {title="Korg: "..(deviceName or "nem csatlakozik").." | "..
+      (cfg and "28/28 OK" or "TELJES BETANITAS SZUKSEGES"),
+      disabled=true},
+    {title=scene2Session and
+      (scene2Session:isEnabled() and
+        (scene2Session:isRunning() and "Scene 2: FUT (katt: SZUNET)" or
+          "Scene 2: AUTOMATIKUS (katt: SZUNET)") or
+        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
+      "Scene 2: manager nincs telepitve",
+      fn=function() if scene2Session then scene2Session:toggle() end end,
+      disabled=not scene2Session},
+    {title="Beallitasok", menu=settings},
+  }
+
 end)
 hs.midi.deviceCallback(function() attach() end)
 attach()
 if scene2Session then
+  scene2Session:ensureRunning()
   local previousShutdown = hs.shutdownCallback
   hs.shutdownCallback = function()
-    scene2Session:stop()
+    scene2Session:shutdown()
     if type(previousShutdown) == "function" then previousShutdown() end
   end
 end

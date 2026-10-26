@@ -9,8 +9,8 @@ Default mode is OBSERVE ONLY, with zero MIDI output.
 MCU MIDI protocol (not clip gain): pitch bend ch0..7 = 8 mixer faders,
 note 0x08..0x0F = solo and 0x10..0x17 = mute. Position/status MUST first
 come from Fairlight; no MIDI write or invented Korg LED state without it.
-Physical Scene2 map CC2..9, CC21..28, CC29..31/33..37 is a CANDIDATE pending
-a physical Assignable-mode capture; verify before enabling output.
+Physical Scene2 faders use the observed Korg factory Assignable-mode CC map:
+CC2,3,4,5,6,8,9,12 (not consecutive CC2..9). Mixer buttons unchanged.
 """
 import argparse
 from collections import Counter
@@ -39,6 +39,10 @@ ONE_SHOT_BUTTONS = {"mute1": (21, 16), "solo1": (29, 8)}
 # This eight-button pattern is in the verified existing Scene1 LED map;
 # it must still be confirmed physically on Scene2 before MCU output.
 SOLO_CC = (29, 30, 31, 33, 34, 35, 36, 37)
+# Korg Kontrol Editor: same factory slider CC values in Scenes 1..5.
+# Only Scene 2 (MIDI channel 1) routes these to the Fairlight MCU worker.
+FADER_CCS = (2, 3, 4, 5, 6, 8, 9, 12)
+FADER_CC_TO_STRIP = {cc: strip for strip, cc in enumerate(FADER_CCS)}
 
 def parse_event(line, now_ms):
     parts = line.strip().split(",")
@@ -262,8 +266,8 @@ class Bridge:
             return "ONE_SHOT_FADER1_ONLY"
         if self.fader1_one_shot and self.sent >= 1:
             return "ONE_SHOT_ALREADY_SENT"
-        if 2 <= cc <= 9:
-            strip = cc - 2
+        if cc in FADER_CC_TO_STRIP:
+            strip = FADER_CC_TO_STRIP[cc]
             goal = physical_to_mcu(value)
             old = self.physical[strip]
             self.physical[strip] = goal

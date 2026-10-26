@@ -191,7 +191,7 @@ return function(host, isReady)
     local kind = nil
     if cc >= 13 and cc <= 20 then
       kind = "C" -- proven clip gain rotary mapping
-    elseif (cc >= 2 and cc <= 9)
+    elseif (cc >= 2 and cc <= 6) or cc == 8 or cc == 9 or cc == 12
       or (cc >= 21 and cc <= 31)
       or (cc >= 33 and cc <= 37) then
       kind = "M" -- physical Scene2 mixer CC candidate: confirm on hardware

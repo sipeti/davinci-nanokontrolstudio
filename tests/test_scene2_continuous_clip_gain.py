@@ -107,6 +107,40 @@ class ContinuousTest(unittest.TestCase):
         self.assertEqual(c.writes, 0)
         self.assertEqual(self.timeline.track_items[4].calls, [])
 
+    def test_auto_project_follows_change_without_reusing_pickup(self):
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=0, low_latency=True,
+            follow_active_project=True, now=lambda: self.now)
+        self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 108), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 107), "WRITTEN")
+        old_writes = c.writes
+        self.project.uid = "other-project-uid"
+        self.project.GetName = lambda: "Another production project"
+        self.timeline.track_items[4].volume = 0.0
+        self.assertEqual(self.feed(c, 1, 16, 108), "PICKUP_PENDING")
+        self.assertEqual(c.expected_project, "Another production project")
+        self.assertEqual(c.writes, old_writes)
+        self.assertEqual(self.feed(c, 1, 16, 127), "PICKUP_PENDING")
+        self.assertEqual(self.feed(c, 1, 16, 64), "ENGAGED")
+        self.assertEqual(self.feed(c, 1, 16, 65), "WRITTEN")
+        self.assertEqual(c.writes, old_writes + 1)
+        self.assertAlmostEqual(self.timeline.track_items[4].volume, 0.273)
+
+    def test_auto_project_does_not_bypass_pre_setter_identity_check(self):
+        c = worker.ContinuousController(
+            self.app, write=True, max_writes=0, low_latency=True,
+            follow_active_project=True, now=lambda: self.now)
+        self.feed(c, 1, 16, 100)
+        self.feed(c, 1, 16, 108)
+        original = driver.snapshot
+        def switch_before_setter(app, track):
+            self.project.uid = "changed-at-setter"
+            return original(app, track)
+        with mock.patch.object(driver, "snapshot", side_effect=switch_before_setter):
+            self.assertEqual(self.feed(c, 1, 16, 107), "HALTED")
+        self.assertEqual(c.writes, 0)
+
     def test_unlimited_test_copy_writes_repeatedly(self):
         c = self.controller(write=True, max_writes=0)
         self.assertEqual(self.feed(c, 1, 16, 100), "PICKUP_PENDING")

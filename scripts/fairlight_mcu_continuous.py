@@ -14,7 +14,8 @@ import time
 
 from fairlight_mcu_bridge import (
     Bridge, CONSENT, FEEDBACK, FADER_PICKUP_TOLERANCE,
-    MAX_MESSAGES_PER_POLL, SOLO_CC, SOURCE, _NullOutput, parse_event,
+    FADER_CC_TO_STRIP, MAX_MESSAGES_PER_POLL, SOLO_CC, SOURCE,
+    _NullOutput, parse_event,
     physical_to_mcu,
 )
 
@@ -255,8 +256,8 @@ class LiveMixer:
             return "SCENE_REARM"
         if type(cc) is not int or type(value) is not int or not 0 <= value <= 127:
             return "INVALID"
-        if 2 <= cc <= 9:
-            strip = cc - 2
+        if cc in FADER_CC_TO_STRIP:
+            strip = FADER_CC_TO_STRIP[cc]
             if strip == 7 and not self.allow_strip8:
                 return "BUS1_STRIP8_LOCKED"
             goal = physical_to_mcu(value)

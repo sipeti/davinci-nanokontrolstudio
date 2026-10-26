@@ -174,7 +174,7 @@ class LiveMixerTests(unittest.TestCase):
     def test_all_seven_audio_faders_use_mcu_pitch_and_touch_channels(self):
         for strip in range(7):
             self.fader_host(strip,60)
-            cc=strip+2
+            cc=mcu.FADER_CCS[strip]
             self.b.physical_event(1,cc,60)
             self.assertEqual(self.b.physical_event(1,cc,61),"FADER_PICKUP_PASS")
             self.assertEqual(self.b.physical_event(1,cc,62),"FADER_LIVE_SENT")
@@ -190,8 +190,25 @@ class LiveMixerTests(unittest.TestCase):
         self.b.tick()
         self.assertEqual(self.b.touches,{})
 
+    def test_factory_gaps_do_not_reassign_faders(self):
+        self.assertEqual(mcu.FADER_CCS, (2, 3, 4, 5, 6, 8, 9, 12))
+        for unsupported in (7, 10, 11):
+            self.assertEqual(self.b.physical_event(1, unsupported, 60),
+                             "IGNORED")
+        # CC8 is physical fader 6 / MCU strip 6, not strip 7.
+        self.fader_host(5, 60)
+        self.assertEqual(self.b.physical_event(1, 8, 60),
+                         "FADER_PICKUP_PENDING")
+        self.assertEqual(self.b.physical_event(1, 8, 61),
+                         "FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1, 8, 62),
+                         "FADER_LIVE_SENT")
+        self.assertEqual(
+            [data["channel"] for kind, data in self.calls
+             if kind == "pitchwheel"], [5])
+
     def test_strip8_bus_guard_blocks_fader_mute_and_solo(self):
-        self.assertEqual(self.b.physical_event(1,9,64),"BUS1_STRIP8_LOCKED")
+        self.assertEqual(self.b.physical_event(1,12,64),"BUS1_STRIP8_LOCKED")
         self.assertEqual(self.b.physical_event(1,28,127),"BUS1_STRIP8_LOCKED")
         self.assertEqual(self.b.physical_event(1,37,127),"BUS1_STRIP8_LOCKED")
         self.assertEqual(self.calls,[])
@@ -200,9 +217,9 @@ class LiveMixerTests(unittest.TestCase):
         # without suggesting that it is a permanently pinned master bus.
         self.b.allow_strip8=True
         self.fader_host(7,60)
-        self.b.physical_event(1,9,60)
-        self.assertEqual(self.b.physical_event(1,9,61),"FADER_PICKUP_PASS")
-        self.assertEqual(self.b.physical_event(1,9,62),"FADER_LIVE_SENT")
+        self.b.physical_event(1,12,60)
+        self.assertEqual(self.b.physical_event(1,12,61),"FADER_PICKUP_PASS")
+        self.assertEqual(self.b.physical_event(1,12,62),"FADER_LIVE_SENT")
         self.assertEqual(self.calls[0],
                          ("note_on",{"channel":0,"note":111,"velocity":127}))
         self.assertEqual(self.calls[1][1]["channel"],7)

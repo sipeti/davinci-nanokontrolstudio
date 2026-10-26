@@ -1,6 +1,6 @@
 # Installation and MIDI routing
 
-**Target:** macOS + DaVinci Resolve Studio 21 + Korg nanoKONTROL Studio in USB Assignable Mode. The package installs no daemons or background tasks; manual menu START remains necessary. The original user-tested setup was Apple Silicon and Resolve 21.1.
+**v1.5 development preview:** macOS + DaVinci Resolve Studio 21 + Korg nanoKONTROL Studio in USB Assignable Mode. A Hammerspoon timer starts Scene 2 automatically when Resolve is ready; it is not a separate login daemon. Scene 2 PAUSE/RESUME remains available in NK JOG. Auto mode requires a physical test before merging into main; the accepted release remains v1.4.0.
 
 ## 1. Prerequisites
 
@@ -18,14 +18,14 @@ Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tes
 | Physical controls | MIDI CC |
 | --- | --- |
 | Eight rotary knobs | 13–20, in order |
-| Eight sliders/faders | **2–9**, in order. Slider 8 (CC9) deliberately locked to protect potential Bus 1 |
+| Eight sliders/faders | **2, 3, 4, 5, 6, 8, 9, 12** — factory Korg assignments on all Scenes. Slider 8 (CC12) is ON by default; controls A8 in the tested eight-track project, but may control **Bus1** in another MCU bank. NK JOG offers an OFF switch |
 | MUTE 1–8 | 21–28 |
 | SOLO 1–8 | 29, 30, 31, 33, 34, 35, 36, 37 |
 | Scene 2 JOG wheel | **CC82 / Sign Magnitude / Const** |
 | Transport | Same physical CC assignments as Scene 1 |
 | LED Mode | **External** |
 
-**Communication → Write Scene Data** is required after each changed Korg scene. KORG KONTROL Editor merely displaying a value does not prove the physical controller received it. Keep Scene 1's mapping and firmware settings intact.
+**Do not rewrite the Korg's factory slider CCs to a consecutive range.** The software follows the actual factory mapping shown in KORG KONTROL Editor in all five Scenes. **Communication → Write Scene Data** is only needed when you intentionally change a hardware assignment (such as wheel CC82, LED Mode External or shared MARKER buttons). Keep Scene 1's mapping and 28-step calibration intact.
 
 ## 3. Two virtual macOS IAC MIDI buses
 
@@ -53,19 +53,18 @@ If a different existing Hammerspoon controller/menu is detected, installation st
 
 The installer uses pinned mido/python-rtmidi from requirements-scene2.txt, in a persistent venv under ~/Library/Application Support/NK Scene2/venv/. No global Python package install. It writes the selected Python path so the START menu works on Apple Silicon or Intel. The old /tmp/nk-mcu-venv is not required.
 
-Finish with **Hammerspoon → Reload Config**. The menu will not start audio workers automatically. The 28/28 learned mapping stays stored; do not press the relearn command unless the physical Scene 1 CC layout itself has changed.
+Finish with **Hammerspoon → Reload Config**. With Resolve ready and frontmost, the worker starts silently; the NK JOG menu lets you pause/resume it. The 28/28 learned mapping stays stored; do not press the relearn command unless the physical Scene 1 CC layout itself has changed. First validate this development branch in a duplicated project.
 
 ## 5. Start a session
 
 1. Use **sh ./doctor.command** (read-only) to inspect dependencies and the two IAC buses.
 2. In Resolve, **back up the current project**, STOP playback and scrubbing, and ensure the targeted audio clips have no gain keyframes or gain automation.
-3. Hammerspoon → **NK JOG → Scene 2: START**.
-4. Enter the **exact** current Resolve project name (the previous name is suggested on later starts).
-5. Read and confirm the project-backup/playback/automation warning. Selecting Cancel performs no audio write.
-6. Work with Scene 2 sliders, MUTE/SOLO and clip knobs. The log is ~/Library/Logs/nk-scene2-session.log.
-7. Stop with **NK JOG → Scene 2: STOP** before switching Resolve projects or quitting.
+3. Hammerspoon → **Reload Config**; Scene 2 workers start in the background when Resolve is ready and frontmost.
+4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. Clip knobs follow the active project; the mixer uses the **unchanged, hardware-accepted v1.4 MCU worker** with its original host-feedback soft pickup.
+5. Use **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** to pause or resume. **Beallitasok → 8. MCU csatorna BE/KI** is enabled by default and can disable the eighth fader plus MUTE8/SOLO8 when the eighth MCU bank slot belongs to Bus1. The setting is session-local; Hammerspoon reload restores eight enabled strips. Session logs: ~/Library/Logs/nk-scene2-session.log.
+6. For v1.5 physical acceptance, verify the mixer faders, MUTE/SOLO and LED feedback work just like v1.4, then try Scene 1/2 switching and clip gain on two disposable projects.
 
-**Safety:** a name match and a click are not a substitute for an actual backup. The API cannot authoritatively detect all clip gain automation or verify stopped playback in the low-latency mode. The clip-gain worker checks exact project identity, timeline/playhead/clip identity and AudioVolume before each change; it verifies each setter with fresh readback. The MCU mixer worker receives host MIDI but does not know the project name: **STOP before switching projects**. Failed setters attempt restoration and halt writes. Mixer strip 8 remains locked.
+**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. MCU strip 8 is active by default after the A8 physical test; it always follows the eighth slot of the **current Resolve bank**, which may be Bus1 in some projects. NK JOG can disable it without affecting strips 1–7. No Korg CC change is required.
 
 ## 6. Uninstall / rollback
 

@@ -1,18 +1,18 @@
 # Korg nanoKONTROL Studio for DaVinci Resolve 21
 
-**Source release: v1.4.0** — Scene 1 editing + Scene 2 Fairlight mixer/clip gain.
+**Main release: v1.4.0. Draft v1.5 preview:** automatic Scene 2 startup/project following plus shared REC/MARKER controls.
 
-A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain the shared transport and JOG/SHUTTLE behavior.
+A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain transport and JOG/SHUTTLE; the v1.5 development branch also shares REC/Undo and MARKER buttons across all five scenes.
 
 **Physical acceptance:** tested on a Mac with Resolve Studio 21 and nanoKONTROL Studio, including Scene 1 ↔ Scene 2 changes, 189 low-latency clip-gain edits, 1373 Fairlight fader messages and MIDI/LED return. Other Mac/Resolve/Korg combinations still need validation.
 
 ## Features
 
 - **Scene 1:** the proven 28-step-learned editing shortcuts, frame JOG, SHUTTLE and transport LEDs. Existing calibration is preserved on upgrade.
-- **Scene 2, sliders 1–7:** actual Fairlight track mixer levels, with host-aware soft pickup. **Slider 8 is deliberately locked** to protect potential Bus 1.
+- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG → Beallitasok offers an eighth-strip OFF switch. The daily NK JOG menu contains just status, Scene 2 pause/resume and Beallitasok; advanced LED/calibration/MIDI diagnostics live in nested menus.
 - **Scene 2, rotary knobs 1–8:** clip AudioVolume on A1–A8 at the stopped playhead. Full left **−100 dB**, physical center **0 dB**, full right **+30 dB**. Soft pickup avoids unintended initial jumps. Uses the 20 ms low-latency input cycle.
 - **Scene 2, MUTE and SOLO:** actual Fairlight mute/solo via MCU over two virtual IAC MIDI ports; LEDs follow Resolve's response, not the button press.
-- **All scenes:** shared JOG / SHUTTLE wheel and transport/navigation where mapped. One Hammerspoon physical MIDI input owner; no competing HUI mode on the Korg.
+- **All scenes:** shared JOG / SHUTTLE wheel, transport/navigation, REC/Undo (CC81) and MARKER SET/left/right (CC55–57) in v1.5; configure the same CCs and write the Scene Set to hardware. One Hammerspoon physical MIDI input owner; no competing HUI mode on the Korg.
 - **One-click session:** NK JOG menu START/STOP, with per-session project selection, explicit confirmation and session logs.
 
 Scene 2 changes real mixer and clip gain values. **Backup your project and STOP playback/scrubbing before turning any clip knob.** Gain automation/keyframes are not supported. The low-latency mode cannot itself prove that playback is stopped. Never enable a direct Korg HUI console in Resolve while Hammerspoon owns the Korg input.
@@ -34,16 +34,14 @@ If upgrading from a previously installed experimental Scene 2 controller, review
 
 **Required one-time MIDI hardware setup:** Scene 2 Assignable, the expected CC numbers, External LED Mode, and two IAC Driver buses connecting Python MCU to the Resolve MIDI Audio Console. Details and diagrams of the routing are in [Installation and MIDI setup](docs/INSTALL.md).
 
-## Daily use
+## Daily use (v1.5 preview)
 
-1. In Resolve, open the project you want to control and create/verify a project backup.
-2. Keep playback stopped; disable/remove clip volume keyframes and automation on targets.
-3. Hammerspoon → **NK JOG → Scene 2: START**.
-4. Enter the **exact** Resolve project name and explicitly confirm the safety conditions.
-5. Select physical **Scene 2**. Mixer sliders and the clip rotary knobs are now independent.
-6. Stop from **NK JOG → Scene 2: STOP** before leaving or changing to another project.
+1. Start Hammerspoon and Resolve. The Scene 2 workers launch automatically when Resolve is ready.
+2. Switch Korg scenes normally. Scene 1 edits, Scene 2 mixes; shared REC/Undo and MARKER controls work in Scenes 1–5.
+3. Change projects normally. Clip knobs refresh the current clip/project and rearm; the mixer preserves its v1.4 host-feedback and soft pickup behavior.
+4. **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** pauses or resumes the worker. No project names or confirmation dialogs.
 
-The session is not a login service and does not auto-start at boot. If the project/clip context or Resolve focus changes, pickup is rearmed or writes are refused. Python logs: ~/Library/Logs/nk-scene2-session.log. Hammerspoon logs are available in its Console.
+Clip-level edits still require a valid stopped-playhead clip and no gain automation. The project-following and new startup path are unverified on real hardware until the v1.5 acceptance test. Logs: ~/Library/Logs/nk-scene2-session.log.
 
 ## Uninstall / restore
 

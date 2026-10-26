@@ -1,6 +1,6 @@
 # User guide: editing Scene 1 and audio Scene 2
 
-The Korg must stay in **Assignable Mode**. A hardware SCENE switch does not restart the Python workers or erase Scene 1 calibration. **JOG/SHUTTLE and the common transport controls work across all five scenes** if the wheels use CC82 Sign Magnitude / Const.
+The Korg must stay in **Assignable Mode**. A hardware SCENE switch does not restart the Python workers or erase Scene 1 calibration. **JOG/SHUTTLE, transport, large REC/Undo (CC81) and MARKER CC55–57 work across all five scenes** if the wheels use CC82 Sign Magnitude / Const and the buttons retain their Scene 1 CC assignments. Holding MARKER SET makes JOG trim within that same scene; release or a scene switch clears the modifier. **Write Scene Data** after configuring each Korg scene.
 
 ## Scene 1: editing
 
@@ -10,9 +10,11 @@ Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep i
 
 ## Scene 2: Fairlight mixer
 
-**Sliders/faders 1–7** adjust the respective Fairlight mixer strips using 14-bit MCU pitch messages over IAC. Each slider uses **soft pickup**: it must cross the host's currently reported position before taking control, preventing unexpected jumps. Slider 8 is locked because it may address Bus 1.
+**Sliders/faders 1–8** control the current Fairlight MCU bank through 14-bit pitch messages over IAC. In the hardware-accepted eight-audio-track project, they control **A1–A8**; the eighth slider (CC12) moved A8 while Bus1 remained unchanged. The original soft pickup is unchanged. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12**; the software maps the gaps (CC8 = slider 6, CC9 = slider 7).
 
-**MUTE 1–8** and **SOLO 1–8** send MCU notes. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
+**Other projects:** MCU strip 8 represents the eighth control in the *current Resolve bank*, not a permanently pinned A8. With fewer than eight audio tracks it may instead represent **Bus1**. Under **NK JOG → Beallitasok → 8. MCU csatorna**, you can turn the eighth MCU strip OFF, including MUTE8/SOLO8. The setting remains until changed or Hammerspoon is reloaded; eight channels are enabled by default. No Korg CC rewrite or controller relearn is needed.
+
+**MUTE/SOLO 1–8** send MCU notes while the corresponding strips are enabled; strip 8 can be disabled from NK JOG. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
 
 ## Scene 2: per-clip gain
 
@@ -32,13 +34,15 @@ Scene changes, foreground loss, playhead moves, clip changes or an external gain
 
 ### Project authorization
 
-In Hammerspoon choose **NK JOG → Scene 2: START**, enter the exact project name and explicitly confirm that you have a backup, playback is STOPPED and no gain automation/keyframes affect the target. This is valid for a named non-test project only after the additional confirmation. Clip-gain writes are restricted to that exact project and are checked on each rotary event. **The MIDI-only Fairlight mixer worker cannot independently identify the Resolve project**, so STOP the session **before** opening or switching projects; it does not automatically block mixer messages on a project change.
+In v1.5, Hammerspoon starts Scene 2 automatically while Resolve is active. No project name or confirmation dialog is needed. The rotary worker follows the current Resolve project and validates the clip at every write. The **mixer retains exactly the working v1.4 Fairlight MCU implementation**: no project token, additional gate, or new MIDI handshake.
 
 **No automatic playback gate exists in low-latency mode.** Do not touch clip knobs during playback, scrubbing, recording or automation. A +30 dB clip change is large: use headphones/monitor levels carefully in a stopped test copy first.
 
 ### Stop, logs and troubleshooting
 
-Use **NK JOG → Scene 2: STOP** before changing projects or quitting. The parent process sends SIGINT to both workers; MCU TOUCH and button releases are handled during shutdown. The menu is manually invoked, never started on login.
+The NK JOG main menu has just three rows: the Korg/calibration status, **Scene 2: FUT/AUTOMATIKUS/SZUNETEL** for pause/resume, and **Beallitasok**. Under Beallitasok are eighth-strip ON/OFF, LED ON/OFF and full Hammerspoon control ON/OFF; **Diagnosztika es kalibracio** contains the raw MIDI status and the unchanged 28-step setup.
+
+Use **NK JOG → Scene 2** to pause automatic operation and select it again to resume. The parent process releases MCU TOUCH and buttons during shutdown; Hammerspoon starts the workers quietly when Resolve is ready.
 
 Logs: ~/Library/Logs/nk-scene2-session.log. To inspect the latest events safely:
 
@@ -48,4 +52,4 @@ tail -n 60 "$HOME/Library/Logs/nk-scene2-session.log"
 
 Typical messages: PICKUP_PENDING (waiting for a real crossing), PICKUP=PASS (armed), AUDIO_WRITE_READBACK=PASS (actual clip setter verified), REARM (focus/scene/playhead changed) and BUS1_STRIP8_LOCKED (deliberate safety lock). The diagnostic command **sh ./doctor.command** does not send MIDI or alter projects.
 
-**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip is locked; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport only and their external LED output routes need physical verification.
+**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip can target Bus1 in a different project/bank; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport and the four REC/MARKER editing keys; their external LED output routes still need physical verification.

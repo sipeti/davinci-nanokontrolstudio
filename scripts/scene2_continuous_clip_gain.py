@@ -66,7 +66,7 @@ class ContinuousController(Controller):
                  confirmation=None, automation_confirmed=False,
                  max_writes=256, now=time.monotonic,
                  stability_wait=time.sleep, low_latency=False,
-                 allow_named_project=False):
+                 allow_named_project=False, follow_active_project=False):
         super().__init__(
             app, write=write, expected_project=expected_project,
             confirmation=confirmation,
@@ -74,6 +74,7 @@ class ContinuousController(Controller):
             max_writes=max_writes, max_writes_limit=256, now=now,
             allow_unlimited=(max_writes == 0),
             allow_named_project=allow_named_project,
+            follow_active_project=follow_active_project,
         )
         self.pause_reason = None
         self.stability_wait = stability_wait
@@ -131,10 +132,19 @@ class ContinuousController(Controller):
             return super().handle(channel, cc, value)
         snapshot_ms = (time.perf_counter() - start) * 1000.0
         fresh, _, session = current
-        if self.write and fresh["project"] != self.expected_project:
-            return self._halt("project is not exact approved test copy")
-        if self.session is not None and session != self.session:
-            self.rearm("project/timeline/playhead changed")
+        if self.follow_active_project:
+            # A project/timeline change always drops the previous pickup.
+            # The first CC in the new project can arm only, never reuse
+            # the old clip or position. The setter checks a fresh snapshot
+            # immediately before writing, including the project identity.
+            if self.session is not None and session != self.session:
+                self.rearm("project/timeline/playhead changed")
+            self.expected_project = fresh["project"]
+        else:
+            if self.write and fresh["project"] != self.expected_project:
+                return self._halt("project is not exact approved test copy")
+            if self.session is not None and session != self.session:
+                self.rearm("project/timeline/playhead changed")
         # Parent's 2s research idle reset is superseded by our 20s timer.
         self.last_event = self.now()
         self.pause_reason = None
@@ -258,6 +268,9 @@ def main():
     parser.add_argument("--allow-named-project", action="store_true",
                         help="explicit per-session authorization for a "
                              "backed-up non-test project")
+    parser.add_argument("--follow-active-project", action="store_true",
+                        help="normal product mode: auto-follow Resolve project; "
+                             "fresh pickup and setter-bound identity checks")
     parser.add_argument("--low-latency", action="store_true",
                         help="test mode: 20ms event polling; skip the 120ms "
                              "extra wait but keep setter-bound snapshots")
@@ -273,10 +286,14 @@ def main():
         parser.error("--seconds must be 0 or 5..3600")
     if args.allow_named_project and not args.write_test_copy:
         parser.error("--allow-named-project needs --write-approved-project")
+    if args.follow_active_project and (args.write_test_copy or
+                                      args.allow_named_project or
+                                      args.expected_project):
+        parser.error("--follow-active-project cannot be mixed with "
+                     "manual project/consent flags")
     if args.unlimited_writes:
-        if not args.write_test_copy or args.seconds != 0:
-            parser.error("unlimited writes require --seconds 0 and explicit "
-                         "--write-test-copy consent")
+        if not (args.write_test_copy or args.follow_active_project) or args.seconds != 0:
+            parser.error("unlimited writes require a continuous writable mode")
         args.max_writes = 0
     elif not 1 <= args.max_writes <= 256:
         parser.error("--max-writes must be 1..256")
@@ -291,13 +308,14 @@ def main():
         return 1
     try:
         controller = ContinuousController(
-            app, write=args.write_test_copy,
+            app, write=(args.write_test_copy or args.follow_active_project),
             expected_project=args.expected_project,
             confirmation=args.consent,
             automation_confirmed=args.confirmed_no_automation,
             max_writes=args.max_writes,
             low_latency=args.low_latency,
             allow_named_project=args.allow_named_project,
+            follow_active_project=args.follow_active_project,
         )
     except ValueError as exc:
         print("SCENE2_CONTINUOUS=BLOCKED; %s; WRITES=0" % exc)

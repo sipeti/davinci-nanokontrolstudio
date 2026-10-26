@@ -23,6 +23,11 @@ NAMED_CONSENT = "YES, BACKUP EXISTS, PLAYHEAD STOPPED, NO GAIN AUTOMATION"
 def parser():
     p = argparse.ArgumentParser(description="Finite combined Scene 2 hardware bench")
     p.add_argument("--seconds", type=int, default=90)
+    p.add_argument("--auto-run", action="store_true",
+                   help="normal v1.5: no prompts, follow active Resolve project")
+    p.add_argument("--disable-strip8", action="store_true",
+                   help="exclude the eighth MCU bank strip (may be Bus1 "
+                        "in projects with fewer than eight audio tracks)")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -52,6 +57,16 @@ def commands(args, scripts):
             "--seconds", str(args.seconds)]
     if args.low_latency:
         clip.append("--low-latency")
+    if args.auto_run:
+        # Existing proven MCU faders 1..7 and MUTE/SOLO remain unchanged.
+        mcu += ["--enable-output", "--consent", MCU_CONSENT]
+        # Eight audio tracks are now physically verified. The eighth
+        # physical slider is CC12; the current MCU strip8 can be A8 or
+        # another channel (including Bus1) depending on the Resolve bank.
+        # Allow a simple user override, without touching the MCU protocol.
+        if not args.disable_strip8:
+            mcu.append("--enable-strip8-bus1")
+        clip += ["--follow-active-project", "--unlimited-writes"]
     if args.write_test_copy:
         mcu += ["--enable-output", "--consent", MCU_CONSENT]
         clip += ["--write-approved-project", "--expected-project", args.expected_project,
@@ -129,18 +144,30 @@ def supervise(specs):
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
-    if args.run_until_stopped:
+    if args.disable_strip8 and not args.auto_run:
+        p.error("--disable-strip8 requires --auto-run")
+    if args.auto_run:
+        if (args.write_test_copy or args.allow_named_project or
+                args.expected_project or args.confirmed_backup or
+                args.confirmed_no_automation or args.max_clip_writes is not None or
+                args.run_until_stopped or args.seconds != 90):
+            p.error("--auto-run cannot be mixed with manual test controls")
+        args.run_until_stopped = True
+        args.low_latency = True
+        args.max_clip_writes = 0
+        args.seconds = 0
+    if args.run_until_stopped and not args.auto_run:
         if args.seconds != 90:
             p.error("--run-until-stopped cannot be combined with --seconds")
         args.seconds = 0
-    elif not 5 <= args.seconds <= 180:
+    elif not args.auto_run and not 5 <= args.seconds <= 180:
         p.error("--seconds must be 5..180 (bounded MCU bench)")
     if args.max_clip_writes is None:
         args.max_clip_writes = (0 if args.run_until_stopped and
                                args.write_test_copy else 12)
     if not (1 <= args.max_clip_writes <= 256 or
             args.max_clip_writes == 0 and args.run_until_stopped
-            and args.write_test_copy):
+            and (args.write_test_copy or args.auto_run)):
         p.error("clip writes: 1..256, or 0 only for a continuous test copy")
     if args.allow_named_project and not args.write_test_copy:
         p.error("--allow-named-project requires --write-approved-project")
@@ -162,10 +189,13 @@ def main(argv=None):
         if not (Path(executable).is_file() and os.access(executable, os.X_OK)):
             p.error("Python executable unavailable: %s" % executable)
     print("SCENE2_COMBINED=START; duration=%s; mode=%s; "
-          "one physical Korg MIDI owner; strip8 LOCKED" %
+          "one physical Korg MIDI owner; strip8 %s" %
           ("until Ctrl+C" if args.run_until_stopped else str(args.seconds)+"s",
-           "TEST_COPY_WRITE" if args.write_test_copy
-           else "READ_ONLY"), flush=True)
+           "AUTO_FOLLOW_PROJECT" if args.auto_run else
+           "TEST_COPY_WRITE" if args.write_test_copy else
+           "READ_ONLY",
+           "ENABLED (CURRENT MCU BANK)" if args.auto_run and
+           not args.disable_strip8 else "LOCKED"), flush=True)
     return supervise(commands(args, scripts))
 
 

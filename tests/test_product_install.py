@@ -93,6 +93,10 @@ class PackageInstallTest(unittest.TestCase):
                           (hs / "init.lua").read_text())
             base = home / "Library/Application Support/NK Scene2"
             self.assertTrue((base / "scripts/scene2_combined_bench.py").exists())
+            self.assertEqual(
+                (base / "scripts/fairlight_mcu_continuous.py").read_bytes(),
+                (ROOT / "scripts/fairlight_mcu_continuous.py").read_bytes()
+            )
             self.assertTrue((base / "active-backup").exists())
             # Uninstall fails safely if the user changed any tracked file.
             (hs / "init.lua").write_text("-- changed after install\n")
