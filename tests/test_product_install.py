@@ -90,7 +90,7 @@ class PackageInstallTest(unittest.TestCase):
                 ),
             }.items():
                 script = mockbin / name
-                script.write_text(body.replace("\\\\n", "\\n"))
+                script.write_text(body.replace("\\n", "\n"))
                 script.chmod(0o755)
             env = dict(os.environ, HOME=str(home),
                        NK_RESOLVE_PYTHON=str(mockbin / "fakepython"),
