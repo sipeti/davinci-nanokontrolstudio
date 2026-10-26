@@ -2,8 +2,9 @@
 """Scene 2 Assignable -> Fairlight MCU mixer worker.
 
 One Hammerspoon Korg owner, two distinct IAC ports, host-only LED
-authority. Default NO output; continuous operation requires explicit
-operator opt-in. MIDI strip 8 remains blocked (potential Bus 1).
+authority. Standalone CLI invocation defaults to no output; the installed
+auto-run session explicitly enables MCU output and both eight-strip banks.
+The eighth strip may be Bus 1 in projects with fewer audio tracks.
 """
 import argparse
 from collections import Counter
@@ -657,8 +658,7 @@ def main():
                 if last_h is None and now - started > 3:
                     raise RuntimeError(
                         "no Hammerspoon heartbeat: launch Hammerspoon, then "
-                        "NK JOG > Scene 2 clip gain MIDI bridge: BE "
-                        "(re-enable after hs.reload)")
+                        "NK JOG > Restart Controller if the MIDI bridge is not active")
                 if last_h is not None and now - last_h > HEARTBEAT_TIMEOUT:
                     raise RuntimeError("lost Hammerspoon heartbeat")
                 time.sleep(.01)

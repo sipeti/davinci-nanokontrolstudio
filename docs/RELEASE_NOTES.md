@@ -1,4 +1,50 @@
-# Release notes — v1.4.0 (Scene 1 + Scene 2 integration)
+# Release notes
+
+## 1.6.0-rc1 — English UI and restart/update workflow (hardware verification pending)
+
+- Runs from Hammerspoon's normal macOS login launch; no new daemon or
+  permission prompt. When Resolve is absent, the two Python workers stop.
+- Turns on the **hardware-accepted two-bank SELECT7/8 paging by default**,
+  with host-confirmed A1–A8/A9–A16 status and LED feedback.
+- Makes the optional Scene 2 pause **temporary** rather than a persistent
+  shutdown state across reboots or Hammerspoon reloads.
+- Adds **Restart Controller** to NK JOG. It waits for the Python workers
+  to exit before restarting the Hammerspoon Lua controller. The bank
+  must be confirmed A1–A8 at restart time.
+- Adds `update.command` to stop, back up, install, verify, and request
+  restart from a checked-out source snapshot, without new background
+  services or automatic Git downloads.
+- Uses English for menu labels, setup prompts, toasts and operator-facing
+  log messages; moves infrequent controls to Service & Diagnostics.
+- Corrects stale documentation and version metadata. No change to the
+  proven mixer pitchwheel, MUTE/SOLO, pickup protocol or Korg factory CCs.
+
+The 2026-10-26 macOS operator log confirms two successful installs, read-only
+doctor checks (Python 3.15, MIDI packages and both IAC buses), and a subsequent
+`update.command` that reported `NK_UPDATE=PASS` and requested a Hammerspoon
+restart. A restart request is not proof of a successful post-reload session:
+live A1–A8/A9–A16 banking and Resolve quit/reopen still need operator
+confirmation before a final 1.6.0 tag. All copied runtime modules are now
+checked against the installer manifest, and dry-run remains usable while
+the controller is active.
+
+## 1.5 — accepted on hardware (merged PRs #17 and #18)
+
+- Automatic Scene 2 worker start while Resolve is ready; no manual
+  project-name confirmation, and no separate login daemon.
+- Korg factory slider CCs **2,3,4,5,6,8,9,12** correctly drive the eight
+  physical Fairlight mixer slots in the tested project. The eighth
+  slider was observed moving A8 with Bus1 unchanged.
+- Eight independent clip-gain rotaries A1–A8, shared editing/transport
+  across all five Assignable scenes and Resolve-authoritative LEDs.
+- Two-bank SELECT7/8 paging A1–A8 ↔ A9–A16, with eight host fader
+  feedback positions required before declaring the new bank active.
+  Hardware acceptance included successful A11–A16 write/readback and
+  SELECT indicator lights.
+- Return to bank A1–A8 before restarting or changing projects, as MCU
+  feedback does not identify each Resolve track by name.
+
+## 1.4.0 — original Scene 1 / Scene 2 integration (historical)
 
 ## Shipped features
 
