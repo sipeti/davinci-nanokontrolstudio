@@ -1,85 +1,111 @@
-# User guide: editing Scene 1 and audio Scene 2
+# User guide — Korg nanoKONTROL Studio + Resolve 21
 
-The Korg must stay in **Assignable Mode**. A hardware SCENE switch does not restart the Python workers or erase Scene 1 calibration. **JOG/SHUTTLE, transport, large REC/Undo (CC81) and MARKER CC55–57 work across all five scenes** if the wheels use CC82 Sign Magnitude / Const and the buttons retain their Scene 1 CC assignments. Holding MARKER SET makes JOG trim within that same scene; release or a scene switch clears the modifier. **Write Scene Data** after configuring each Korg scene.
+## Everyday use
 
-## Scene 1: editing
+1. Log in to macOS. Hammerspoon starts from the login setting you configured.
+2. Open DaVinci Resolve Studio 21. The controller automatically connects
+   once Resolve is ready and frontmost. No manual project name, prompt or
+   "enable" action is required.
+3. Select Korg **Scene 1** for editing or **Scene 2** for Fairlight.
+4. Use SELECT 7 / SELECT 8 on Scene 2 to switch between the two
+   eight-channel banks if the Resolve project has the corresponding tracks.
+5. NK JOG displays the active bank, with SELECT LED feedback.
+   **Restart Controller** is available for maintenance.
 
-Scene 1 continues to use the existing 28-step-learned mappings: frame-accurate JOG, edit-point selection/trim, In/Out, split, page selection and keyboard transport. Its leftmost slider is a center-zero SHUTTLE, *not* an audio fader. Returning from Scene 2 requires that slider to pass through its neutral range before it can command playback again.
+With Resolve closed, Hammerspoon's MIDI/LED/event listeners remain
+lightweight and idle with respect to audio editing. No Fairlight/clip
+Python worker should be running without Resolve.
 
-Hammerspoon observes human Space/J/K/L keys while Resolve is frontmost to keep its transport LEDs coherent. These LEDs reflect the last observed command, not an authoritative Resolve playback-state query.
+## Scene 1 and shared controls
 
-## Scene 2: Fairlight mixer
+Scene 1 retains the original 28 calibrated shortcuts, JOG, SHUTTLE and
+transport. The large REC (CC81) sends Cmd+Z. MARKER SET (CC55) selects
+the edit point with V; hold it and turn JOG to trim; MARKER LEFT/RIGHT
+(CC56/57) send comma/period. These editing keys and the transport/JOG
+are shared across all five Korg scenes.
 
-**Sliders/faders 1–8** control the current Fairlight MCU bank through 14-bit pitch messages over IAC. In the hardware-accepted eight-audio-track project, they control **A1–A8**; the eighth slider (CC12) moved A8 while Bus1 remained unchanged. The original soft pickup is unchanged. The Korg factory CCs are **2, 3, 4, 5, 6, 8, 9, 12**; the software maps the gaps (CC8 = slider 6, CC9 = slider 7).
+The 28-step wizard is a **first-time or genuine remapping** operation,
+not an update procedure. Never recalibrate merely to install a release.
 
-**Other projects:** MCU strip 8 represents the eighth control in the *current Resolve bank*, not a permanently pinned A8. With fewer than eight audio tracks it may instead represent **Bus1**. Under **NK JOG → Beallitasok → 8. MCU csatorna**, you can turn the eighth MCU strip OFF, including MUTE8/SOLO8. The setting remains until changed or Hammerspoon is reloaded; eight channels are enabled by default. No Korg CC rewrite or controller relearn is needed.
+## Scene 2: mixer and clip gain
 
-**MUTE/SOLO 1–8** send MCU notes while the corresponding strips are enabled; strip 8 can be disabled from NK JOG. LEDs represent the status that Resolve sends back, not a physical button echo. Button presses only work in the physical Scene 2 with the input bridge enabled.
+| Physical input | Action |
+|---|---|
+| Sliders 1–8 | Current Fairlight MCU mixer bank faders |
+| Rotary knobs 1–8 | Per-clip AudioVolume on the corresponding eight audio tracks |
+| MUTE/SOLO 1–8 | Current MCU bank channels, with Resolve-authoritative LEDs |
+| SELECT 7 | Request the first eight-strip bank (A1–A8 in the test project) |
+| SELECT 8 | Request the second eight-strip bank (A9–A16 in the test project) |
 
-## Experimental Scene 2: 8-channel bank paging (separate Draft PR)
+The factory Korg slider CCs are **2, 3, 4, 5, 6, 8, 9, 12**.
+Do not change them to a consecutive CC sequence. Sliders use 14-bit MCU
+pitch messages, independent TOUCH handling and **soft pickup** against
+real Fairlight host-position feedback. A physical fader must cross the
+current on-screen position before it takes control.
 
-The default v1.5 remains the proven **A1–A8** setup. On the bank-paging
-preview branch, use **NK JOG → Beallitasok → Bank lapozas (SELECT 7/8) → BE**.
-Test only in a backed-up project with at least **16 actual audio tracks**.
-No new Korg CCs or second MIDI listener are required:
+Rotaries CC13–20 address the clip at the **stopped playhead** on A1–A8
+or, in the second bank, A9–A16. Fully left maps to −100 dB, center
+to 0 dB, fully right to +30 dB. They use soft pickup and verified
+AudioVolume write/readback, not Fairlight mixer fader movement.
+An empty/unsupported clip, a changed timeline or a mismatched project
+prevents that clip write.
 
-| Scene 2 button | Korg CC | MCU note | Requested bank |
-|---|---:|---:|---|
-| SELECT 7 | 52 | Bank Left 46 | A1–A8 |
-| SELECT 8 | 53 | Bank Right 47 | A9–A16 |
+**Do not adjust clip gain during playback, scrubbing or recording** and
+avoid clip gain keyframes/automation: the low-latency Resolve API cannot
+authoritatively prove all of those conditions.
 
-On-screen feedback distinguishes **váltás / szinkron** from **aktív bank**.
-The NK JOG Scene 2 line names A1–A8 or A9–A16, and External LEDs on
-SELECT7/8 indicate the bank the MCU worker accepted (to be verified on
-physical hardware). The MCU worker acknowledges a bank change only after
-receiving **eight actual Resolve pitchwheel updates** for the new mixer
-bank; this is evidence of a bank refresh, **not** proof of individual track
-names. While waiting, all mixer writes and clip gain writes are blocked.
-When accepted, all eight physical faders require fresh soft pickup; the
-knobs' corresponding clip tracks change to A9–A16 with fresh pickup.
+## Bank and LED feedback
 
-This experimental version only supports **two banks**, not unbounded
-paging. Switch back to A1–A8 **before pausing, reloading Hammerspoon, or
-changing Resolve projects**. With fewer than 16 audio tracks, the second
-MCU bank can include Bus1; it is not yet hardware-accepted for production.
-If the host never returns eight new fader positions, both sets of writes
-stay blocked rather than guessing the destination. The switch is off by
-default and the original v1.5 single-bank mode remains available.
+After SELECT 7/8, the menu briefly shows **SYNCING**. Only after the
+MCU worker receives eight real fader-position updates from Resolve does
+it show an active bank and illuminate the corresponding SELECT LED.
+While the new bank is not confirmed, old-bank mixer/clip writes are held
+and former MUTE/SOLO LEDs are cleared. All eight faders require a new
+physical pickup after a successful bank switch.
 
-## Scene 2: per-clip gain
+In the physically accepted 16-audio-track project, bank changes
+A1–A8 → A9–A16 → A1–A8, corresponding clip writes and SELECT LEDs
+worked. This does **not** guarantee channel names in a different Resolve
+project, because MCU MIDI does not carry trustworthy track identities.
 
-**Knobs 1–8** adjust **AudioVolume on an individual audio clip** on tracks A1–A8 (or A9–A16 in the experimental confirmed second MCU bank) underneath the **stopped playhead**. They do not move the Fairlight mixer fader and do not adjust PAN.
+**Return to confirmed A1–A8 before changing Resolve projects or
+restarting Hammerspoon.** On projects with fewer tracks, the eighth
+MCU slot may address Bus 1.
 
-| Absolute rotary position | Clip gain |
-| --- | ---: |
-| Fully left (CC0) | **−100.000 dB** |
-| One CC left of center (CC63) | −0.500 dB |
-| Physical center (CC64) | **0.000 dB** |
-| One CC right of center (CC65) | +0.273 dB |
-| Fully right (CC127) | **+30.000 dB** |
+## Restart, updates and diagnostics
 
-The mapping is deliberately non-linear: the middle is finer. Each knob first uses a soft pickup of the **current clip gain**; then rapid physical movements map to the newest CC rather than replaying stale intermediate samples. The app checks the exact project, clip, playhead and current gain before writing and immediately reads the new gain back.
+The main NK JOG menu contains only:
 
-Scene changes, foreground loss, playhead moves, clip changes or an external gain edit discard pickup and require new physical movement. A3 with no clip at the playhead correctly refuses editing; this is not an error.
+- Korg connection / calibration status
+- Fairlight running state and active bank
+- **Restart Controller** (a full Hammerspoon configuration reload after
+  the existing Python workers have exited)
+- **Service & Diagnostics**, containing exceptional actions only
 
-### Project authorization
+Bank paging is on by default. Normal use never requires manual session
+start, project approval or a pause. A service-only pause is temporary
+and resets automatically after Hammerspoon restarts. LED feedback,
+channel-eight override, full-controller disable and calibration are
+available for troubleshooting, not as everyday decisions.
 
-In v1.5, Hammerspoon starts Scene 2 automatically while Resolve is active. No project name or confirmation dialog is needed. The rotary worker follows the current Resolve project and validates the clip at every write. The **mixer retains exactly the working v1.4 Fairlight MCU implementation**: no project token, additional gate, or new MIDI handshake.
+For a new source snapshot, use `sh ./update.command`. The updater
+sends a local pause event to Hammerspoon, waits for the worker processes
+to stop, installs a reversible backup-first update, verifies the files,
+then asks Hammerspoon to restart. An earlier version needs a one-time
+manual pause/install/reload to gain those updater hooks; see
+[Installation and updates](INSTALL.md).
 
-**No automatic playback gate exists in low-latency mode.** Do not touch clip knobs during playback, scrubbing, recording or automation. A +30 dB clip change is large: use headphones/monitor levels carefully in a stopped test copy first.
+## Diagnostic log
 
-### Stop, logs and troubleshooting
-
-The NK JOG main menu has three informational/navigation rows: Korg/calibration status, **Scene 2: FUT | A1–A8 / A9–A16** (read-only status), and **Beallitasok**. Under Beallitasok are optional Scene 2 pause/resume, bank paging, eighth-strip ON/OFF, LED ON/OFF and full Hammerspoon control ON/OFF; **Diagnosztika es kalibracio** contains the raw MIDI status and the unchanged 28-step setup.
-
-You do **not** have to pause Scene 2 to use it: Hammerspoon starts the workers quietly when Resolve is ready. Only for servicing, troubleshooting or reinstalling, choose **NK JOG → Beallitasok → Scene 2: SZUNET**, and choose FOLYTATAS afterward. The parent process releases MCU TOUCH and buttons during shutdown.
-
-Logs: ~/Library/Logs/nk-scene2-session.log. To inspect the latest events safely:
-
-~~~sh
+```sh
 tail -n 60 "$HOME/Library/Logs/nk-scene2-session.log"
-~~~
+sh ./doctor.command
+```
 
-Typical messages: PICKUP_PENDING (waiting for a real crossing), PICKUP=PASS (armed), AUDIO_WRITE_READBACK=PASS (actual clip setter verified), REARM (focus/scene/playhead changed) and BUS1_STRIP8_LOCKED (deliberate safety lock). The diagnostic command **sh ./doctor.command** does not send MIDI or alter projects.
+Typical messages include `FADER_WAIT_HOST` (Resolve feedback is needed),
+`FADER_PICKUP_PENDING` / `FADER_PICKUP_PASS`,
+`A9 AUDIO_WRITE_READBACK=PASS`, and `MCU_LIVE_BANK=ACTIVE`.
+The doctor is read-only and does not edit any Resolve project.
 
-**Known limitations:** non-integer/drop-frame timecode is not supported by the clip-gain snapshot parser; clip gain automation is unverified by API; the eighth MCU mixer strip can target Bus1 in a different project/bank; no PAN/REC implementation for Scene 2. Scenes 3–5 share transport and the four REC/MARKER editing keys; their external LED output routes still need physical verification.
+Other known limits: uncommon/drop-frame timecode clip gain paths,
+automation/keyframes, and untested Scene 3–5 LED output routes.

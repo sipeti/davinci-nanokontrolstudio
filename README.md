@@ -1,84 +1,104 @@
-# Korg nanoKONTROL Studio for DaVinci Resolve 21
+# nanoKONTROL Studio for DaVinci Resolve
 
-**Main branch: v1.5 controller:** automatic Scene 2 startup and project following, eight tested Fairlight strips, shared REC/MARKER buttons, and an optional two-bank A1–A8/A9–A16 preview accepted on the operator's 16-track test project.
+A Korg nanoKONTROL Studio controller for **DaVinci Resolve Studio 21 on macOS**.
+Hammerspoon owns the physical Korg MIDI connection. Two Python workers handle
+Fairlight MCU faders/MUTE/SOLO and clip gain. The Korg stays in **Assignable
+Mode**, not HUI mode.
 
-A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain transport and JOG/SHUTTLE; the v1.5 development branch also shares REC/Undo and MARKER buttons across all five scenes.
+> Version in this branch: **1.6.0 release candidate**. The accepted
+> 16-channel controller is on `main`; the restart and UI cleanup are
+> pending CI and hardware acceptance. Historical research is preserved.
 
-**Physical acceptance:** tested on a Mac with Resolve Studio 21 and nanoKONTROL Studio, including Scene 1 ↔ Scene 2 changes, 189 low-latency clip-gain edits, 1373 Fairlight fader messages and MIDI/LED return. Other Mac/Resolve/Korg combinations still need validation.
+## Daily operation
 
-## Features
+- **Log in:** Hammerspoon starts with macOS if you enabled its normal
+  *Launch at Login* setting. No extra LaunchAgent or daemon is installed.
+- **Resolve absent:** Hammerspoon continues lightweight MIDI, keyboard and
+  LED event handling, but the Fairlight and clip-gain Python workers do not
+  start. There are no Resolve audio writes.
+- **Resolve ready and frontmost:** the two workers start automatically.
+  There is no project-name prompt or manual permission gate.
+- **Scene 1:** editing, transport, JOG and SHUTTLE, with preserved 28/28
+  one-time calibration.
+- **Scene 2:** eight physical sliders control the current Fairlight MCU
+  bank; eight knobs control the corresponding clips at the stopped playhead;
+  MUTE/SOLO follow the MCU. Soft pickup prevents initial jumps.
+- **Bank navigation:** Scene 2 SELECT 7/8 select A1–A8 and A9–A16 in the
+  hardware-tested 16-audio-track project. The bank display and SELECT LEDs
+  confirm a fresh Resolve MCU fader-bank response. Other track layouts may
+  include Bus 1 in an MCU slot.
+- **Restart:** NK JOG → **Restart Controller** stops the current workers,
+  waits for them to exit, and reloads Hammerspoon. Return to confirmed
+  **A1–A8** before restarting or changing Resolve projects.
 
-- **Scene 1:** the proven 28-step-learned editing shortcuts, frame JOG, SHUTTLE and transport LEDs. Existing calibration is preserved on upgrade.
-- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG → Beallitasok offers an eighth-strip OFF switch. The daily NK JOG menu shows device status, the Scene 2 active bank, and Beallitasok. Optional manual Scene 2 pause/resume, LED/calibration/MIDI diagnostics live in nested menus.
-- **Experimental bank paging (separate Draft PR):** opt-in SELECT7/8
-  switches the two MCU mixer banks A1–A8 ↔ A9–A16. NK JOG shows
-  requested vs confirmed bank and the physical SELECT LEDs indicate the
-  confirmed bank (hardware test pending). Clip gain follows only after
-  eight real Fairlight host fader updates; until then mixer and clip writes
-  are blocked. Return to bank1 before closing/changing projects.
-- **Scene 2, rotary knobs 1–8:** clip AudioVolume on A1–A8 at the stopped playhead. Full left **−100 dB**, physical center **0 dB**, full right **+30 dB**. Soft pickup avoids unintended initial jumps. Uses the 20 ms low-latency input cycle.
-- **Scene 2, MUTE and SOLO:** actual Fairlight mute/solo via MCU over two virtual IAC MIDI ports; LEDs follow Resolve's response, not the button press.
-- **All scenes:** shared JOG / SHUTTLE wheel, transport/navigation, REC/Undo (CC81) and MARKER SET/left/right (CC55–57) in v1.5; configure the same CCs and write the Scene Set to hardware. One Hammerspoon physical MIDI input owner; no competing HUI mode on the Korg.
-- **One-click session:** NK JOG menu START/STOP, with per-session project selection, explicit confirmation and session logs.
+The main NK JOG menu shows device/calibration status, the active Fairlight
+bank, **Restart Controller**, and **Service & Diagnostics**. Legacy
+bank/LED/pause controls remain under Service for troubleshooting; they are
+not necessary for ordinary use. Manual pause is temporary and does not
+disable the next macOS login.
 
-Scene 2 changes real mixer and clip gain values. **Backup your project and STOP playback/scrubbing before turning any clip knob.** Gain automation/keyframes are not supported. The low-latency mode cannot itself prove that playback is stopped. Never enable a direct Korg HUI console in Resolve while Hammerspoon owns the Korg input.
+## Installation and updating
 
-## Install or upgrade
+Requires Hammerspoon with Accessibility permission, DaVinci Resolve Studio 21,
+Homebrew Python 3.10+, Korg KONTROL Editor, and two IAC Driver MIDI buses. For
+port routing and first-time physical configuration see [Install](docs/INSTALL.md).
 
-Requirements: macOS, Homebrew Python 3.10+, Hammerspoon (Accessibility permission), Resolve Studio 21 with the scripting modules, Korg nanoKONTROL Studio, and KORG KONTROL Editor. Network access is needed for first-time MIDI Python dependency installation.
-
-~~~sh
+```sh
 git clone https://github.com/sipeti/davinci-nanokontrolstudio.git
 cd davinci-nanokontrolstudio
 sh ./install.command --dry-run
 sh ./install.command
-~~~
-
-The installer creates a backup, installs the Lua controller/helpers in ~/.hammerspoon, installs runtime scripts under ~/Library/Application Support/NK Scene2/, pins the MIDI Python dependencies and adds the Hammerspoon require line only when missing. **It never rewrites the Korg or re-runs Scene 1's 28-step calibration.**
-
-If upgrading from a previously installed experimental Scene 2 controller, review your local modifications, then run **sh ./install.command --force**. It still saves the exact previous files first. Finish with **Hammerspoon → Reload Config**.
-
-**Required one-time MIDI hardware setup:** Scene 2 Assignable, the expected CC numbers, External LED Mode, and two IAC Driver buses connecting Python MCU to the Resolve MIDI Audio Console. Details and diagrams of the routing are in [Installation and MIDI setup](docs/INSTALL.md).
-
-## Daily use (v1.5 preview)
-
-1. Start Hammerspoon and Resolve. The Scene 2 workers launch automatically when Resolve is ready.
-2. Switch Korg scenes normally. Scene 1 edits, Scene 2 mixes; shared REC/Undo and MARKER controls work in Scenes 1–5.
-3. Change projects normally. Clip knobs refresh the current clip/project and rearm; the mixer preserves its v1.4 host-feedback and soft pickup behavior.
-4. **NK JOG → Beallitasok → Scene 2: AUTOMATIKUS / SZUNET** optionally pauses or resumes the worker. Normal operation never requires manual start/stop, project names or confirmation dialogs.
-
-Clip-level edits still require a valid stopped-playhead clip and no gain automation. The project-following and new startup path are unverified on real hardware until the v1.5 acceptance test. Logs: ~/Library/Logs/nk-scene2-session.log.
-
-## Uninstall / restore
-
-~~~sh
-sh ./uninstall.command
-~~~
-
-The uninstall command verifies that installed files were not subsequently edited, then restores the **immediately preceding** copies of Hammerspoon files and init.lua. It retains backups, the Python venv and the stored Korg calibration. It never resets hardware settings. A prior experimental install may therefore be restored instead of producing an empty Hammerspoon configuration.
-
-~~~sh
 sh ./doctor.command
-~~~
+```
 
-The doctor only reads files, Python availability and MIDI port names; it does not send MIDI or edit Resolve.
+The installer saves the previous Lua files, init.lua and runtime scripts
+before overwriting. It never rewrites Korg Scene Data or erases the 28-step
+Hammerspoon calibration.
+
+**Future upgrades after the new controller is installed:** fetch a clean
+source snapshot, then run `sh ./update.command`. It pauses the running
+Python workers, waits for shutdown, runs the existing backed-up installer,
+checks the installed file contents and requests a Hammerspoon restart.
+It does **not** automatically fetch new code or install a background service.
+
+```sh
+git fetch origin main
+TMP=$(mktemp -d /tmp/nk-release.XXXXXX)
+git archive FETCH_HEAD | tar -x -C "$TMP"
+cd "$TMP"
+sh ./update.command
+```
+
+**One-time upgrade from earlier v1.5:** the older installed controller
+does not yet recognize the updater command. Use NK JOG → Settings/Service →
+Pause Scene 2, run `sh ./install.command --force` from the new snapshot,
+then choose **Hammerspoon → Reload Config**. After that, the updater works
+without a manual pause. For a failed update, the existing backups remain
+available; `sh ./uninstall.command` restores the preceding installation
+when files are unchanged.
+
+## Important boundaries
+
+Clip AudioVolume may range from **−100 to +30 dB**. Stop playback,
+scrubbing and recording before adjusting clips, and do not use unsupported
+gain automation. Low-latency mode cannot reliably prove playback has
+stopped. Keep **A1–A8** selected before changing projects or restarting,
+because MCU bank MIDI does not identify tracks by name. The eighth mixer
+strip might address Bus 1 on a project with fewer than eight audio tracks.
+
+The Korg's original fader CCs are **2, 3, 4, 5, 6, 8, 9, 12**. Do not
+renumber them in KORG KONTROL Editor. One-time JOG/LED assignments and
+IAC/Resolve Control Panels MIDI routing remain necessary.
 
 ## Documentation
 
-- [Installation and IAC routing](docs/INSTALL.md)
-- [Scene 1 / Scene 2 user guide](docs/USER_GUIDE.md)
-- [Complete physical control map](docs/CONTROL_MAP.md)
-- [Release notes and known limitations](docs/RELEASE_NOTES.md)
-- [Historical protocol tests and research](docs/RESEARCH_HISTORY.md)
+- [Installation, MIDI routing and updates](docs/INSTALL.md)
+- [Daily controls and troubleshooting](docs/USER_GUIDE.md)
+- [Exact hardware control map](docs/CONTROL_MAP.md)
+- [Release notes](docs/RELEASE_NOTES.md)
+- [Preserved hardware research](docs/RESEARCH_HISTORY.md)
 
-## Development
-
-The full offline regression suite runs on GitHub Actions (Lua 5.4 and Python). To run locally:
-
-~~~sh
-python3 -m unittest discover -s tests -p 'test_*.py'
-lua5.4 tests/clean_controller.lua
-lua5.4 tests/test_scene2_session_menu.lua
-~~~
-
-Native Lua tests use mock hardware; the real MIDI/Resolve acceptance is a separate manual test. A release is not a promise of compatibility with every future Resolve update. The repository currently has **no explicit redistributable software license**; licensing is a separate owner decision.
+`sh ./doctor.command` is read-only. The offline Lua/Python regression
+suite runs in GitHub Actions. Physical tests validate the author's rig, not
+every macOS/Resolve/Korg combination. This repository currently has no
+explicit redistributable software license.

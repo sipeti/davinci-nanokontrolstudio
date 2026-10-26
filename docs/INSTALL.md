@@ -1,91 +1,126 @@
-# Installation and MIDI routing
+# Installation, MIDI routing and updates
 
-**v1.5 development preview:** macOS + DaVinci Resolve Studio 21 + Korg nanoKONTROL Studio in USB Assignable Mode. A Hammerspoon timer starts Scene 2 automatically when Resolve is ready; it is not a separate login daemon. Scene 2 PAUSE/RESUME remains available in NK JOG. Auto mode requires a physical test before merging into main; the accepted release remains v1.4.0.
+## Prerequisites
 
-## 1. Prerequisites
+- macOS; [Hammerspoon](https://www.hammerspoon.org/) with Accessibility
+  permission and *Launch at Login* enabled if you want the controller after login.
+- DaVinci Resolve **Studio 21**, including its scripting modules.
+- Homebrew Python 3.10+ and Korg nanoKONTROL Studio in **USB Assignable Mode**.
+- KORG KONTROL Editor for the initial JOG/LED Scene Set configuration.
+  Keep the physical Korg out of HUI mode.
 
-- Install Hammerspoon and grant **Accessibility** and, when needed, **Input Monitoring** in System Settings.
-- Install Homebrew Python 3.10+ (Apple Silicon default /opt/homebrew/bin/python3); the setup selects /usr/local/bin/python3 on Intel when appropriate.
-- Install DaVinci Resolve Studio 21 and ensure its Developer/Scripting/Modules directory exists.
-- Install KORG KONTROL Editor, back up your Korg Scene Set, and power the nanoKONTROL Studio on in **Assignable Mode** (hold SCENE + CYCLE when powering on). **Do not switch the whole device to Pro Tools/HUI mode.**
+The one-time Scene 1 **28-step calibration** is stored in Hammerspoon
+settings. Subsequent installations do not reset it.
 
-Scene 1's 28-step learned binding remains in Hammerspoon hs.settings. First-time users follow the existing [control map](CONTROL_MAP.md); returning users must not rerun the wizard merely to install Scene 2.
+## Physical Korg mapping
 
-## 2. Korg Scene 2 configuration
-
-**Optional bank-paging Draft only:** SELECT7/8 already use CC52/53 in the
-factory layout. No Korg hardware rewrite is needed. NK JOG → Beallitasok
-→ Bank lapozas enables the two-bank preview for A1–A8 / A9–A16.
-Use only with 16 real audio tracks; return to the first bank before
-changing projects or stopping the preview. Normal v1.5 does not
-enable this mode.
-
-Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tested mapping is:
-
-| Physical controls | MIDI CC |
-| --- | --- |
-| Eight rotary knobs | 13–20, in order |
-| Eight sliders/faders | **2, 3, 4, 5, 6, 8, 9, 12** — factory Korg assignments on all Scenes. Slider 8 (CC12) is ON by default; controls A8 in the tested eight-track project, but may control **Bus1** in another MCU bank. NK JOG offers an OFF switch |
+| Scene 2 controls | Hardware CCs |
+|---|---|
+| Sliders 1–8 | **2, 3, 4, 5, 6, 8, 9, 12** (factory mapping) |
+| Rotary knobs 1–8 | 13–20 |
 | MUTE 1–8 | 21–28 |
 | SOLO 1–8 | 29, 30, 31, 33, 34, 35, 36, 37 |
-| Scene 2 JOG wheel | **CC82 / Sign Magnitude / Const** |
-| Transport | Same physical CC assignments as Scene 1 |
-| LED Mode | **External** |
+| SELECT 7 / SELECT 8 | 52 / 53, MCU bank left/right |
+| JOG | CC82, Sign Magnitude / Const |
+| LEDs | External mode |
 
-**Do not rewrite the Korg's factory slider CCs to a consecutive range.** The software follows the actual factory mapping shown in KORG KONTROL Editor in all five Scenes. **Communication → Write Scene Data** is only needed when you intentionally change a hardware assignment (such as wheel CC82, LED Mode External or shared MARKER buttons). Keep Scene 1's mapping and 28-step calibration intact.
+In the tested 16-audio-track project, the two banks address A1–A8 and
+A9–A16. A smaller or differently arranged Resolve project may present
+Bus 1 in an MCU strip. Keep bank A1–A8 selected before changing projects
+or restarting. **Do not renumber the factory slider CC values.**
 
-## 3. Two virtual macOS IAC MIDI buses
+## IAC and Resolve configuration
 
-Open **Audio MIDI Setup → Window → Show MIDI Studio → IAC Driver**; enable **Device is online** and create these two distinct buses:
+Open **Audio MIDI Setup → Window → Show MIDI Studio → IAC Driver** and
+enable the driver. Create two separate buses:
 
-| IAC bus | Data direction |
-| --- | --- |
-| **NK FL To Resolve** | Python MCU commands → Resolve MIDI Input |
-| **NK FL From Resolve** | Resolve MCU feedback → Python MCU Input |
+| Bus | Purpose |
+|---|---|
+| **NK FL To Resolve** | Python MCU commands → Resolve MIDI input |
+| **NK FL From Resolve** | Resolve MCU feedback → Python MCU input |
 
-In **Resolve Preferences → System → Control Panels**, enable the MIDI Audio Console and select an **MCU-compatible** controller. MIDI Input should be **NK FL To Resolve**; MIDI Output should be **NK FL From Resolve**. Save and restart Resolve if necessary. Do not select the physical Korg MIDI port in the Resolve console: Hammerspoon is its sole input owner.
+In **Resolve Preferences → System → Control Panels**, select an
+MCU-compatible MIDI Audio Console. Set input **NK FL To Resolve** and
+output **NK FL From Resolve**, then save. Do not use the physical Korg
+port in Resolve: Hammerspoon already owns it. On some Macs the bus names
+include the prefix `IAC Driver`; the software expects those exact
+prefixed names.
 
-On some macOS systems the port names shown by MIDI libraries include the prefix **IAC Driver**. This release expects exactly **IAC Driver NK FL To Resolve** and **IAC Driver NK FL From Resolve**. The doctor displays whether those names exist.
+## First installation
 
-## 4. Install
+From a clean repository checkout:
 
-Download/clone the repository and run from the repository root:
-
-~~~sh
+```sh
 sh ./install.command --dry-run
 sh ./install.command
-~~~
+sh ./doctor.command
+```
 
-If a different existing Hammerspoon controller/menu is detected, installation stops rather than overwriting it silently. Review your local modifications, then deliberately invoke **sh ./install.command --force**. Existing Lua files, init.lua and previous runtime scripts are copied into a timestamped backup under ~/Library/Application Support/NK Scene2/backups/.
+Install creates a backed-up Hammerspoon configuration, sets up an
+isolated Python venv under `~/Library/Application Support/NK Scene2`,
+and copies the Lua/Python runtime. It adds one
+`require("nanokontrol_resolve21")` line to Hammerspoon's `init.lua`
+only if absent. No global Python packages or separate macOS daemon.
 
-The installer uses pinned mido/python-rtmidi from requirements-scene2.txt, in a persistent venv under ~/Library/Application Support/NK Scene2/venv/. No global Python package install. It writes the selected Python path so the START menu works on Apple Silicon or Intel. The old /tmp/nk-mcu-venv is not required.
+Reload Hammerspoon configuration once. When Resolve is frontmost and the
+Korg is connected, Scene 2 starts without extra approval. While Resolve
+is closed, the two Python workers stop; only the lightweight Hammerspoon
+MIDI/event/LED hooks remain.
 
-Finish with **Hammerspoon → Reload Config**. With Resolve ready and frontmost, the worker starts silently; the NK JOG menu lets you pause/resume it. The 28/28 learned mapping stays stored; do not press the relearn command unless the physical Scene 1 CC layout itself has changed. First validate this development branch in a duplicated project.
+## Updating an installed controller
 
-## 5. Start a session
+Once the release candidate with the local update URL hooks is installed:
 
-1. Use **sh ./doctor.command** (read-only) to inspect dependencies and the two IAC buses.
-2. In Resolve, **back up the current project**, STOP playback and scrubbing, and ensure the targeted audio clips have no gain keyframes or gain automation.
-3. Hammerspoon → **Reload Config**; Scene 2 workers start in the background when Resolve is ready and frontmost.
-4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. Clip knobs follow the active project; the mixer uses the **unchanged, hardware-accepted v1.4 MCU worker** with its original host-feedback soft pickup.
-5. **Optional:** use **NK JOG → Beallitasok → Scene 2: AUTOMATIKUS / SZUNET** only when you need to pause or resume; it is not a startup gate. **Beallitasok → 8. MCU csatorna BE/KI** is enabled by default and can disable the eighth fader plus MUTE8/SOLO8 when the eighth MCU bank slot belongs to Bus1. The setting is session-local; Hammerspoon reload restores eight enabled strips. Session logs: ~/Library/Logs/nk-scene2-session.log.
-6. For v1.5 physical acceptance, verify the mixer faders, MUTE/SOLO and LED feedback work just like v1.4, then try Scene 1/2 switching and clip gain on two disposable projects.
+```sh
+git fetch origin main
+TMP=$(mktemp -d /tmp/nk-release.XXXXXX)
+git archive FETCH_HEAD | tar -x -C "$TMP"
+cd "$TMP"
+sh ./update.command
+```
 
-**Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. MCU strip 8 is active by default after the A8 physical test; it always follows the eighth slot of the **current Resolve bank**, which may be Bus1 in some projects. NK JOG can disable it without affecting strips 1–7. No Korg CC change is required.
+The updater operates on **this source snapshot**; it never performs its
+own Git pull. It asks the running Hammerspoon controller to pause, waits
+for acknowledgement and for the two Python workers to exit, then calls
+the regular **backup-first installer**. It checks copied file contents
+before requesting a full Hammerspoon Lua reload. After reload, Scene 2
+automatically starts again when Resolve is ready. If Hammerspoon is not
+running, it installs now and loads on next launch.
 
-## 6. Uninstall / rollback
+**First migration from the older v1.5 install:** the old running Lua
+controller cannot receive the new update URL. Return to A1–A8, choose
+the existing **Scene 2 Pause** entry, verify the workers stopped, then
+run `sh ./install.command --force` from the new snapshot, and use
+**Hammerspoon → Reload Config**. The new `update.command` is then
+available for later updates.
 
-~~~sh
+**Bank 2 is active?** SELECT 7 first, and confirm A1–A8 in NK JOG.
+Restart/update cannot safely infer the Resolve MCU bank after an
+uncontrolled reload, so the updater refuses to stop in bank 2.
+This is a real track-identity limitation, not a per-project permission prompt.
+
+`sh ./update.command --dry-run` checks the installation source without
+performing a stop, copy or restart (subject to the install preflight).
+
+## Restore, checks and troubleshooting
+
+```sh
+sh ./doctor.command
 sh ./uninstall.command
-~~~
+```
 
-Stop the session first. The uninstaller checks installed-file hashes, refuses to overwrite anything edited since installation, and restores the immediately preceding files. Backups, the isolated venv and Korg hs.settings remain intact. Reload Hammerspoon afterwards. This is **last-install rollback**, not a factory reset.
+The doctor reads Python/module/IAC state and sends no MIDI.
+The uninstaller checks hashes and restores the **immediately preceding**
+Lua files, `init.lua` and runtime scripts, retaining backups, the venv
+and calibration. Pause active workers before uninstalling.
 
-## Diagnostics
+If a Fairlight slider waits for pickup, confirm Resolve still has the
+correct MCU Control Panels assignment. Move the corresponding on-screen
+Fairlight fader to elicit host feedback, then cross its value with the
+physical slider. A Korg button press alone does not establish an
+authoritative LED state: LED feedback comes from Resolve.
 
-- **No menu:** verify ~/.hammerspoon/init.lua contains the single require("nanokontrol_resolve21") entry; reload Hammerspoon.
-- **No MIDI from Resolve:** inspect IAC names, Resolve MCU MIDI Input/Output assignments and restart Resolve after editing Control Panels settings.
-- **Knobs not writing:** check foreground Resolve, stopped playhead, a unique plain audio clip at the playhead and fresh rotary pickup. 29.97/drop-frame or unsupported timeline timecode is intentionally rejected.
-- **Mixer faders unresponsive:** open/reselect the Resolve MCU controller to refresh host pitch-wheel positions. Faders must receive host feedback before physical pickup.
-- **MUTE/SOLO LED state:** LED Mode must be External on the physical Korg. Host-return MIDI is authoritative; a button press alone does not guarantee an LED state.
-- **Unexpected stop:** read ~/Library/Logs/nk-scene2-session.log and the Hammerspoon Console. Never launch a second terminal copy of the Scene 2 worker while the menu session is running.
+Clip gain is intended for a stopped playhead, without unsupported gain
+automation or keyframes. The low-latency API cannot reliably detect all
+playback/automation conditions. Logs:
+`~/Library/Logs/nk-scene2-session.log`.
