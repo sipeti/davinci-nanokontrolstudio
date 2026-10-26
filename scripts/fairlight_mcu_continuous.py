@@ -657,8 +657,7 @@ def main():
                 if last_h is None and now - started > 3:
                     raise RuntimeError(
                         "no Hammerspoon heartbeat: launch Hammerspoon, then "
-                        "NK JOG > Scene 2 clip gain MIDI bridge: BE "
-                        "(re-enable after hs.reload)")
+                        "NK JOG > Restart Controller if the MIDI bridge is not active")
                 if last_h is not None and now - last_h > HEARTBEAT_TIMEOUT:
                     raise RuntimeError("lost Hammerspoon heartbeat")
                 time.sleep(.01)

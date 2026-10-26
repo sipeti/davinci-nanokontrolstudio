@@ -92,6 +92,8 @@ runningApp=false
 timer.callback()
 assert(interrupts==2, "quitting Resolve stops workers")
 currentTask.done(130,"","")
+assert(not bridge.active,
+  "Resolve quit must close the idle bridge after the workers exit")
 ready=false
 now=113
 timer.callback()

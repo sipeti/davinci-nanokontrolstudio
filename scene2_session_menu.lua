@@ -179,6 +179,9 @@ return function(host, bridge, options)
       if self.log then self.log:close(); self.log = nil end
       host.printf("[NK SCENE2 AUTO] exit=%s; requested_stop=%s",
                   tostring(code), tostring(self.stopping))
+      -- No Resolve process: stop publishing/reading Scene 2 bridge events.
+      -- The Hammerspoon hardware listener remains available at login.
+      if not appRunning() and bridge.active then bridge:stop() end
       -- Automatic retry is bounded, with fresh pickup on every worker start.
       self.retryAt = clock() + (self.stopping and 1 or 10)
       self.stopping = false
