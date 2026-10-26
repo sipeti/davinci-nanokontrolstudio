@@ -60,7 +60,11 @@ midi(1,17,46)
 midi(1,21,127) -- MUTE candidate: published only as M, never clip gain
 midi(1,8,50)  -- Factory slider 6, MCU strip 6
 midi(1,9,51)  -- Factory slider 7, MCU strip 7
-midi(1,12,52) -- Factory slider 8, MCU strip 8 (locked by Python)
+midi(1,12,52) -- Factory slider 8, MCU strip 8
+midi(1,53,127) -- Scene2 SELECT8 requests bank right
+midi(1,53,0)
+midi(1,52,127) -- Scene2 SELECT7 requests bank left
+midi(1,52,0)
 midi(1,7,53)  -- No physical fader uses CC7
 midi(1,10,54) -- No physical fader uses CC10
 midi(1,11,55) -- No physical fader uses CC11
@@ -77,7 +81,7 @@ bridge:stop()
 assert(not bridge.active)
 assert(heartbeat.stopped)
 assert(closeCount == 1 and openCount == 1)
-assert(bridge.events == 9, "5 rotary changes + 4 mixer candidates, got "
+assert(bridge.events == 13, "5 rotary + 4 mixer + 4 bank events, got "
   .. tostring(bridge.events))
 assert(bridge:start(), "explicit restart should be possible")
 assert(openCount == 2)
@@ -96,6 +100,10 @@ assert(out:find(",M,1,21,127",1,true))
 assert(out:find(",M,1,8,50",1,true))
 assert(out:find(",M,1,9,51",1,true))
 assert(out:find(",M,1,12,52",1,true))
+assert(out:find(",B,1,53,127",1,true))
+assert(out:find(",B,1,53,0",1,true))
+assert(out:find(",B,1,52,127",1,true))
+assert(out:find(",B,1,52,0",1,true))
 assert(not out:find(",M,1,7,53",1,true))
 assert(not out:find(",M,1,10,54",1,true))
 assert(not out:find(",M,1,11,55",1,true))

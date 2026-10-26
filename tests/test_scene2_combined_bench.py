@@ -66,6 +66,23 @@ class CombinedTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bench.main(["--allow-named-project", "--seconds", "60"])
 
+    def test_bank_pages_only_modify_explicit_preview_session(self):
+        default = bench.parser().parse_args(["--auto-run"])
+        enabled = bench.parser().parse_args(
+            ["--auto-run", "--enable-bank-pages"])
+        base = bench.commands(default, Path("/test/scripts"))
+        bank = bench.commands(enabled, Path("/test/scripts"))
+        self.assertNotIn("--enable-bank-pages", base[0][1])
+        self.assertNotIn("--follow-mcu-bank", base[1][1])
+        self.assertIn("--enable-bank-pages", bank[0][1])
+        self.assertIn("--follow-mcu-bank", bank[1][1])
+        self.assertEqual(
+            [x for x in bank[0][1] if x != "--enable-bank-pages"], base[0][1])
+        self.assertEqual(
+            [x for x in bank[1][1] if x != "--follow-mcu-bank"], base[1][1])
+        with self.assertRaises(SystemExit):
+            bench.main(["--auto-run", "--enable-bank-pages", "--disable-strip8"])
+
     def test_auto_run_preserves_the_exact_v14_mcu_command(self):
         with tempfile.TemporaryDirectory() as temp:
             events = Path(temp) / "events.csv"

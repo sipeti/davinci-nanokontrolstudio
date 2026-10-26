@@ -171,8 +171,11 @@ local daily = menus.items()
 assert(#daily==3, "Daily menu must only show status, Scene 2, settings")
 assert(daily[1].disabled==true and
   daily[1].title:find("Korg:",1,true), "Status should be one summary line")
-assert(daily[2].title:find("Scene 2:",1,true),
-  "Daily menu must retain Scene 2 control")
+assert(daily[2].title:find("Scene 2:",1,true) and daily[2].disabled,
+  "Daily Scene 2 state is informational; pause is under Settings")
+assert(type(daily[3].menu[1].fn)=="function"
+  and daily[3].menu[1].title:find("Scene 2:",1,true),
+  "Manual Scene 2 pause/resume must remain reachable in Settings")
 assert(daily[3].title=="Beallitasok" and type(daily[3].menu)=="table",
   "Advanced actions must be inside a submenu")
 assert(type(daily[3].menu[#daily[3].menu].menu)=="table",
@@ -181,6 +184,8 @@ assert(findMenuAction(daily,"TELJES UJRABETANITAS"),
   "Relearn must remain reachable, never deleted")
 assert(findMenuAction(daily,"LED visszajelzes BE/KI"),
   "LED off must remain reachable without changing its behavior")
+assert(findMenuAction(daily,"Bank lapozas"),
+  "Bank navigation toggle must be available in settings only")
 -- Old v1.2 settings deliberately not reused as a valid v1.3 configuration.
 local exists=false
 for _,item in ipairs(menus.items()) do

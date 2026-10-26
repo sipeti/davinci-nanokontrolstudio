@@ -28,7 +28,7 @@ return function(host, bridge, options)
   local self = {
     task = nil, log = nil, timer = nil, stopping = false,
     enabled = enabled, retryAt = 0, shutdownRequested = false,
-    lastError = nil, strip8Enabled = true
+    lastError = nil, strip8Enabled = true, bankPagesEnabled = false
   }
 
   function self:isRunning()
@@ -43,11 +43,39 @@ return function(host, bridge, options)
     return self.strip8Enabled
   end
 
+  function self:isBankPagesEnabled()
+    return self.bankPagesEnabled
+  end
+
+  function self:toggleBankPages()
+    if self.shutdownRequested or not self.enabled then return false end
+    -- The current MCU bank is host-controlled, not resettable by a
+    -- speculative MIDI command. Leave the trial only from A1..A8.
+    if self.bankPagesEnabled and
+      (bridge.bankIndex ~= 0 or bridge.bankStatus ~= 1) then
+      host.printf("[NK BANK] Return to confirmed A1-A8 with SELECT7 before disabling bank pages")
+      if host.alert then
+        host.alert.show("NK: elobb SELECT 7 -> A1-A8, majd bank lapozas KI", 4)
+      end
+      return false
+    end
+    self.bankPagesEnabled = not self.bankPagesEnabled
+    if self.bankPagesEnabled then self.strip8Enabled = true end
+    if self:isRunning() then
+      self:stop()
+    elseif self.task == nil then
+      self.retryAt = 0
+      self:ensureRunning()
+    end
+    return true
+  end
+
   -- Default: all 8 MCU faders active. The current bank can contain Bus1
   -- in a smaller project, so users can turn strip8 off from NK JOG.
   -- No additional MIDI gate or protocol, no persistent setting.
   function self:toggleStrip8()
-    if self.shutdownRequested or not self.enabled then return false end
+    if self.shutdownRequested or not self.enabled
+      or self.bankPagesEnabled then return false end
     self.strip8Enabled = not self.strip8Enabled
     host.printf("[NK SCENE2] eighth MCU strip=%s (current Resolve bank)",
                 tostring(self.strip8Enabled))
@@ -116,6 +144,9 @@ return function(host, bridge, options)
     }
     if not self.strip8Enabled then
       args[#args + 1] = "--disable-strip8"
+    end
+    if self.bankPagesEnabled then
+      args[#args + 1] = "--enable-bank-pages"
     end
     local function append(out, errText)
       if self.log then

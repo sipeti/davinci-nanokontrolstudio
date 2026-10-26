@@ -13,6 +13,13 @@ Scene 1's 28-step learned binding remains in Hammerspoon hs.settings. First-time
 
 ## 2. Korg Scene 2 configuration
 
+**Optional bank-paging Draft only:** SELECT7/8 already use CC52/53 in the
+factory layout. No Korg hardware rewrite is needed. NK JOG → Beallitasok
+→ Bank lapozas enables the two-bank preview for A1–A8 / A9–A16.
+Use only with 16 real audio tracks; return to the first bank before
+changing projects or stopping the preview. Normal v1.5 does not
+enable this mode.
+
 Use **Global MIDI Channel 2** for Scene 2 (Hammerspoon input channel 1). The tested mapping is:
 
 | Physical controls | MIDI CC |
@@ -61,7 +68,7 @@ Finish with **Hammerspoon → Reload Config**. With Resolve ready and frontmost,
 2. In Resolve, **back up the current project**, STOP playback and scrubbing, and ensure the targeted audio clips have no gain keyframes or gain automation.
 3. Hammerspoon → **Reload Config**; Scene 2 workers start in the background when Resolve is ready and frontmost.
 4. Use the Korg scenes normally. No project name, consent dialog or manual START is needed. Clip knobs follow the active project; the mixer uses the **unchanged, hardware-accepted v1.4 MCU worker** with its original host-feedback soft pickup.
-5. Use **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** to pause or resume. **Beallitasok → 8. MCU csatorna BE/KI** is enabled by default and can disable the eighth fader plus MUTE8/SOLO8 when the eighth MCU bank slot belongs to Bus1. The setting is session-local; Hammerspoon reload restores eight enabled strips. Session logs: ~/Library/Logs/nk-scene2-session.log.
+5. **Optional:** use **NK JOG → Beallitasok → Scene 2: AUTOMATIKUS / SZUNET** only when you need to pause or resume; it is not a startup gate. **Beallitasok → 8. MCU csatorna BE/KI** is enabled by default and can disable the eighth fader plus MUTE8/SOLO8 when the eighth MCU bank slot belongs to Bus1. The setting is session-local; Hammerspoon reload restores eight enabled strips. Session logs: ~/Library/Logs/nk-scene2-session.log.
 6. For v1.5 physical acceptance, verify the mixer faders, MUTE/SOLO and LED feedback work just like v1.4, then try Scene 1/2 switching and clip gain on two disposable projects.
 
 **Technical limits:** The clip-gain worker validates active project/timeline/clip identity at each setter and checks AudioVolume by readback. No extra cross-worker context gate is applied to the proven v1.4 MCU path; Fairlight host MIDI is still the authority for mixer pickup. Low-latency mode cannot reliably detect gain automation or running playback, so do not alter clip gain with automation or while scrubbing. MCU strip 8 is active by default after the A8 physical test; it always follows the eighth slot of the **current Resolve bank**, which may be Bus1 in some projects. NK JOG can disable it without affecting strips 1–7. No Korg CC change is required.

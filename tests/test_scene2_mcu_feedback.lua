@@ -92,6 +92,23 @@ now=now+.5
 timers[1].fn()
 assert(latest(21)==false and latest(29)==true,
   "changed Fairlight LED feedback must override previous authoritative state")
+-- Bank LEDs are MCU-worker authoritative, not the physical SELECT press.
+feedback = ("%d,H,0,1\n%d,B,1,0\n"):format(t(), t())
+now=now+.5
+timers[1].fn()
+assert(bridge.bankIndex==1 and bridge.bankStatus==0,
+  "bank request is pending until 8 real host faders arrive")
+assert(latest(52)==false and latest(53)==false,
+  "pending bank lights neither bank LED")
+assert(latest(21)==false and latest(29)==false,
+  "pending bank must blank MUTE/SOLO states of the previous bank")
+feedback = ("%d,H,0,1\n%d,B,1,1\n"):format(t(), t())
+now=now+.5
+timers[1].fn()
+assert(bridge.bankIndex==1 and bridge.bankStatus==1,
+  "MCU feedback commits bank2")
+assert(latest(52)==false and latest(53)==true,
+  "SELECT8 LED identifies confirmed second bank")
 -- A silent Korg Scene switch blanks physical LEDs. With host feedback
 -- unchanged, Scene2 must periodically reassert only known host states.
 feedback = ("%d,H,0,1\n%d,L,21,0\n%d,L,29,127\n"):format(t(),t(),t())

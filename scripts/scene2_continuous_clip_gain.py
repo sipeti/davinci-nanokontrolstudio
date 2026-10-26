@@ -18,6 +18,7 @@ import scene2_audio_roundtrip_probe as api
 from scene2_clip_gain_8rotary import (
     CONSENT, NAMED_CONSENT, Controller, MidiPoll, process_poll, snapshot,
 )
+from fairlight_mcu_bridge import FEEDBACK
 
 EVENT_PATH = pathlib.Path.home() / "Library/Caches/nk-scene2-controller-events.csv"
 LIVE_LOCK = pathlib.Path.home() / "Library/Caches/nk-scene2-clip-live.lock"
@@ -29,6 +30,33 @@ STARTUP_TIMEOUT = 5.0
 MAX_INPUT_AGE_MS = 1200
 MAX_BATCH_LINES = 2048
 IDLE_REARM_SECONDS = 20.0
+BANK_FEEDBACK_MAX_AGE_MS = 1600
+
+
+def read_bank_feedback(path, now_ms):
+    """Last fresh MCU-generated bank status from the existing LED CSV."""
+    try:
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 2048))
+            data = f.read()
+    except OSError:
+        return None
+    if size > 2048:
+        data = data.partition(b"\n")[2]
+    for row in reversed(data.splitlines()):
+        parts = row.split(b",")
+        if len(parts) != 4 or parts[1] != b"B":
+            continue
+        try:
+            stamp, bank, status = int(parts[0]), int(parts[2]), int(parts[3])
+        except ValueError:
+            continue
+        if (0 <= now_ms - stamp <= BANK_FEEDBACK_MAX_AGE_MS
+                and bank in (0, 1) and status in (0, 1, 2)):
+            return bank, status
+    return None
 
 
 def parse_bridge_row(line, now_ms):
@@ -41,7 +69,7 @@ def parse_bridge_row(line, now_ms):
         ts, ch, cc, val = int(ts), int(ch), int(cc), int(val)
     except ValueError:
         return None
-    if kind not in ("H", "C", "R"):
+    if kind not in ("H", "C", "R", "B"):
         return None
     if not 0 <= now_ms - ts <= MAX_INPUT_AGE_MS:
         return None
@@ -49,6 +77,8 @@ def parse_bridge_row(line, now_ms):
         return ("H", val) if ch == 0 and cc == 0 and val in (0, 1) else None
     if kind == "R":
         return ("R", ch, cc, val) if 0 <= ch <= 15 else None
+    if kind == "B":
+        return ("B", cc) if ch == 1 and cc in (52, 53) and val == 127 else None
     if not (0 <= ch <= 15 and 0 <= cc <= 127 and 0 <= val <= 127):
         return None
     return ("C", ch, cc, val)
@@ -66,7 +96,8 @@ class ContinuousController(Controller):
                  confirmation=None, automation_confirmed=False,
                  max_writes=256, now=time.monotonic,
                  stability_wait=time.sleep, low_latency=False,
-                 allow_named_project=False, follow_active_project=False):
+                 allow_named_project=False, follow_active_project=False,
+                 follow_mcu_bank=False):
         super().__init__(
             app, write=write, expected_project=expected_project,
             confirmation=confirmation,
@@ -79,8 +110,41 @@ class ContinuousController(Controller):
         self.pause_reason = None
         self.stability_wait = stability_wait
         self.low_latency = bool(low_latency)
+        self.follow_mcu_bank = bool(follow_mcu_bank)
+        self.bank_index = 0
+        self.track_offset = 0
+        self.bank_ready = not self.follow_mcu_bank
+        self.bank_request_target = None
+
+    def update_bank(self, state):
+        """Disarm each rotary on every bank change or unknown host bank."""
+        bank, status = state if state is not None else (self.bank_index, 2)
+        ready = status == 1
+        # Never re-enable an old bank from a still-fresh MCU heartbeat
+        # while a new SELECT7/8 command has not been acknowledged.
+        if ready and self.bank_request_target is not None:
+            if bank != self.bank_request_target:
+                return False
+            self.bank_request_target = None
+        if bank != self.bank_index or ready != self.bank_ready:
+            self.rearm("MCU bank %d status %d" % (bank + 1, status))
+            self.bank_index = bank
+            self.track_offset = bank * 8
+            self.bank_ready = ready
+            print("SCENE2_BANK=%s; A%d-A%d" %
+                  ("ACTIVE" if ready else "WAIT_HOST",
+                   1 + self.track_offset, 8 + self.track_offset),
+                  flush=True)
+            return True
+        return False
 
     def _write(self, track, before, identity, requested):
+        if self.follow_mcu_bank:
+            state = read_bank_feedback(FEEDBACK, int(time.time() * 1000))
+            if state != (self.bank_index, 1) or not self.bank_ready:
+                self.rearm("bank changed immediately before setter")
+                self.bank_ready = False
+                return "BLOCKED"
         # Normal mode retains the 120ms independent stationary-playhead
         # observation. Explicit low-latency test mode omits that timer and
         # extra full snapshot, but NEVER bypasses the inherited setter-bound
@@ -111,6 +175,8 @@ class ContinuousController(Controller):
     def handle(self, channel, cc, value):
         if self.halted:
             return "HALTED"
+        if not self.bank_ready:
+            return "BANK_WAIT_HOST"
         if channel != 1:
             self.rearm("different MIDI scene")
             return "RESET"
@@ -126,9 +192,11 @@ class ContinuousController(Controller):
         # A fresh, separate snapshot still runs IMMEDIATELY before each
         # actual setter and again after it, inside the inherited _write().
         try:
-            current = snapshot(self.app, cc - 12)
+            track = cc - 12 + self.track_offset
+            current = snapshot(self.app, track)
         except api.ProbeBlocked:
-            self.engine.reject(cc - 12)
+            track = cc - 12 + self.track_offset
+            self.engine.reject(track)
             return super().handle(channel, cc, value)
         snapshot_ms = (time.perf_counter() - start) * 1000.0
         fresh, _, session = current
@@ -171,6 +239,7 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
         ready = False
         pending = MidiPoll()
         next_poll = started
+        next_bank_check = started
         poll_seconds = FAST_POLL_SECONDS if controller.low_latency else POLL_SECONDS
         idle_sleep = FAST_IDLE_SLEEP_SECONDS if controller.low_latency else 0.04
         end_at = started + seconds if seconds else None
@@ -182,6 +251,11 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                int(poll_seconds * 1000), controller.low_latency), flush=True)
         try:
             while end_at is None or clock() < end_at:
+                if controller.follow_mcu_bank and clock() >= next_bank_check:
+                    next_bank_check = clock() + 0.10
+                    if controller.update_bank(
+                        read_bank_feedback(FEEDBACK, int(wall() * 1000))):
+                        pending = MidiPoll()
                 try:
                     current = event_path.stat()
                     if ((current.st_dev, current.st_ino) !=
@@ -221,7 +295,13 @@ def monitor(controller, *, event_path=EVENT_PATH, seconds=0,
                     elif event[0] == "R":
                         saw_reset = True
                         controller.rearm("other Korg scene selected")
-                    elif event[0] == "C" and ready and not saw_reset:
+                    elif event[0] == "B" and controller.follow_mcu_bank:
+                        # Hard fence *before* the MCU's asynchronous host ACK.
+                        saw_reset = True
+                        controller.bank_request_target = 0 if event[1] == 52 else 1
+                        controller.update_bank((controller.bank_index, 0))
+                    elif (event[0] == "C" and ready and not saw_reset
+                          and controller.bank_ready):
                         _, ch, cc, value = event
                         pending.add("%d,%d,%d" % (ch, cc, value))
                 if saw_reset:
@@ -271,6 +351,8 @@ def main():
     parser.add_argument("--follow-active-project", action="store_true",
                         help="normal product mode: auto-follow Resolve project; "
                              "fresh pickup and setter-bound identity checks")
+    parser.add_argument("--follow-mcu-bank", action="store_true",
+                        help="align knobs with confirmed MCU bank 1 or 2")
     parser.add_argument("--low-latency", action="store_true",
                         help="test mode: 20ms event polling; skip the 120ms "
                              "extra wait but keep setter-bound snapshots")
@@ -291,6 +373,8 @@ def main():
                                       args.expected_project):
         parser.error("--follow-active-project cannot be mixed with "
                      "manual project/consent flags")
+    if args.follow_mcu_bank and not args.follow_active_project:
+        parser.error("--follow-mcu-bank requires --follow-active-project")
     if args.unlimited_writes:
         if not (args.write_test_copy or args.follow_active_project) or args.seconds != 0:
             parser.error("unlimited writes require a continuous writable mode")
@@ -316,6 +400,7 @@ def main():
             low_latency=args.low_latency,
             allow_named_project=args.allow_named_project,
             follow_active_project=args.follow_active_project,
+            follow_mcu_bank=args.follow_mcu_bank,
         )
     except ValueError as exc:
         print("SCENE2_CONTINUOUS=BLOCKED; %s; WRITES=0" % exc)

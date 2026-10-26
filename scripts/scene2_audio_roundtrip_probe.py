@@ -68,8 +68,8 @@ def _resolve_app():
 
 
 def _snapshot(track):
-    if type(track) is not int or not 1 <= track <= 8:
-        raise ProbeBlocked("track must be an integer from 1 to 8")
+    if type(track) is not int or not 1 <= track <= 16:
+        raise ProbeBlocked("track must be an integer from 1 to 16")
     manager = _get(_resolve_app(), "GetProjectManager")
     project = _get(manager, "GetCurrentProject")
     timeline = _get(project, "GetCurrentTimeline")

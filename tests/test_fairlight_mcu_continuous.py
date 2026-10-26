@@ -27,6 +27,65 @@ class LiveMixerTests(unittest.TestCase):
         self.b.host(msg("pitchwheel", channel=index,
                         pitch=mcu.physical_to_mcu(value) - 8192))
 
+    def test_bank_right_left_waits_for_real_eight_fader_host_snapshot(self):
+        b = live.LiveMixer(
+            lambda kind, **kw: self.calls.append((kind, kw)),
+            lambda cc, value: self.leds.append((cc, value)),
+            write=True, allow_strip8=True, bank_enabled=True,
+            clock=lambda: self.now)
+        for track in range(8):
+            b.host(msg("pitchwheel", channel=track,
+                       pitch=mcu.physical_to_mcu(60) - 8192))
+        self.assertEqual(b.bank_report(), (0, 1))
+        self.assertEqual(b.bank_event(1, 53, 127), "BANK_REQUEST_SENT")
+        self.assertEqual(b.bank_report(), (1, 0))
+        self.assertEqual(self.calls[-1],
+                         ("note_on", {"channel": 0, "note": 47, "velocity": 127}))
+        self.assertEqual(b.physical_event(1, 2, 60), "BANK_WAIT_HOST")
+        self.assertEqual(b.physical_event(1, 21, 127), "BANK_WAIT_HOST")
+        for track in range(7):
+            b.host(msg("pitchwheel", channel=track,
+                       pitch=mcu.physical_to_mcu(63) - 8192))
+        self.assertEqual(b.bank_report(), (1, 0))
+        b.host(msg("pitchwheel", channel=7,
+                   pitch=mcu.physical_to_mcu(63) - 8192))
+        self.assertEqual(b.bank_report(), (1, 1))
+        self.assertEqual(b.physical_event(1, 2, 60), "FADER_PICKUP_PENDING")
+        self.assertEqual(b.physical_event(1, 2, 63), "FADER_PICKUP_PASS")
+        self.assertEqual(b.physical_event(1, 2, 64), "FADER_LIVE_SENT")
+        self.assertEqual(self.calls[-1][1]["channel"], 0)
+        b.bank_event(1, 53, 0)
+        self.assertEqual(b.bank_event(1, 53, 127), "BANK_EDGE")
+        self.assertEqual(b.bank_event(1, 52, 127), "BANK_REQUEST_SENT")
+        self.assertEqual(b.bank_report(), (0, 0))
+        self.assertEqual(self.calls[-1][1]["note"], 46)
+        for track in range(8):
+            b.host(msg("pitchwheel", channel=track,
+                       pitch=mcu.physical_to_mcu(40) - 8192))
+        self.assertEqual(b.bank_report(), (0, 1))
+        b.release_all()
+
+    def test_bank_no_host_feedback_blocks_and_requires_recovery(self):
+        b = live.LiveMixer(
+            lambda kind, **kw: self.calls.append((kind, kw)),
+            lambda cc, value: None,
+            write=True, allow_strip8=True, bank_enabled=True,
+            clock=lambda: self.now)
+        self.assertEqual(b.bank_event(1, 53, 127), "BANK_REQUEST_SENT")
+        self.now += live.BANK_CONFIRM_SECONDS + .01
+        b.tick()
+        self.assertEqual(b.bank_report(), (1, 2))
+        self.assertEqual(b.physical_event(1, 12, 64), "BANK_WAIT_HOST")
+        self.assertEqual(b.physical_event(1, 28, 127), "BANK_WAIT_HOST")
+        b.bank_event(1, 53, 0)
+        self.assertEqual(b.bank_event(1, 53, 127),
+                         "BANK_UNCONFIRMED_USE_LEFT")
+        self.assertEqual(b.bank_event(1, 52, 127), "BANK_REQUEST_SENT")
+        for track in range(8):
+            b.host(msg("pitchwheel", channel=track,
+                       pitch=mcu.physical_to_mcu(30) - 8192))
+        self.assertEqual(b.bank_report(), (0, 1))
+
     def test_first_fader_requires_real_host_pickup_and_timed_touch_release(self):
         self.assertEqual(self.b.physical_event(1,2,60), "FADER_WAIT_HOST")
         self.assertEqual(self.calls, [])
