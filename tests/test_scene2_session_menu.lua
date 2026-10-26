@@ -3,11 +3,13 @@ local factory = dofile("scene2_session_menu.lua")
 local now = 100
 local ready, runningApp = false, true
 local starts, interrupts, bridgeStarts, bridgeStops = 0, 0, 0, 0
-local stored = nil
+local stored = false -- legacy persisted pause must NOT disable login startup
+local reloads = 0
 local timer = nil
 local lastArgs, currentTask
 local host = {
   printf=function(...) end,
+  reload=function() reloads=reloads+1 end,
   settings={
     get=function(key) return stored end,
     set=function(key, value) stored=value end,
@@ -68,7 +70,8 @@ assert(cmd:find("--auto-run",1,true))
 assert(not cmd:find("--expected-project",1,true))
 assert(not cmd:find("--confirmed-backup",1,true))
 assert(not cmd:find("--allow-named-project",1,true))
-assert(stored==nil, "first-run autostart should not modify settings")
+assert(stored==false, "legacy persisted pause must be ignored on startup")
+assert(s:isBankPagesEnabled(), "two-bank mode starts automatically")
 timer.callback()
 assert(starts==1, "single Python task owner")
 assert(s:pause() and stored==false and interrupts==1)
@@ -77,7 +80,7 @@ currentTask.done(130, "", "")
 timer.callback()
 assert(starts==1, "paused session must not restart")
 assert(not s:isEnabled())
-assert(s:resume() and stored==true and starts==2)
+assert(s:resume() and stored==false and starts==2)
 currentTask.running=false
 currentTask.done(1,"","")
 timer.callback()
@@ -100,7 +103,7 @@ timer.callback()
 assert(starts==4, "Resolve reopen automatically reactivates")
 s:shutdown()
 assert(timer.stopped and interrupts==3)
-assert(stored==true, "shutdown does not persist pause")
+assert(stored==false, "normal operation never writes persistent pause")
 currentTask.done(130,"","")
 local paused=make({timer=false,autoEnabled=false})
 assert(not paused:isEnabled())
@@ -114,6 +117,9 @@ ready=true
 runningApp=true
 local strip8=make({timer=false})
 assert(strip8:isEnabled() and strip8:isStrip8Enabled())
+assert(strip8:isBankPagesEnabled())
+assert(strip8:toggleBankPages() and not strip8:isBankPagesEnabled(),
+  "channel 8 can only be disabled after turning off banking")
 assert(strip8:start())
 assert(not table.concat(lastArgs," "):find("--disable-strip8",1,true))
 assert(strip8:toggleStrip8() and not strip8:isStrip8Enabled())
@@ -135,8 +141,7 @@ assert(strip8:ensureRunning())
 assert(not table.concat(lastArgs," "):find("--disable-strip8",1,true))
 strip8:shutdown()
 local bank=make({timer=false})
-assert(not bank:isBankPagesEnabled(), "banking is opt-in")
-assert(bank:toggleBankPages() and bank:isBankPagesEnabled())
+assert(bank:isBankPagesEnabled(), "banking starts on by default")
 assert(bank:isStrip8Enabled(), "bank pages require eight enabled MCU strips")
 assert(table.concat(lastArgs," "):find("--enable-bank-pages",1,true))
 assert(not bank:toggleStrip8(), "cannot disable strip8 during bank preview")
@@ -150,4 +155,25 @@ local fresh=make({timer=false})
 assert(fresh:isStrip8Enabled(),
   "eight channels default ON after a new manager instance")
 fresh:shutdown()
+local restart=make({timer=false})
+ready=true
+bridge.bankIndex,bridge.bankStatus=0,1
+assert(restart:start())
+local initial=reloads
+assert(restart:restart() and interrupts>0, "restart must stop workers")
+assert(reloads==initial, "reload must wait for supervisor exit")
+currentTask.done(130,"","")
+assert(reloads==initial+1, "worker exit triggers one reload")
+restart:shutdown()
+local stopped=make({timer=false})
+bridge.bankIndex=1
+assert(not stopped:canRestart(), "bank2 must return to bank1 before restart")
+assert(not stopped:restart(), "unconfirmed bank must not be mislabeled")
+bridge.bankIndex=0
+bridge.bankStatus=0
+assert(not stopped:restart(), "pending bank must not restart")
+bridge.bankStatus=1
+assert(stopped:restart() and reloads==initial+2,
+  "idle restart immediately reloads controller")
+stopped:shutdown()
 print("SCENE2_AUTO_SESSION_TEST=PASS")

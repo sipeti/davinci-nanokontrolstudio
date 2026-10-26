@@ -14,9 +14,9 @@ return function(host, bridge, options)
   end
   local mcuPython = options.mcuPython or (base .. "venv/bin/python3")
   local logPath = options.logPath or (home .. "/Library/Logs/nk-scene2-session.log")
-  local key = "nk-scene2-autostart-enabled"
-  local enabled = not host.settings or host.settings.get(key) ~= false
-  if options.autoEnabled ~= nil then enabled = options.autoEnabled end
+  -- Manual pause is temporary: each Hammerspoon launch begins ready.
+  -- Do not persist a stale "off" state across logins or upgrades.
+  local enabled = options.autoEnabled ~= false
   local ready = options.ready or function() return false end
   local appRunning = options.appRunning or function() return true end
   local clock = options.clock or function()
@@ -28,7 +28,8 @@ return function(host, bridge, options)
   local self = {
     task = nil, log = nil, timer = nil, stopping = false,
     enabled = enabled, retryAt = 0, shutdownRequested = false,
-    lastError = nil, strip8Enabled = true, bankPagesEnabled = false
+    lastError = nil, strip8Enabled = true, bankPagesEnabled = true,
+    restartRequested = false
   }
 
   function self:isRunning()
@@ -97,9 +98,27 @@ return function(host, bridge, options)
 
   function self:pause()
     self.enabled = false
-    if host.settings then host.settings.set(key, false) end
     self:stop()
     if bridge.active then bridge:stop() end
+    return true
+  end
+
+  -- The worker owns MCU bank selection. Reloading while it is in bank 2
+  -- could make the next process incorrectly assume bank 1.
+  function self:canRestart()
+    return not self.bankPagesEnabled or
+      (bridge.bankIndex == 0 and bridge.bankStatus == 1)
+  end
+
+  function self:restart()
+    if self.shutdownRequested or not self:canRestart() then return false end
+    self.restartRequested = true
+    if self.task ~= nil then
+      if self:isRunning() then self:stop() end
+    elseif host.reload then
+      self.restartRequested = false
+      host.reload()
+    end
     return true
   end
 
@@ -163,6 +182,12 @@ return function(host, bridge, options)
       -- Automatic retry is bounded, with fresh pickup on every worker start.
       self.retryAt = clock() + (self.stopping and 1 or 10)
       self.stopping = false
+      -- A menu restart waits for supervisor + child workers to exit.
+      -- Only then replace the Lua interpreter and reconnect MIDI once.
+      if self.restartRequested and host.reload then
+        self.restartRequested = false
+        host.reload()
+      end
     end, function(_, out, errText)
       append(out, errText)
       return true
@@ -191,7 +216,6 @@ return function(host, bridge, options)
 
   function self:resume()
     self.enabled = true
-    if host.settings then host.settings.set(key, true) end
     self.retryAt = 0
     return self:ensureRunning()
   end

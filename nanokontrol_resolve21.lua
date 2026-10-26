@@ -32,7 +32,7 @@ local SYNTHETIC_KEY_GUARD_SECONDS = 0.15
 local syntheticKeyUntil = {space=0,j=0,k=0,l=0}
 local ledEnabled = true
 local ledOutputState, pressedLEDs = {}, {}
-local ledOutputStatus = "meg nem tesztelt"
+local ledOutputStatus = "not tested"
 -- Scene 1 configured button CCs; all cleared on init/disable to avoid stale LEDs.
 local LED_BUTTONS = {21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,
   38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,
@@ -63,12 +63,12 @@ local steps = {
   {"ff",        "FF"},
   {"stop",      "STOP"},
   {"play",      "PLAY"},
-  {"undo",      "nagy REC (UNDO)"},
-  {"trackPrev", "TRACK balra"},
-  {"trackNext", "TRACK jobbra"},
-  {"editSelect","MARKER SET (TRIM nyomva tartva)"},
-  {"trimLeft",  "MARKER balra (-1 frame)"},
-  {"trimRight", "MARKER jobbra (+1 frame)"},
+  {"undo",      "Large REC (UNDO)"},
+  {"trackPrev", "TRACK LEFT"},
+  {"trackNext", "TRACK RIGHT"},
+  {"editSelect","MARKER SET (hold for JOG trim)"},
+  {"trimLeft",  "MARKER LEFT (-1 frame)"},
+  {"trimRight", "MARKER RIGHT (+1 frame)"},
   {"cam1",      "MUTE 1 / CAM1"},
   {"cam2",      "MUTE 2 / CAM2"},
   {"cam3",      "MUTE 3 / CAM3"},
@@ -203,7 +203,7 @@ local function sendLED(cc, on, force, outputChannel)
       {channel=outputChannel, controllerNumber=cc, controllerValue=value})
   end)
   if not ok or result == false then
-    ledOutputStatus = "MIDI output hiba"
+    ledOutputStatus = "MIDI output error"
     hs.printf("[NK LED] SEND_FAILED cc=%d out_channel=%d",cc,outputChannel)
     return false
   end
@@ -242,9 +242,9 @@ if scene2Bridge and type(scene2Bridge.setBankListener) == "function" then
     if status == 1 then
       toast("NK Fairlight bank: "..label, 1.6)
     elseif status == 0 then
-      toast("NK bank valtas: "..label.." (Resolve visszajelzesre var)", 1.8)
+      toast("NK bank switching: "..label.." (waiting for Resolve feedback)", 1.8)
     else
-      toast("NK bank: nincs visszajelzes - federek zarolva", 3.0)
+      toast("NK bank: no Resolve feedback; faders are waiting", 3.0)
     end
   end)
 end
@@ -314,12 +314,12 @@ local function toggleLEDFeedback()
     -- that may have been left on by an earlier external-LED experiment.
     resetLEDs()
     ledEnabled = false
-    toast("NK: LED ki, minden Scene 1 LED nullazva", 2.5)
+    toast("NK: LED feedback OFF; Scene 1 LEDs cleared", 2.5)
   else
     ledEnabled = true
     resetLEDs()
     refreshStateLEDs()
-    toast("NK: LED be (External / csak Scene 1)", 2.5)
+    toast("NK: LED feedback ON (External mode)", 2.5)
   end
 end
 
@@ -330,16 +330,16 @@ end
 local ledProbeRunning = false
 local function ledProbe()
   if ledProbeRunning then
-    hs.printf("[NK LED PROBE] mar fut, varjuk meg a végét")
+    hs.printf("[NK LED PROBE] already running; wait for completion")
     return false
   end
   if not device or not cfg then
-    hs.printf("[NK LED PROBE] NINCS KORG vagy teljes 28/28 kalibracio")
+    hs.printf("[NK LED PROBE] Korg disconnected or calibration incomplete")
     return false
   end
   local cc = ccFromSignal(cfg.buttons.cam1)
   if not cc then
-    hs.printf("[NK LED PROBE] NINCS Scene 1 MUTE1 CC, aktualis: %s",
+    hs.printf("[NK LED PROBE] Scene 1 MUTE1 CC unavailable, current: %s",
       tostring(cfg.buttons.cam1))
     return false
   end
@@ -347,7 +347,7 @@ local function ledProbe()
   hs.printf("[NK LED PROBE] device=%s online=%s midi_in=%s ledEnabled=%s",
     tostring(deviceName),onlineOK and tostring(online) or "unknown",
     tostring(sceneInputChannel()),tostring(ledEnabled))
-  hs.printf("[NK LED PROBE] Figyeld a MUTE 1-et. 1. felvillanas: MIDI channel=1, 2. felvillanas: channel=0 (ALL).")
+  hs.printf("[NK LED PROBE] Watch MUTE1: first flash is MIDI channel=1; second is channel=0 (ALL).")
   local function send(ch,value)
     local ok, result = pcall(function()
       return device:sendCommand("controlChange",
@@ -366,7 +366,7 @@ local function ledProbe()
       hs.timer.doAfter(1.5,function()
         send(0,0)
         ledProbeRunning = false
-        hs.printf("[NK LED PROBE] kesz. Az API true nem bizonyitja a fizikai LED felvillanasat!")
+        hs.printf("[NK LED PROBE] done. A successful API call does not prove the physical LED flashed.")
         -- The probe temporarily changed a physical LED; restore it
         -- even when our software-side CC cache claims it is unchanged.
         refreshStateLEDs(true)
@@ -475,7 +475,7 @@ local function changePage(page)
   local ok, result = pcall(function()
     return app:selectMenuItem({"Workspace","Switch to Page",page})
   end)
-  if not ok or not result then toast("NK: " .. page .. " page menu nem elerheto") end
+  if not ok or not result then toast("NK: " .. page .. " page menu unavailable") end
 end
 local function action(name)
   if name == "cycle" then
@@ -579,18 +579,18 @@ end
 
 local function stepText()
   local prompt
-  if step == 1 then prompt = "Forditsd a JOG-ot JOBBRA"
-  elseif step == 2 then prompt = "Forditsd a JOG-ot BALRA"
+  if step == 1 then prompt = "Turn the JOG wheel CLOCKWISE"
+  elseif step == 2 then prompt = "Turn the JOG wheel COUNTERCLOCKWISE"
   elseif step == TOTAL then
-    prompt = "FADER 1 (bal szelso TOLOPOTI): teljesen LE, majd FEL (CC 2)"
-  else prompt = "Nyomd meg ES ENGEDD EL: " .. steps[step-2][2]
+    prompt = "SLIDER 1 (leftmost fader): move fully DOWN, then UP (CC2)"
+  else prompt = "Press and RELEASE: " .. steps[step-2][2]
   end
   lastLearnProblem = nil
   toast("NK SETUP " .. step .. "/" .. TOTAL .. "\n" .. prompt, 8)
   title()
 end
 local function beginLearn()
-  if not device then toast("NK: nincs nanoKONTROL Studio USB MIDI"); return end
+  if not device then toast("NK: nanoKONTROL Studio USB MIDI not found"); return end
   stop()
   learning, pending, step = true,nil,1
   lastLearnValues = {}
@@ -600,7 +600,7 @@ end
 local function cancelLearn()
   learning, draft, pending, step = false,nil,nil,0
   title()
-  toast("NK: a regi beallitas megmaradt; nem tortent mentés",3)
+  toast("NK: existing calibration preserved; no changes saved",3)
 end
 local function finishLearn()
   assert(draft.wheel and draft.faderShuttle, "incomplete calibration")
@@ -615,7 +615,7 @@ local function finishLearn()
   mode, speed = "JOG",0
   refreshStateLEDs()
   title()
-  toast("NK: TELJES 28/28 kalibracio KESZ (Scene 1)!",6)
+  toast("NK: all 28 calibration steps complete (Scene 1)!",6)
 end
 
 local function learn(command,meta)
@@ -627,12 +627,12 @@ local function learn(command,meta)
     if command ~= "controlChange" then return end
     if not signal:match("^cc:%d+:82$") then
       if signal:match("^cc:%d+:86$") then
-        warnLearnOnce("cc86", "CC86 erkezik! A Korg meg Continuous modban lehet. Scene 1 -> Communication -> Write Scene Data.")
+        warnLearnOnce("cc86", "Received CC86: Korg may still be in Continuous mode. Set Sign Magnitude / CC82, then Write Scene Data.")
       end
       return
     end
     if value < 1 or value > 64 then
-      warnLearnOnce("wrongCW", "JOG JOBBRA: CC82 1..64 vart, kapott: " .. signal .. "=" .. value)
+      warnLearnOnce("wrongCW", "JOG CLOCKWISE: expected CC82 value 1..64, received: " .. signal .. "=" .. value)
       return
     end
     draft.wheel = signal
@@ -643,12 +643,12 @@ local function learn(command,meta)
   if step == 2 then
     if signal ~= draft.wheel then
       if command == "controlChange" and signal:match("^cc:%d+:86$") then
-        warnLearnOnce("cc86", "CC86 erkezik! Varjuk a CC82-t. Korg Editor -> Communication -> Write Scene Data.")
+        warnLearnOnce("cc86", "Received CC86: expected CC82. Use Korg Editor -> Communication -> Write Scene Data.")
       end
       return
     end
     if value < 65 or value > 127 then
-      warnLearnOnce("wrongCCW", "JOG BALRA: CC82 65..127 vart, kapott: " .. signal .. "=" .. value .. ". Ird ki a Scene 1-et a Korgra!")
+      warnLearnOnce("wrongCCW", "JOG COUNTERCLOCKWISE: expected CC82 value 65..127, received: " .. signal .. "=" .. value .. ". Write Scene 1 to the Korg!")
       return
     end
     step=3
@@ -681,7 +681,7 @@ local function learn(command,meta)
     if not buttonPress(command,value) or signal == draft.wheel then return end
     for _,registered in pairs(draft.buttons) do
       if registered == signal then
-        toast("NK: ez a gomb mar be van tanitva: " .. signal,2)
+        toast("NK: button already assigned: " .. signal,2)
         return
       end
     end
@@ -819,95 +819,113 @@ end
 
 menu:setMenu(function()
   local bankLabel = "A1-A8"
-  if scene2Bridge and scene2Session and
-    scene2Session:isBankPagesEnabled() then
+  if scene2Bridge and scene2Session and scene2Session:isBankPagesEnabled() then
     bankLabel = scene2Bridge.bankIndex == 1 and "A9-A16" or "A1-A8"
     if scene2Bridge.bankStatus ~= 1 then
-      bankLabel = bankLabel.." (SZINKRON...)"
+      bankLabel = bankLabel.." (SYNCING)"
     end
   end
-  -- Daily menu is deliberately small. Calibration and raw MIDI state are
-  -- still accessible, but they must not crowd the working mixer controls.
   local diagnostics = {
-    {title="Eszkoz: "..(deviceName or "nem csatlakozik")..
-      " | Assignable", disabled=true},
-    {title=cfg and "Kalibracio: 28/28 OK" or
-      "Kalibracio: TELJES BETANITAS SZUKSEGES", disabled=true},
-    {title=learning and "Betanitas: "..step.."/28 | utolso MIDI: "..lastMidi or
-      "JOG: "..mode.." | utolso MIDI: "..lastMidi, disabled=true},
-    {title="LED (External): "..(ledEnabled and "BE" or "KI")..
-      " | MIDI kimenet: "..ledOutputStatus, disabled=true},
-    {title="Scene 2 MIDI bridge: " ..
-      (scene2Bridge and (scene2Bridge.active and "BE" or "KI") or
-        "NINCS TELEPITVE"),
-      fn=function()
-        -- Manual legacy bridge operation only when no session manager exists.
-        if not scene2Bridge or scene2Session then return end
-        if scene2Bridge.active then scene2Bridge:stop()
-        else scene2Bridge:start() end
-      end,
-      disabled=not scene2Bridge or scene2Session ~= nil or
-        not device or not cfg or learning},
+    {title="Device: "..(deviceName or "Disconnected").." | Assignable",
+      disabled=true},
+    {title=cfg and "Calibration: 28/28 OK" or
+      "Calibration: Required", disabled=true},
+    {title=learning and "Calibrating: "..step.."/28 | MIDI: "..lastMidi or
+      "JOG: "..mode.." | Last MIDI: "..lastMidi, disabled=true},
+    {title="LED (External): "..(ledEnabled and "ON" or "OFF")..
+      " | MIDI output: "..ledOutputStatus, disabled=true},
+    {title="Scene 2 input bridge: " ..
+      (scene2Bridge and (scene2Bridge.active and "Running" or "Stopped") or
+        "Not installed"),
+      disabled=true},
     {title="-"},
-    {title="TELJES UJRABETANITAS (28 lepes)", fn=beginLearn,
-      disabled=not device},
-    {title="Betanitas MEGSZAKITASA", fn=cancelLearn,
-      disabled=not learning},
+    {title="Recalibrate all 28 controls", fn=beginLearn, disabled=not device},
+    {title="Cancel calibration", fn=cancelLearn, disabled=not learning},
   }
-  local settings = {
+  local service = {
     {title=scene2Session and
-      (scene2Session:isEnabled() and
-        "Scene 2: AUTOMATIKUS BE (katt: SZUNET)" or
-        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
-      "Scene 2: manager nincs telepitve",
+      (scene2Session:isEnabled() and "Pause Fairlight workers" or
+        "Resume Fairlight workers") or "Fairlight workers unavailable",
       fn=function() if scene2Session then scene2Session:toggle() end end,
       disabled=not scene2Session},
     {title=scene2Session and
-      ("Bank lapozas (SELECT 7/8): " ..
-        (scene2Session:isBankPagesEnabled() and "BE (katt: KI)" or
-          "KI (katt: BE)")) or "Bank lapozas nem elerheto",
+      ("8-channel bank paging: " ..
+        (scene2Session:isBankPagesEnabled() and "ON (click to disable)" or
+          "OFF (click to enable)")) or "Bank paging unavailable",
       fn=function()
         if scene2Session then scene2Session:toggleBankPages() end
       end,
       disabled=not scene2Session or not scene2Session:isEnabled()},
     {title=scene2Session and
-      ("8. MCU csatorna: " ..
-        (scene2Session:isStrip8Enabled() and "BE (katt: KI)" or
-          "KI (katt: BE)")) or
-      "8. MCU csatorna: nem elerheto",
+      ("Mixer channel 8: " ..
+        (scene2Session:isStrip8Enabled() and "ON (click to disable)" or
+          "OFF (click to enable)")) or "Mixer channel 8 unavailable",
       fn=function()
         if scene2Session then scene2Session:toggleStrip8() end
       end,
       disabled=not scene2Session or not scene2Session:isEnabled()
         or scene2Session:isBankPagesEnabled()},
-    {title="LED visszajelzes BE/KI (KI minden LED-et torol)",
+    {title="LED feedback: "..(ledEnabled and "ON (click to disable)" or
+      "OFF (click to enable)"),
       fn=toggleLEDFeedback, disabled=not cfg or not device},
-    {title=enabled and "Vezerles SZUNETELTETESE" or
-      "Vezerles BEKAPCSOLASA",
+    {title=enabled and "Disable all Korg control" or
+      "Enable all Korg control",
       fn=function()
         if enabled then stop() end
         enabled = not enabled
         title()
       end},
     {title="-"},
-    {title="Diagnosztika es kalibracio", menu=diagnostics},
+    {title="MIDI diagnostics and calibration", menu=diagnostics},
   }
+  local restarting = scene2Session and not scene2Session:canRestart()
   return {
-    {title="Korg: "..(deviceName or "nem csatlakozik").." | "..
-      (cfg and "28/28 OK" or "TELJES BETANITAS SZUKSEGES"),
+    {title="Korg: "..(deviceName or "Disconnected").." | "..
+      (cfg and "28/28 calibrated" or "Calibration required"),
       disabled=true},
     {title=scene2Session and
       (scene2Session:isEnabled() and
         (scene2Session:isRunning() and
-          ("Scene 2: FUT | "..bankLabel) or
-          "Scene 2: AUTOMATIKUS | INDULASRA VAR") or
-        "Scene 2: SZUNETEL") or
-      "Scene 2: manager nincs telepitve",
+          ("Fairlight: Running | "..bankLabel) or
+          "Fairlight: Waiting for Resolve") or
+        "Fairlight: Paused") or "Fairlight: Not installed",
       disabled=true},
-    {title="Beallitasok", menu=settings},
+    {title=restarting and "Restart Controller (first select A1-A8)" or
+      "Restart Controller",
+      fn=function()
+        if scene2Session then
+          if not scene2Session:restart() then
+            toast("NK: Select A1-A8 and wait for bank confirmation before restart.",4)
+          end
+        else
+          hs.reload()
+        end
+      end,
+      disabled=restarting},
+    {title="Service & Diagnostics", menu=service},
   }
 
 end)
+-- Optional local CLI updater: stop workers before copying new scripts,
+-- then reload the whole controller only when installation has finished.
+if hs.urlevent and type(hs.urlevent.bind) == "function" then
+  hs.urlevent.bind("nk-controller-pause-for-update", function()
+    if scene2Session and scene2Session:canRestart() then
+      scene2Session:pause()
+    else
+      toast("NK: Return to confirmed bank A1-A8 before updating.",4)
+    end
+  end)
+  hs.urlevent.bind("nk-controller-restart", function()
+    if scene2Session then
+      if not scene2Session:restart() then
+        toast("NK: Return to confirmed bank A1-A8 before restarting.",4)
+      end
+    else
+      hs.reload()
+    end
+  end)
+end
 hs.midi.deviceCallback(function() attach() end)
 attach()
 if scene2Session then

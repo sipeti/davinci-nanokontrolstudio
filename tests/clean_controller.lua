@@ -4,7 +4,8 @@ local saved, midiCallback, keyboardCallback, keyboardTap = nil, nil, nil, nil
 local nowSeconds = 1000
 local SPACE_KEYCODE = 49
 local TRANSPORT_KEYCODES = {space=SPACE_KEYCODE,j=38,k=40,l=37}
-local alerts, midiLogs = {}, {}
+local alerts, midiLogs, urlEvents = {}, {}, {}
+local reloadCount = 0
 -- Simulated device with a scene-local LED memory and one working output
 -- route per scene. Unlike the Korg, the mock can inspect both states.
 local activeHardwareScene = 1
@@ -35,6 +36,8 @@ hs = {
   },
   alert={show=function(msg) alerts[#alerts+1]=msg end},
   printf=function(fmt,...) midiLogs[#midiLogs+1]=string.format(fmt, ...) end,
+  reload=function() reloadCount=reloadCount+1 end,
+  urlevent={bind=function(name,callback) urlEvents[name]=callback end},
   application={frontmostApplication=function() return frontmost end},
   eventtap={
     event={types={keyDown=10},properties={keyboardEventAutorepeat=99}},
@@ -168,31 +171,35 @@ local function menuAction(label)
 end
 assert(menus.title=="NK JOG")
 local daily = menus.items()
-assert(#daily==3, "Daily menu must only show status, Scene 2, settings")
+assert(#daily==4, "Daily menu: device, bank, restart, service")
 assert(daily[1].disabled==true and
-  daily[1].title:find("Korg:",1,true), "Status should be one summary line")
-assert(daily[2].title:find("Scene 2:",1,true) and daily[2].disabled,
-  "Daily Scene 2 state is informational; pause is under Settings")
-assert(type(daily[3].menu[1].fn)=="function"
-  and daily[3].menu[1].title:find("Scene 2:",1,true),
-  "Manual Scene 2 pause/resume must remain reachable in Settings")
-assert(daily[3].title=="Beallitasok" and type(daily[3].menu)=="table",
-  "Advanced actions must be inside a submenu")
-assert(type(daily[3].menu[#daily[3].menu].menu)=="table",
-  "Calibration and diagnostics must remain available as second submenu")
-assert(findMenuAction(daily,"TELJES UJRABETANITAS"),
-  "Relearn must remain reachable, never deleted")
-assert(findMenuAction(daily,"LED visszajelzes BE/KI"),
-  "LED off must remain reachable without changing its behavior")
-assert(findMenuAction(daily,"Bank lapozas"),
-  "Bank navigation toggle must be available in settings only")
+  daily[1].title:find("Korg:",1,true), "Device status is read-only")
+assert(daily[2].title:find("Fairlight:",1,true) and daily[2].disabled,
+  "Fairlight bank status must be read-only")
+assert(daily[3].title=="Restart Controller" and
+  type(daily[3].fn)=="function", "One-click restart must be present")
+assert(daily[4].title=="Service & Diagnostics" and
+  type(daily[4].menu)=="table", "Service is one compact submenu")
+assert(type(daily[4].menu[#daily[4].menu].menu)=="table",
+  "Calibration remains under service diagnostics")
+assert(findMenuAction(daily,"Recalibrate all 28 controls"),
+  "Calibration must remain reachable")
+assert(findMenuAction(daily,"LED feedback:"),
+  "LED diagnostics must remain reachable")
+assert(findMenuAction(daily,"8-channel bank paging: ON"),
+  "Bank paging should be on at login")
+assert(findMenuAction(daily,"Pause Fairlight workers"),
+  "Service-only pause remains available")
+assert(type(urlEvents["nk-controller-pause-for-update"])=="function"
+  and type(urlEvents["nk-controller-restart"])=="function",
+  "Local update workflow must register both callbacks")
 -- Old v1.2 settings deliberately not reused as a valid v1.3 configuration.
 local exists=false
 for _,item in ipairs(menus.items()) do
-  if item.title:find("TELJES BETANITAS SZUKSEGES",1,true) then exists=true end
+  if item.title:find("Calibration required",1,true) then exists=true end
 end
 assert(exists,"must require clean recalibration")
-menuAction("TELJES UJRABETANITAS")
+menuAction("Recalibrate all 28 controls")
 assert(menus.title=="NK SETUP 1/28")
 -- Regression: a CC86 Continuous jog's clockwise values could previously
 -- masquerade as CC82 Sign Magnitude and leave setup stuck on step 2/28.
@@ -212,7 +219,7 @@ cc(82,1)
 assert(menus.title=="NK SETUP 2/28")
 cc(82,24)
 assert(menus.title=="NK SETUP 2/28","clockwise magnitude must not pass CCW")
-assert(alerts[#alerts]:find("JOG BALRA",1,true),"wrong CCW magnitude must be diagnosed")
+assert(alerts[#alerts]:find("JOG COUNTERCLOCKWISE",1,true),"wrong CCW magnitude must be diagnosed")
 cc(82,65)
 assert(menus.title=="NK SETUP 3/28")
 -- 25 real button CCs in learn order, captured by the Korg MIDI logger.
@@ -528,9 +535,9 @@ checkTransportLEDs(false,true,false,false,"Korg STOP no double count")
 
 -- Complete one-shot relearn must preserve old saved config if interrupted.
 local original=saved
-menuAction("TELJES UJRABETANITAS")
+menuAction("Recalibrate all 28 controls")
 cc(82,1)
-menuAction("MEGSZAKITASA")
+menuAction("Cancel calibration")
 assert(saved==original,"aborted wizard must not overwrite settings")
 -- Unbound SOLO CC is still a momentary LED, without triggering a shortcut.
 local keyN=#keys
@@ -571,7 +578,7 @@ assert(latestLED(21)==0,"MUTE 1 released LED")
 
 -- The one LED menu toggle must turn *all* 44 LEDs off, and suspend feedback.
 local after=#outputs
-menuAction("LED visszajelzes BE/KI")
+menuAction("LED feedback:")
 assert(#outputs==after+64 and allLEDBlanked(after+1,after+44),
   "LED OFF clears Scene1's 44 buttons plus 4x5 shared LEDs")
 for outputChannel=1,4 do
@@ -583,7 +590,7 @@ end
 after=#outputs
 cc(21,127);cc(21,0)
 assert(#outputs==after,"LED disabled must send no ACK")
-menuAction("LED visszajelzes BE/KI")
+menuAction("LED feedback:")
 assert(#outputs>=after+64 and latestLED(80)==0,
   "LED enable should refresh all five scene routes after a clean reset")
 
@@ -856,18 +863,24 @@ cc(80,127,5);cc(80,0,5)
 assert(#keys==0 and #outputs==beforeInvalid,
   "Unknown MIDI channel outside the five scenes must be ignored")
 -- The heartbeat must do nothing while LEDs are disabled or calibrating.
-menuAction("LED visszajelzes BE/KI")
+menuAction("LED feedback:")
 local afterDisable=#outputs
 tickLED()
 assert(#outputs==afterDisable,"heartbeat MUST respect LED OFF")
-menuAction("LED visszajelzes BE/KI")
-menuAction("TELJES UJRABETANITAS")
+menuAction("LED feedback:")
+menuAction("Recalibrate all 28 controls")
 local duringLearn=#outputs
 tickLED()
 assert(#outputs==duringLearn,"heartbeat MUST skip 28-step learning")
-menuAction("MEGSZAKITASA")
+menuAction("Cancel calibration")
 
 
+-- Restart reloads the Lua controller; it does not alter calibration.
+local beforeReload=reloadCount
+menuAction("Restart Controller")
+assert(reloadCount==beforeReload+1, "manual restart uses hs.reload")
+urlEvents["nk-controller-restart"]()
+assert(reloadCount==beforeReload+2, "updater restarts the same runtime")
 -- The physical 2026-10-23 test: only LED_PROBE channel=0 illuminated.
 -- Output 0 (Scene 1) carries all learned momentary LEDs. Out 1..4 must
 -- never receive a Scene1-only MUTE/SELECT/REC CC, just five shared statuses.
