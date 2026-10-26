@@ -1,6 +1,6 @@
 # Release notes
 
-## 1.6.0-rc1 — English UI and restart/update workflow (under review)
+## 1.6.0-rc1 — English UI and restart/update workflow (hardware verification pending)
 
 - Runs from Hammerspoon's normal macOS login launch; no new daemon or
   permission prompt. When Resolve is absent, the two Python workers stop.
@@ -19,8 +19,14 @@
 - Corrects stale documentation and version metadata. No change to the
   proven mixer pitchwheel, MUTE/SOLO, pickup protocol or Korg factory CCs.
 
-This release candidate is **not yet physically accepted or merged**.
-The full suite and first Mac update/restart must pass before tagging 1.6.0.
+The 2026-10-26 macOS operator log confirms two successful installs, read-only
+doctor checks (Python 3.15, MIDI packages and both IAC buses), and a subsequent
+`update.command` that reported `NK_UPDATE=PASS` and requested a Hammerspoon
+restart. A restart request is not proof of a successful post-reload session:
+live A1–A8/A9–A16 banking and Resolve quit/reopen still need operator
+confirmation before a final 1.6.0 tag. All copied runtime modules are now
+checked against the installer manifest, and dry-run remains usable while
+the controller is active.
 
 ## 1.5 — accepted on hardware (merged PRs #17 and #18)
 

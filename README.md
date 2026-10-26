@@ -5,9 +5,10 @@ Hammerspoon owns the physical Korg MIDI connection. Two Python workers handle
 Fairlight MCU faders/MUTE/SOLO and clip gain. The Korg stays in **Assignable
 Mode**, not HUI mode.
 
-> Version in this branch: **1.6.0 release candidate**. The accepted
-> 16-channel controller is on `main`; the restart and UI cleanup are
-> pending CI and hardware acceptance. Historical research is preserved.
+> **1.6.0 release candidate.** The accepted 16-channel controller is
+> preserved; the restart/update workflow has CI coverage and a successful
+> macOS install/update-request log. Post-reload hardware verification remains
+> pending. Historical research is preserved.
 
 ## Daily operation
 

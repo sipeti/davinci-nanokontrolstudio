@@ -29,7 +29,8 @@ for name in $RUNTIME; do
   [ -f "$ROOT/scripts/$name" ] || fail "missing scripts/$name"
 done
 [ -f "$ROOT/requirements-scene2.txt" ] || fail "missing MIDI requirements"
-if pgrep -fl 'scene2_combined_bench.py|scene2_continuous_clip_gain.py|fairlight_mcu_continuous.py' >/dev/null 2>&1; then
+# A dry-run never interrupts or mutates a live Scene 2 session.
+if [ "$DRY" = 0 ] && pgrep -fl 'scene2_combined_bench.py|scene2_continuous_clip_gain.py|fairlight_mcu_continuous.py' >/dev/null 2>&1; then
   fail "Scene 2 running: use NK JOG > Service & Diagnostics > Pause Fairlight workers, or update.command"
 fi
 PYTHON="$(printenv NK_RESOLVE_PYTHON 2>/dev/null || true)"

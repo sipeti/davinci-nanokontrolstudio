@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Long-running, opt-in Scene 2 rotary -> Resolve *clip* AudioVolume bridge.
+"""Long-running Scene 2 rotary -> Resolve *clip* AudioVolume bridge.
 
-Default READ_ONLY. Writable mode needs an explicitly named project,
-a confirmed backup, stopped playback and no gain keyframes/automation.
-Non-test projects require a separate per-session opt-in.
-Hammerspoon's existing MIDI callback is the sole input owner; its optional
-Scene 2 bridge publishes timestamped local input events and 0.5 s heartbeats.
-This script never claims to change Fairlight MIXER track faders or mute/solo.
+Standalone CLI defaults to READ_ONLY; manually authorized writing is guarded
+by project/clip checks and explicit test-mode consent. The installed
+Hammerspoon supervisor uses follow-active-project mode with fresh setter-bound
+validation and readback. Stop playback and avoid clip gain automation.
+Hammerspoon owns physical Korg input and publishes local MIDI events.
+This module never controls Fairlight MIXER faders or mute/solo.
 """
 import argparse
 import fcntl

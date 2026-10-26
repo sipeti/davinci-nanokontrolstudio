@@ -46,16 +46,62 @@ class PackageInstallTest(unittest.TestCase):
             fake_uname = bin_dir / "uname"
             fake_uname.write_text("#!/bin/sh\necho Darwin\n")
             fake_uname.chmod(0o755)
+            # Simulate live workers: dry-run must never ask them to stop.
+            fake_pgrep = bin_dir / "pgrep"
+            fake_pgrep.write_text("#!/bin/sh\nexit 0\n")
+            fake_pgrep.chmod(0o755)
             env = dict(os.environ,
                        HOME=str(home),
                        PATH=str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
                        NK_RESOLVE_PYTHON=os.environ.get("NK_RESOLVE_PYTHON", "/usr/bin/python3"))
-            out = subprocess.run(["bash", str(INSTALL), "--dry-run"],
-                                 env=env, capture_output=True, text=True)
-            self.assertEqual(out.returncode, 0, out.stderr)
-            self.assertIn("NK_INSTALL=DRY_RUN", out.stdout)
-            self.assertEqual(list(home.iterdir()), [])
+            for script in (INSTALL, UPDATE):
+                out = subprocess.run(["bash", str(script), "--dry-run"],
+                                     env=env, capture_output=True, text=True)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertIn("NK_INSTALL=DRY_RUN", out.stdout)
+                self.assertEqual(list(home.iterdir()), [])
 
+
+
+    def test_updater_verifies_all_manifest_runtime_files(self):
+        # The original updater compared only four of eight Python modules.
+        # Force one of the other four to fail comparison after install;
+        # the updater must refuse success, without needing macOS hardware.
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / "home"
+            mockbin = Path(temp) / "mockbin"
+            home.mkdir()
+            mockbin.mkdir()
+            for name, body in {
+                "uname": "#!/bin/sh\\necho Darwin\\n",
+                "pgrep": "#!/bin/sh\\nexit 1\\n",
+                "fakepython": (
+                    '#!/bin/sh\\n'
+                    'if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then\\n'
+                    '  mkdir -p "$3/bin"\\n'
+                    '  cp "$0" "$3/bin/python3"\\n'
+                    'fi\\n'
+                    'exit 0\\n'
+                ),
+                "cmp": (
+                    '#!/bin/sh\\n'
+                    'case "$2" in *scene2_audio_roundtrip_probe.py) exit 1;; esac\\n'
+                    'exec /usr/bin/cmp "$@"\\n'
+                ),
+            }.items():
+                script = mockbin / name
+                script.write_text(body.replace("\\\\n", "\\n"))
+                script.chmod(0o755)
+            env = dict(os.environ, HOME=str(home),
+                       NK_RESOLVE_PYTHON=str(mockbin / "fakepython"),
+                       PATH=str(mockbin) + os.pathsep + os.environ.get("PATH", ""))
+            out = subprocess.run(["bash", str(UPDATE)], env=env,
+                                 capture_output=True, text=True)
+            self.assertNotEqual(out.returncode, 0)
+            self.assertIn(
+                "verification failed: scene2_audio_roundtrip_probe.py",
+                out.stderr)
+            self.assertNotIn("NK_UPDATE=PASS", out.stdout)
 
     def test_install_restore_and_modified_file_protection(self):
         # Fake only macOS detection and Python dependency commands. Test
@@ -107,6 +153,15 @@ class PackageInstallTest(unittest.TestCase):
                 (ROOT / "scripts/fairlight_mcu_continuous.py").read_bytes()
             )
             self.assertTrue((base / "active-backup").exists())
+            active_backup = Path((base / "active-backup").read_text().strip())
+            runtime_manifests = sorted((active_backup / "after").glob(
+                "script-*.sha256"))
+            self.assertEqual(len(runtime_manifests), 8)
+            for manifest in runtime_manifests:
+                name = manifest.name.removeprefix("script-").removesuffix(
+                    ".sha256")
+                self.assertEqual((base / "scripts" / name).read_bytes(),
+                                 (ROOT / "scripts" / name).read_bytes())
             # Uninstall fails safely if the user changed any tracked file.
             (hs / "init.lua").write_text("-- changed after install\n")
             refused = subprocess.run(["bash", str(REMOVE)],

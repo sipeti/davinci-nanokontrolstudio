@@ -1,4 +1,4 @@
--- Scene 2 v1.5: automatic, quiet Hammerspoon session lifecycle.
+-- Scene 2 v1.6: automatic, quiet Hammerspoon session lifecycle.
 -- Exactly one physical Korg MIDI listener; no dialog or project-name input.
 return function(host, bridge, options)
   assert(type(host) == "table" and type(bridge) == "table")

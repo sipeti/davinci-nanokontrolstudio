@@ -1,8 +1,8 @@
--- Optional Scene2 event bridge for existing nanoKONTROL MIDI owner.
+-- Scene 2 event bridge for the single Hammerspoon nanoKONTROL MIDI owner.
 -- 1 physical Korg hs.midi callback. No Resolve setters, no second listener.
--- Emits clip CC13..20 (C) and candidate MCU faders/buttons (M).
--- Only Fairlight->IAC host feedback can set Scene2 mixer LED states.
--- OFF by default in NK JOG menu. Python consumers are separate processes.
+-- Emits clip CC13..20 (C) and MCU mixer events (M).
+-- Only Fairlight->IAC host feedback can set Scene 2 mixer LED states.
+-- Activated automatically with the Scene 2 workers when Resolve is ready.
 return function(host, isReady)
   assert(type(host) == "table" and type(isReady) == "function")
   local bridge = {

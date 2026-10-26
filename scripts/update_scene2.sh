@@ -58,10 +58,22 @@ for file in nanokontrol_resolve21.lua scene2_clip_gain_bridge.lua scene2_session
   cmp -s "$ROOT/$file" "$HS/$file" ||
     fail "verification failed: $file"
 done
-for file in fairlight_mcu_bridge.py fairlight_mcu_continuous.py scene2_combined_bench.py scene2_continuous_clip_gain.py; do
-  cmp -s "$ROOT/scripts/$file" "$BASE/scripts/$file" ||
-    fail "verification failed: $file"
+# The installer records every copied runtime module in its backup manifest.
+# Verify every one of them; do not maintain a second, incomplete file list.
+[ -f "$BASE/active-backup" ] || fail "active installation manifest missing"
+BACK=$(cat "$BASE/active-backup")
+case "$BACK" in "$BASE"/backups/*) ;; *) fail "unexpected installation manifest path";; esac
+verified=0
+for manifest in "$BACK"/after/script-*.sha256; do
+  [ -f "$manifest" ] || continue
+  name=${manifest##*/}
+  name=${name#script-}
+  name=${name%.sha256}
+  cmp -s "$ROOT/scripts/$name" "$BASE/scripts/$name" ||
+    fail "verification failed: $name"
+  verified=$((verified + 1))
 done
+[ "$verified" -gt 0 ] || fail "no installed Python runtime scripts to verify"
 if [ "$hs_running" = 1 ]; then
   open -g 'hammerspoon://nk-controller-restart' ||
     fail "files updated, but automatic restart request failed; use Hammerspoon > Reload Config"
