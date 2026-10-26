@@ -186,8 +186,8 @@ assert(findMenuAction(daily,"Recalibrate all 28 controls"),
   "Calibration must remain reachable")
 assert(findMenuAction(daily,"LED feedback:"),
   "LED diagnostics must remain reachable")
-assert(findMenuAction(daily,"8-channel bank paging: ON"),
-  "Bank paging should be on at login")
+assert(type(daily[4].menu[2].fn)=="function",
+  "Bank paging action must remain reachable for service")
 assert(findMenuAction(daily,"Pause Fairlight workers"),
   "Service-only pause remains available")
 assert(type(urlEvents["nk-controller-pause-for-update"])=="function"

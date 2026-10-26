@@ -8,15 +8,24 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / "scripts" / "install_scene2_menu.sh"
 REMOVE = ROOT / "scripts" / "uninstall_scene2.sh"
+UPDATE = ROOT / "scripts" / "update_scene2.sh"
 
 
 class PackageInstallTest(unittest.TestCase):
     def test_help_is_safe_even_without_macos(self):
-        for script in (INSTALL, REMOVE):
+        for script in (INSTALL, REMOVE, UPDATE):
             out = subprocess.run(["bash", str(script), "--help"],
                                  capture_output=True, text=True)
             self.assertEqual(out.returncode, 0, out.stderr)
             self.assertIn("Usage", out.stdout)
+
+    def test_update_unknown_option_is_non_mutating(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = dict(os.environ, HOME=temp)
+            out = subprocess.run(["bash", str(UPDATE), "--unexpected"],
+                                 env=env, capture_output=True, text=True)
+            self.assertNotEqual(out.returncode, 0)
+            self.assertEqual(list(Path(temp).iterdir()), [])
 
     def test_unknown_option_rejected_without_modifying_home(self):
         with tempfile.TemporaryDirectory() as temp:

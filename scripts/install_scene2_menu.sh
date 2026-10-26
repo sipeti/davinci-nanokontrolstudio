@@ -10,7 +10,7 @@ fail() { printf 'NK_INSTALL=BLOCKED: %s\n' "$*" >&2; exit 1; }
 usage() {
   echo 'Usage: sh install.command [--dry-run] [--force]'
   echo 'Backs up existing Hammerspoon files; never resets Korg calibration.'
-  echo 'Stop any Scene 2 session before installing.'
+  echo 'Stop the Scene 2 workers before installing, or use update.command for automatic stop/upgrade/restart.'
 }
 for arg in "$@"; do
   case "$arg" in
@@ -30,7 +30,7 @@ for name in $RUNTIME; do
 done
 [ -f "$ROOT/requirements-scene2.txt" ] || fail "missing MIDI requirements"
 if pgrep -fl 'scene2_combined_bench.py|scene2_continuous_clip_gain.py|fairlight_mcu_continuous.py' >/dev/null 2>&1; then
-  fail "Scene 2 running: use NK JOG STOP first"
+  fail "Scene 2 running: use NK JOG > Service & Diagnostics > Pause Fairlight workers, or update.command"
 fi
 PYTHON="$(printenv NK_RESOLVE_PYTHON 2>/dev/null || true)"
 if [ -z "$PYTHON" ]; then
@@ -101,6 +101,6 @@ checksum "$HS/init.lua" > "$BACK/after/init.lua.sha256"
 # Only advertise a complete install after every copy succeeded.
 printf '%s\n' "$BACK" > "$BASE/active-backup"
 printf 'NK_INSTALL=PASS\nBACKUP=%s\n' "$BACK"
-echo 'Hammerspoon > Reload Config. Scene 2 starts automatically with Resolve.'
-echo 'NK JOG > Scene 2: AUTOMATIKUS / SZUNET controls auto-session.'
-echo 'No Korg relearn and no hardware rewrite.'
+echo 'Hammerspoon > Reload Config; NK JOG > Restart Controller is available afterward.'
+echo 'The controller starts automatically on login and follows Resolve; bank paging is ON.'
+echo 'No Korg relearn or hardware rewrite is needed.'

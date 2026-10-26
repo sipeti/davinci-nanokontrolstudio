@@ -15,7 +15,7 @@ BACK="$(cat "$BASE/active-backup")"
 case "$BACK" in "$BASE"/backups/*) ;; *) fail "unexpected backup path";; esac
 [ -d "$BACK/after" ] || fail "incomplete backup"
 if pgrep -fl 'scene2_combined_bench.py|scene2_continuous_clip_gain.py|fairlight_mcu_continuous.py' >/dev/null 2>&1; then
-  fail "Scene 2 active: STOP via NK JOG first"
+  fail "Scene 2 active: pause workers from NK JOG > Service & Diagnostics first"
 fi
 checksum() { shasum -a 256 "$1" | awk '{print $1}'; }
 verify() {

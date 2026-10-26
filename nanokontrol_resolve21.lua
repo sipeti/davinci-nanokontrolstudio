@@ -912,6 +912,12 @@ if hs.urlevent and type(hs.urlevent.bind) == "function" then
   hs.urlevent.bind("nk-controller-pause-for-update", function()
     if scene2Session and scene2Session:canRestart() then
       scene2Session:pause()
+      -- Local one-command updater waits for this acknowledgement, then
+      -- separately waits for the Python supervisor and children to exit.
+      local cache = (os.getenv("HOME") or "")..
+        "/Library/Caches/nk-scene2-update-paused"
+      local f = io.open(cache,"w")
+      if f then f:write("paused\n"); f:close() end
     else
       toast("NK: Return to confirmed bank A1-A8 before updating.",4)
     end

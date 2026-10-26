@@ -56,7 +56,7 @@ return function(host, bridge, options)
       (bridge.bankIndex ~= 0 or bridge.bankStatus ~= 1) then
       host.printf("[NK BANK] Return to confirmed A1-A8 with SELECT7 before disabling bank pages")
       if host.alert then
-        host.alert.show("NK: elobb SELECT 7 -> A1-A8, majd bank lapozas KI", 4)
+        host.alert.show("NK: select confirmed A1-A8 before disabling bank paging", 4)
       end
       return false
     end

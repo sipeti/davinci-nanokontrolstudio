@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Manually armed Scene 2 runtime: MCU mixer + Resolve clip gain.
+"""Scene 2 runtime: Fairlight MCU mixer and per-clip gain.
 
-Two independent workers tail one Hammerspoon event file. Hammerspoon
-remains the only physical Korg listener. No implicit audio writes or
-auto-start: the caller must explicitly select an exact approved project.
+The Hammerspoon session manager starts both workers when Resolve is ready.
+One physical Korg MIDI listener publishes events to the two workers.
+Finite manual research mode still uses explicit test-project consent.
 """
 import argparse
 import os
@@ -24,12 +24,12 @@ def parser():
     p = argparse.ArgumentParser(description="Finite combined Scene 2 hardware bench")
     p.add_argument("--seconds", type=int, default=90)
     p.add_argument("--auto-run", action="store_true",
-                   help="normal v1.5: no prompts, follow active Resolve project")
+                   help="normal product mode: no prompts, follow active Resolve project")
     p.add_argument("--disable-strip8", action="store_true",
                    help="exclude the eighth MCU bank strip (may be Bus1 "
                         "in projects with fewer than eight audio tracks)")
     p.add_argument("--enable-bank-pages", action="store_true",
-                   help="two-bank SELECT7/8 preview, up to A16")
+                   help="two eight-channel banks via SELECT7/8 (up to A16)")
     p.add_argument("--run-until-stopped", action="store_true",
                    help="explicit Ctrl+C mode (test copy only for writes)")
     p.add_argument("--write-approved-project", "--write-test-copy",
@@ -184,7 +184,7 @@ def main(argv=None):
         p.error("writes require exact --expected-project, --confirmed-backup "
                 "and --confirmed-no-automation")
     if not EVENTS.is_file() or time.time() - EVENTS.stat().st_mtime > 3:
-        p.error("Hammerspoon heartbeat absent: NK JOG > Scene 2 MIDI bridge: BE")
+        p.error("Hammerspoon MIDI input heartbeat missing: restart the NK controller")
     scripts = Path(__file__).resolve().parent
     for filename in ("fairlight_mcu_continuous.py", "fairlight_mcu_bridge.py",
                      "scene2_continuous_clip_gain.py", "scene2_clip_gain_8rotary.py",
