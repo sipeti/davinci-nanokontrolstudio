@@ -70,9 +70,9 @@ In v1.5, Hammerspoon starts Scene 2 automatically while Resolve is active. No pr
 
 ### Stop, logs and troubleshooting
 
-The NK JOG main menu has just three rows: the Korg/calibration status, **Scene 2: FUT/AUTOMATIKUS/SZUNETEL** for pause/resume, and **Beallitasok**. Under Beallitasok are eighth-strip ON/OFF, LED ON/OFF and full Hammerspoon control ON/OFF; **Diagnosztika es kalibracio** contains the raw MIDI status and the unchanged 28-step setup.
+The NK JOG main menu has three informational/navigation rows: Korg/calibration status, **Scene 2: FUT | A1–A8 / A9–A16** (read-only status), and **Beallitasok**. Under Beallitasok are optional Scene 2 pause/resume, bank paging, eighth-strip ON/OFF, LED ON/OFF and full Hammerspoon control ON/OFF; **Diagnosztika es kalibracio** contains the raw MIDI status and the unchanged 28-step setup.
 
-Use **NK JOG → Scene 2** to pause automatic operation and select it again to resume. The parent process releases MCU TOUCH and buttons during shutdown; Hammerspoon starts the workers quietly when Resolve is ready.
+You do **not** have to pause Scene 2 to use it: Hammerspoon starts the workers quietly when Resolve is ready. Only for servicing, troubleshooting or reinstalling, choose **NK JOG → Beallitasok → Scene 2: SZUNET**, and choose FOLYTATAS afterward. The parent process releases MCU TOUCH and buttons during shutdown.
 
 Logs: ~/Library/Logs/nk-scene2-session.log. To inspect the latest events safely:
 

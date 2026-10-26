@@ -856,6 +856,13 @@ menu:setMenu(function()
   }
   local settings = {
     {title=scene2Session and
+      (scene2Session:isEnabled() and
+        "Scene 2: AUTOMATIKUS BE (katt: SZUNET)" or
+        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
+      "Scene 2: manager nincs telepitve",
+      fn=function() if scene2Session then scene2Session:toggle() end end,
+      disabled=not scene2Session},
+    {title=scene2Session and
       ("Bank lapozas (SELECT 7/8): " ..
         (scene2Session:isBankPagesEnabled() and "BE (katt: KI)" or
           "KI (katt: BE)")) or "Bank lapozas nem elerheto",
@@ -892,12 +899,11 @@ menu:setMenu(function()
     {title=scene2Session and
       (scene2Session:isEnabled() and
         (scene2Session:isRunning() and
-          ("Scene 2: FUT | "..bankLabel.." (katt: SZUNET)") or
-          "Scene 2: AUTOMATIKUS (katt: SZUNET)") or
-        "Scene 2: SZUNETEL (katt: FOLYTATAS)") or
+          ("Scene 2: FUT | "..bankLabel) or
+          "Scene 2: AUTOMATIKUS | INDULASRA VAR") or
+        "Scene 2: SZUNETEL") or
       "Scene 2: manager nincs telepitve",
-      fn=function() if scene2Session then scene2Session:toggle() end end,
-      disabled=not scene2Session},
+      disabled=true},
     {title="Beallitasok", menu=settings},
   }
 

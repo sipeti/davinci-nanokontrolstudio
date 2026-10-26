@@ -171,8 +171,10 @@ local daily = menus.items()
 assert(#daily==3, "Daily menu must only show status, Scene 2, settings")
 assert(daily[1].disabled==true and
   daily[1].title:find("Korg:",1,true), "Status should be one summary line")
-assert(daily[2].title:find("Scene 2:",1,true),
-  "Daily menu must retain Scene 2 control")
+assert(daily[2].title:find("Scene 2:",1,true) and daily[2].disabled,
+  "Daily Scene 2 state is informational; pause is under Settings")
+assert(findMenuAction(daily,"Scene 2: AUTOMATIKUS"),
+  "Manual Scene 2 pause/resume must remain reachable in Settings")
 assert(daily[3].title=="Beallitasok" and type(daily[3].menu)=="table",
   "Advanced actions must be inside a submenu")
 assert(type(daily[3].menu[#daily[3].menu].menu)=="table",

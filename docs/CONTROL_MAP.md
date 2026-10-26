@@ -110,7 +110,7 @@ SOLO 1–8, strip REC 1–8 and SELECT 6–8 do **not** invoke an editing action
 | 7 | 19 — unassigned | 9 — unassigned |
 | 8 | 20 — unassigned | 12 — unassigned |
 
-This table describes **Scene 1**, where only slider 1 is assigned. **Experimental Scene 2 bank buttons:** SELECT7 (physical CC52) requests
+This table describes **Scene 1**, where only slider 1 is assigned. **Scene 2 bank buttons (optional two-bank mode, operator-tested):** SELECT7 (physical CC52) requests
 MCU Bank Left (note 46), SELECT8 (physical CC53) requests MCU Bank Right
 (note 47). The two supported banks are A1–A8 and A9–A16. The NK JOG
 status and SELECT7/8 LEDs reflect the received MCU host-fader refresh,

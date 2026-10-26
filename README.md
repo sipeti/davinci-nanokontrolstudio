@@ -1,6 +1,6 @@
 # Korg nanoKONTROL Studio for DaVinci Resolve 21
 
-**Main release: v1.4.0. Draft v1.5 preview:** automatic Scene 2 startup/project following plus shared REC/MARKER controls.
+**Main branch: v1.5 controller:** automatic Scene 2 startup and project following, eight tested Fairlight strips, shared REC/MARKER buttons, and an optional two-bank A1–A8/A9–A16 preview accepted on the operator's 16-track test project.
 
 A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKONTROL Studio** in Assignable Mode, Hammerspoon and two small Python workers. Scene 1 handles editing; Scene 2 combines real Fairlight mixer control with per-clip audio gain. Scenes 3–5 retain transport and JOG/SHUTTLE; the v1.5 development branch also shares REC/Undo and MARKER buttons across all five scenes.
 
@@ -9,7 +9,7 @@ A macOS MIDI controller for **DaVinci Resolve Studio 21** using a **Korg nanoKON
 ## Features
 
 - **Scene 1:** the proven 28-step-learned editing shortcuts, frame JOG, SHUTTLE and transport LEDs. Existing calibration is preserved on upgrade.
-- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG → Beallitasok offers an eighth-strip OFF switch. The daily NK JOG menu contains just status, Scene 2 pause/resume and Beallitasok; advanced LED/calibration/MIDI diagnostics live in nested menus.
+- **Scene 2, sliders 1–8:** Fairlight mixer A1–A8 in the physically tested eight-audio-track project, with the original host-aware soft pickup. Uses factory CC map **2, 3, 4, 5, 6, 8, 9, 12**. **Slider 8 (CC12) is now enabled by default**; it follows MCU bank slot 8, which can be Bus1 in smaller projects. NK JOG → Beallitasok offers an eighth-strip OFF switch. The daily NK JOG menu shows device status, the Scene 2 active bank, and Beallitasok. Optional manual Scene 2 pause/resume, LED/calibration/MIDI diagnostics live in nested menus.
 - **Experimental bank paging (separate Draft PR):** opt-in SELECT7/8
   switches the two MCU mixer banks A1–A8 ↔ A9–A16. NK JOG shows
   requested vs confirmed bank and the physical SELECT LEDs indicate the
@@ -45,7 +45,7 @@ If upgrading from a previously installed experimental Scene 2 controller, review
 1. Start Hammerspoon and Resolve. The Scene 2 workers launch automatically when Resolve is ready.
 2. Switch Korg scenes normally. Scene 1 edits, Scene 2 mixes; shared REC/Undo and MARKER controls work in Scenes 1–5.
 3. Change projects normally. Clip knobs refresh the current clip/project and rearm; the mixer preserves its v1.4 host-feedback and soft pickup behavior.
-4. **NK JOG → Scene 2: AUTOMATIKUS / SZUNET** pauses or resumes the worker. No project names or confirmation dialogs.
+4. **NK JOG → Beallitasok → Scene 2: AUTOMATIKUS / SZUNET** optionally pauses or resumes the worker. Normal operation never requires manual start/stop, project names or confirmation dialogs.
 
 Clip-level edits still require a valid stopped-playhead clip and no gain automation. The project-following and new startup path are unverified on real hardware until the v1.5 acceptance test. Logs: ~/Library/Logs/nk-scene2-session.log.
 
